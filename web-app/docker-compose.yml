@@ -1,0 +1,40 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5050:5000"
+    volumes:
+      - db_data:/app/data
+      - upload_data:/app/app/static/uploads
+    environment:
+      - SECRET_KEY=change-me-in-production-abc123
+      - DATABASE_URL=sqlite:////app/data/transcribeops.db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: celery -A celery_worker.celery worker --loglevel=info --concurrency=2
+    volumes:
+      - db_data:/app/data
+      - upload_data:/app/app/static/uploads
+    environment:
+      - SECRET_KEY=change-me-in-production-abc123
+      - DATABASE_URL=sqlite:////app/data/transcribeops.db
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  upload_data:
+  redis_data:

@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Transkription - TranscribeOps{% endblock %}
+{% block page_title %}Transkription{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <!-- Left: Upload area -->
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-4"><i class="bi bi-cloud-arrow-up me-2"></i>Audio hochladen</h5>
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Modell</label>
+                            <select class="form-select" id="speechModel" name="speech_model_id">
+                                {% for m in speech_models %}
+                                <option value="{{ m.id }}">{{ m.display_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Sprache (optional)</label>
+                            <select class="form-select" id="language" name="language">
+                                <option value="">Automatisch</option>
+                                <option value="de">Deutsch</option>
+                                <option value="en">Englisch</option>
+                                <option value="fr">Französisch</option>
+                                <option value="es">Spanisch</option>
+                                <option value="it">Italienisch</option>
+                                <option value="pt">Portugiesisch</option>
+                                <option value="nl">Niederländisch</option>
+                                <option value="pl">Polnisch</option>
+                                <option value="ja">Japanisch</option>
+                                <option value="zh">Chinesisch</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Sprechermodus</label>
+                            <select class="form-select" id="multiSpeaker" name="multi_speaker">
+                                <option value="false">Einzelperson</option>
+                                <option value="true">Mehrere Personen</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="upload-zone border rounded-3 p-5 text-center mb-3" id="dropZone">
+                        <i class="bi bi-cloud-arrow-up display-4 text-muted"></i>
+                        <p class="mt-2 mb-1">Audiodatei hierher ziehen oder klicken</p>
+                        <small class="text-muted">MP3, WAV, OGG, FLAC, M4A, WebM (max. 500MB)</small>
+                        <input type="file" class="d-none" id="fileInput" accept=".mp3,.wav,.ogg,.webm,.flac,.m4a,.mp4,.mpeg,.mpga">
+                    </div>
+
+                    <div id="selectedFile" class="d-none mb-3">
+                        <div class="d-flex align-items-center p-3 bg-body-secondary rounded">
+                            <i class="bi bi-file-earmark-music fs-4 me-3"></i>
+                            <div class="flex-grow-1">
+                                <span id="fileName" class="fw-medium"></span>
+                                <br><small id="fileSize" class="text-muted"></small>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="removeFile">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="uploadProgress" class="d-none mb-3">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                        </div>
+                        <small class="text-muted mt-1 d-block">Wird hochgeladen...</small>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>
+                        <i class="bi bi-upload me-2"></i>Transkription starten
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Result display -->
+        <div class="card border-0 shadow-sm mt-4 d-none" id="resultCard">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0"><i class="bi bi-file-text me-2"></i>Transkript</h5>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary me-1" onclick="copyResult()">
+                            <i class="bi bi-clipboard me-1"></i>Kopieren
+                        </button>
+                        <div class="btn-group">
+                            <button class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
+                                <i class="bi bi-magic me-1"></i>Zusammenfassen
+                            </button>
+                            <ul class="dropdown-menu">
+                                {% for m in text_models %}
+                                <li><a class="dropdown-item" href="#" onclick="summarizeJob(currentJobId, {{ m.id }})">{{ m.display_name }}</a></li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div id="resultText" class="p-3 bg-body-secondary rounded" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;"></div>
+                <div id="summarySection" class="d-none mt-3">
+                    <h6><i class="bi bi-lightning me-1"></i>Zusammenfassung</h6>
+                    <div id="summaryText" class="p-3 bg-body-secondary rounded" style="white-space: pre-wrap;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Job history -->
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-3"><i class="bi bi-clock-history me-2"></i>Historie & Jobs</h5>
+                <div id="jobList" class="job-list">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox display-6"></i>
+                        <p class="mt-2">Noch keine Transkriptionen</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const JOB_TYPE = 'transcription';
+let currentJobId = null;
+
+document.addEventListener('DOMContentLoaded', () => {
+    initUpload('uploadForm', 'fileInput', 'dropZone', 'selectedFile', 'fileName', 'fileSize',
+               'removeFile', 'uploadBtn', 'uploadProgress', JOB_TYPE);
+    loadJobs(JOB_TYPE);
+    setInterval(() => loadJobs(JOB_TYPE), 5000);
+});
+
+function showResult(job) {
+    currentJobId = job.id;
+    const card = document.getElementById('resultCard');
+    card.classList.remove('d-none');
+    document.getElementById('resultText').textContent = job.result_text || '';
+    if (job.summary_text) {
+        document.getElementById('summarySection').classList.remove('d-none');
+        document.getElementById('summaryText').textContent = job.summary_text;
+    } else {
+        document.getElementById('summarySection').classList.add('d-none');
+    }
+}
+
+function copyResult() {
+    const text = document.getElementById('resultText').textContent;
+    navigator.clipboard.writeText(text);
+}
+
+async function summarizeJob(jobId, textModelId) {
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    await fetch(`/api/summarize/${jobId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+        body: JSON.stringify({text_model_id: textModelId})
+    });
+    loadJobs(JOB_TYPE);
+}
+</script>
+{% endblock %}

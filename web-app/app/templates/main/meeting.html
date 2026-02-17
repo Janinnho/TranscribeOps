@@ -1,0 +1,229 @@
+{% extends "base.html" %}
+{% block title %}Meeting - TranscribeOps{% endblock %}
+{% block page_title %}Meeting{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <!-- Left: Recording / Upload -->
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-4"><i class="bi bi-camera-video me-2"></i>Meeting aufzeichnen</h5>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label class="form-label">Modell</label>
+                        <select class="form-select" id="speechModel">
+                            {% for m in speech_models %}
+                            <option value="{{ m.id }}">{{ m.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Sprache (optional)</label>
+                        <select class="form-select" id="language">
+                            <option value="">Automatisch</option>
+                            <option value="de">Deutsch</option>
+                            <option value="en">Englisch</option>
+                            <option value="fr">Französisch</option>
+                            <option value="es">Spanisch</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Mic recording -->
+                <div class="text-center mb-4 p-4 border rounded-3">
+                    <button class="btn btn-lg btn-outline-danger rounded-circle p-4" id="recordBtn" onclick="toggleMeetingRecord()">
+                        <i class="bi bi-mic-fill fs-2" id="recordIcon"></i>
+                    </button>
+                    <p class="mt-3 mb-0" id="recordStatus">Klicken um Aufnahme zu starten</p>
+                    <span class="badge bg-danger d-none mt-2" id="recordTimer">00:00:00</span>
+                </div>
+
+                <div class="text-center text-muted mb-3">- oder -</div>
+
+                <!-- File upload -->
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="upload-zone border rounded-3 p-4 text-center mb-3" id="dropZone">
+                        <i class="bi bi-cloud-arrow-up display-5 text-muted"></i>
+                        <p class="mt-2 mb-0">Audiodatei hochladen</p>
+                        <input type="file" class="d-none" id="fileInput" accept=".mp3,.wav,.ogg,.webm,.flac,.m4a,.mp4">
+                    </div>
+                    <div id="selectedFile" class="d-none mb-3">
+                        <div class="d-flex align-items-center p-3 bg-body-secondary rounded">
+                            <i class="bi bi-file-earmark-music fs-4 me-3"></i>
+                            <div class="flex-grow-1">
+                                <span id="fileName" class="fw-medium"></span>
+                                <br><small id="fileSize" class="text-muted"></small>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="removeFile"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                    </div>
+                    <div id="uploadProgress" class="d-none mb-3">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>
+                        <i class="bi bi-upload me-2"></i>Hochladen & Transkribieren
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Result -->
+        <div class="card border-0 shadow-sm mt-4 d-none" id="resultCard">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0"><i class="bi bi-file-text me-2"></i>Meeting-Transkript</h5>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="copyResult()">
+                            <i class="bi bi-clipboard me-1"></i>Kopieren
+                        </button>
+                        <div class="btn-group ms-1">
+                            <button class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
+                                <i class="bi bi-magic me-1"></i>Zusammenfassen
+                            </button>
+                            <ul class="dropdown-menu">
+                                {% for m in text_models %}
+                                <li><a class="dropdown-item" href="#" onclick="summarizeJob(currentJobId, {{ m.id }})">{{ m.display_name }}</a></li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div id="resultText" class="p-3 bg-body-secondary rounded" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;"></div>
+                <div id="summarySection" class="d-none mt-3">
+                    <h6><i class="bi bi-lightning me-1"></i>Zusammenfassung</h6>
+                    <div id="summaryText" class="p-3 bg-body-secondary rounded" style="white-space: pre-wrap;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: History -->
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-3"><i class="bi bi-clock-history me-2"></i>Meeting-Historie</h5>
+                <div id="jobList" class="job-list">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox display-6"></i>
+                        <p class="mt-2">Noch keine Meetings</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const JOB_TYPE = 'meeting';
+let currentJobId = null;
+let mediaRecorder = null;
+let audioChunks = [];
+let recordingTimer = null;
+let recordingSeconds = 0;
+
+function toggleMeetingRecord() {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        startMeetingRecord();
+    } else {
+        stopMeetingRecord();
+    }
+}
+
+async function startMeetingRecord() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        recordingSeconds = 0;
+
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+            stream.getTracks().forEach(t => t.stop());
+            const blob = new Blob(audioChunks, {type: 'audio/webm'});
+            uploadRecording(blob);
+        };
+
+        mediaRecorder.start();
+        document.getElementById('recordBtn').classList.replace('btn-outline-danger', 'btn-danger');
+        document.getElementById('recordIcon').classList.replace('bi-mic-fill', 'bi-stop-fill');
+        document.getElementById('recordStatus').textContent = 'Aufnahme läuft... Klicken zum Stoppen';
+        const timer = document.getElementById('recordTimer');
+        timer.classList.remove('d-none');
+        recordingTimer = setInterval(() => {
+            recordingSeconds++;
+            const h = String(Math.floor(recordingSeconds / 3600)).padStart(2, '0');
+            const m = String(Math.floor((recordingSeconds % 3600) / 60)).padStart(2, '0');
+            const s = String(recordingSeconds % 60).padStart(2, '0');
+            timer.textContent = `${h}:${m}:${s}`;
+        }, 1000);
+    } catch (err) {
+        alert('Mikrofon-Zugriff nicht möglich: ' + err.message);
+    }
+}
+
+function stopMeetingRecord() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        clearInterval(recordingTimer);
+        document.getElementById('recordBtn').classList.replace('btn-danger', 'btn-outline-danger');
+        document.getElementById('recordIcon').classList.replace('bi-stop-fill', 'bi-mic-fill');
+        document.getElementById('recordStatus').textContent = 'Aufnahme wird verarbeitet...';
+    }
+}
+
+async function uploadRecording(blob) {
+    const formData = new FormData();
+    formData.append('audio', blob, 'meeting_recording.webm');
+    formData.append('job_type', 'meeting');
+    formData.append('speech_model_id', document.getElementById('speechModel').value);
+    formData.append('language', document.getElementById('language').value);
+
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    const resp = await fetch('/api/upload-audio', {
+        method: 'POST', body: formData, headers: {'X-CSRFToken': token}
+    });
+    const data = await resp.json();
+    document.getElementById('recordStatus').textContent = 'Klicken um Aufnahme zu starten';
+    document.getElementById('recordTimer').classList.add('d-none');
+    loadJobs(JOB_TYPE);
+}
+
+function showResult(job) {
+    currentJobId = job.id;
+    document.getElementById('resultCard').classList.remove('d-none');
+    document.getElementById('resultText').textContent = job.result_text || '';
+    if (job.summary_text) {
+        document.getElementById('summarySection').classList.remove('d-none');
+        document.getElementById('summaryText').textContent = job.summary_text;
+    } else {
+        document.getElementById('summarySection').classList.add('d-none');
+    }
+}
+
+function copyResult() {
+    navigator.clipboard.writeText(document.getElementById('resultText').textContent);
+}
+
+async function summarizeJob(jobId, textModelId) {
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    await fetch(`/api/summarize/${jobId}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+        body: JSON.stringify({text_model_id: textModelId})
+    });
+    loadJobs(JOB_TYPE);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initUpload('uploadForm', 'fileInput', 'dropZone', 'selectedFile', 'fileName', 'fileSize',
+               'removeFile', 'uploadBtn', 'uploadProgress', JOB_TYPE);
+    loadJobs(JOB_TYPE);
+    setInterval(() => loadJobs(JOB_TYPE), 5000);
+});
+</script>
+{% endblock %}

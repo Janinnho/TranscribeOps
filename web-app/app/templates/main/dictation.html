@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Diktieren - TranscribeOps{% endblock %}
+{% block page_title %}Diktieren{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <!-- Left: Dictation -->
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label class="form-label">Modell</label>
+                        <select class="form-select" id="speechModel">
+                            {% for m in speech_models %}
+                            <option value="{{ m.id }}">{{ m.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Sprache (optional)</label>
+                        <select class="form-select" id="language">
+                            <option value="">Automatisch</option>
+                            <option value="de">Deutsch</option>
+                            <option value="en">Englisch</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="text-center py-5">
+                    <button class="btn dictation-btn rounded-circle shadow-lg" id="dictateBtn" onclick="toggleDictation()">
+                        <i class="bi bi-mic-fill" id="dictateIcon"></i>
+                    </button>
+                    <p class="mt-4 fs-5" id="dictateStatus">Zum Diktieren klicken</p>
+                    <span class="badge bg-danger d-none fs-6" id="dictateTimer">00:00</span>
+                </div>
+
+                <!-- Current result -->
+                <div class="d-none" id="dictateResult">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6 class="mb-0">Transkript</h6>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('dictateText').textContent)">
+                            <i class="bi bi-clipboard me-1"></i>Kopieren
+                        </button>
+                    </div>
+                    <div id="dictateText" class="p-3 bg-body-secondary rounded" style="white-space: pre-wrap; min-height: 100px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: History -->
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-3"><i class="bi bi-clock-history me-2"></i>Diktat-Historie</h5>
+                <div id="jobList" class="job-list">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox display-6"></i>
+                        <p class="mt-2">Noch keine Diktate</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const JOB_TYPE = 'dictation';
+let mediaRecorder = null;
+let audioChunks = [];
+let dictTimer = null;
+let dictSeconds = 0;
+
+function toggleDictation() {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        startDictation();
+    } else {
+        stopDictation();
+    }
+}
+
+async function startDictation() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        dictSeconds = 0;
+
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+            stream.getTracks().forEach(t => t.stop());
+            const blob = new Blob(audioChunks, {type: 'audio/webm'});
+            uploadDictation(blob);
+        };
+
+        mediaRecorder.start();
+        const btn = document.getElementById('dictateBtn');
+        btn.classList.add('recording');
+        document.getElementById('dictateIcon').classList.replace('bi-mic-fill', 'bi-stop-fill');
+        document.getElementById('dictateStatus').textContent = 'Aufnahme läuft... Klicken zum Stoppen';
+        const timer = document.getElementById('dictateTimer');
+        timer.classList.remove('d-none');
+        dictTimer = setInterval(() => {
+            dictSeconds++;
+            const m = String(Math.floor(dictSeconds / 60)).padStart(2, '0');
+            const s = String(dictSeconds % 60).padStart(2, '0');
+            timer.textContent = `${m}:${s}`;
+        }, 1000);
+    } catch (err) {
+        alert('Mikrofon-Zugriff nicht möglich: ' + err.message);
+    }
+}
+
+function stopDictation() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        clearInterval(dictTimer);
+        document.getElementById('dictateBtn').classList.remove('recording');
+        document.getElementById('dictateIcon').classList.replace('bi-stop-fill', 'bi-mic-fill');
+        document.getElementById('dictateStatus').textContent = 'Wird verarbeitet...';
+    }
+}
+
+async function uploadDictation(blob) {
+    const formData = new FormData();
+    formData.append('audio', blob, 'dictation.webm');
+    formData.append('job_type', 'dictation');
+    formData.append('speech_model_id', document.getElementById('speechModel').value);
+    formData.append('language', document.getElementById('language').value);
+
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    const resp = await fetch('/api/upload-audio', {
+        method: 'POST', body: formData, headers: {'X-CSRFToken': token}
+    });
+    const data = await resp.json();
+    document.getElementById('dictateStatus').textContent = 'Zum Diktieren klicken';
+    document.getElementById('dictateTimer').classList.add('d-none');
+
+    // Poll for result
+    if (data.job_id) {
+        pollDictResult(data.job_id);
+    }
+    loadJobs(JOB_TYPE);
+}
+
+async function pollDictResult(jobId) {
+    const check = async () => {
+        const resp = await fetch(`/api/job/${jobId}`);
+        const job = await resp.json();
+        if (job.status === 'completed') {
+            document.getElementById('dictateResult').classList.remove('d-none');
+            document.getElementById('dictateText').textContent = job.result_text || '';
+            loadJobs(JOB_TYPE);
+        } else if (job.status === 'failed') {
+            document.getElementById('dictateResult').classList.remove('d-none');
+            document.getElementById('dictateText').textContent = 'Fehler: ' + (job.error_message || 'Unbekannt');
+            loadJobs(JOB_TYPE);
+        } else {
+            setTimeout(check, 2000);
+        }
+    };
+    check();
+}
+
+function showResult(job) {
+    document.getElementById('dictateResult').classList.remove('d-none');
+    document.getElementById('dictateText').textContent = job.result_text || job.error_message || '';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadJobs(JOB_TYPE);
+    setInterval(() => loadJobs(JOB_TYPE), 5000);
+});
+</script>
+{% endblock %}

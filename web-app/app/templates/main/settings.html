@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen - TranscribeOps{% endblock %}
+{% block page_title %}Einstellungen{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-4"><i class="bi bi-sliders me-2"></i>Benutzereinstellungen</h5>
+                <form method="POST">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                    <div class="mb-4">
+                        <label class="form-label fw-medium">Design</label>
+                        <div class="d-flex gap-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="theme" id="themeLight" value="light" {{ 'checked' if current_user.theme == 'light' }}>
+                                <label class="form-check-label" for="themeLight">
+                                    <i class="bi bi-sun me-1"></i>Hell
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="theme" id="themeDark" value="dark" {{ 'checked' if current_user.theme == 'dark' }}>
+                                <label class="form-check-label" for="themeDark">
+                                    <i class="bi bi-moon me-1"></i>Dunkel
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="theme" id="themeAuto" value="auto" {{ 'checked' if current_user.theme == 'auto' }}>
+                                <label class="form-check-label" for="themeAuto">
+                                    <i class="bi bi-circle-half me-1"></i>Automatisch
+                                </label>
+                            </div>
+                        </div>
+                        <small class="text-muted">Automatisch übernimmt die Browsereinstellungen.</small>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="historyDays" class="form-label fw-medium">Historie-Aufbewahrung</label>
+                        <div class="input-group" style="max-width: 250px;">
+                            <input type="number" class="form-control" id="historyDays" name="history_days"
+                                   value="{{ current_user.history_days }}" min="1" max="365">
+                            <span class="input-group-text">Tage</span>
+                        </div>
+                        <small class="text-muted">Wie lange die Transkriptions-Historie gespeichert wird (1-365 Tage).</small>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-lg me-2"></i>Speichern
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-3"><i class="bi bi-person me-2"></i>Kontoinformationen</h5>
+                <table class="table table-borderless mb-0">
+                    <tr><td class="text-muted" style="width:150px">Benutzername</td><td>{{ current_user.username }}</td></tr>
+                    <tr><td class="text-muted">E-Mail</td><td>{{ current_user.email }}</td></tr>
+                    <tr><td class="text-muted">Rolle</td><td>{{ 'Administrator' if current_user.is_admin else 'Benutzer' }}</td></tr>
+                    <tr><td class="text-muted">Mitglied seit</td><td>{{ current_user.created_at.strftime('%d.%m.%Y') }}</td></tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,390 @@
+{% extends "base.html" %}
+{% block title %}Admin - TranscribeOps{% endblock %}
+{% block page_title %}Administration{% endblock %}
+{% block content %}
+<!-- Tab Navigation -->
+<ul class="nav nav-tabs mb-4" role="tablist">
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#usersTab"><i class="bi bi-people me-1"></i>Benutzer</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#groupsTab"><i class="bi bi-diagram-3 me-1"></i>Gruppen</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#speechTab"><i class="bi bi-mic me-1"></i>Sprachmodelle</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#textTab"><i class="bi bi-chat-dots me-1"></i>Textmodelle</button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- Users Tab -->
+    <div class="tab-pane fade show active" id="usersTab">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Benutzer</h5>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createUserModal">
+                <i class="bi bi-plus-lg me-1"></i>Neuer Benutzer
+            </button>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Benutzername</th><th>E-Mail</th><th>Admin</th><th>Aktiv</th><th>Gruppen</th><th>Aktionen</th></tr></thead>
+                    <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td><i class="bi bi-person-circle me-1"></i>{{ user.username }}</td>
+                        <td>{{ user.email }}</td>
+                        <td><span class="badge {{ 'bg-primary' if user.is_admin else 'bg-secondary' }}">{{ 'Ja' if user.is_admin else 'Nein' }}</span></td>
+                        <td><span class="badge {{ 'bg-success' if user.is_active_user else 'bg-danger' }}">{{ 'Ja' if user.is_active_user else 'Nein' }}</span></td>
+                        <td>{% for g in user.groups %}<span class="badge bg-info me-1">{{ g.name }}</span>{% endfor %}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editUser{{ user.id }}"><i class="bi bi-pencil"></i></button>
+                            {% if user.id != current_user.id %}
+                            <form method="POST" action="{{ url_for('admin.delete_user', user_id=user.id) }}" class="d-inline" onsubmit="return confirm('Benutzer wirklich löschen?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Groups Tab -->
+    <div class="tab-pane fade" id="groupsTab">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Gruppen</h5>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createGroupModal">
+                <i class="bi bi-plus-lg me-1"></i>Neue Gruppe
+            </button>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Name</th><th>Beschreibung</th><th>Benutzer</th><th>Sprachmodelle</th><th>Textmodelle</th><th>Aktionen</th></tr></thead>
+                    <tbody>
+                    {% for group in groups %}
+                    <tr>
+                        <td>{{ group.name }}</td>
+                        <td>{{ group.description or '-' }}</td>
+                        <td>{{ group.users.count() }}</td>
+                        <td>{% for m in group.speech_models %}<span class="badge bg-secondary me-1">{{ m.display_name }}</span>{% endfor %}</td>
+                        <td>{% for m in group.text_models %}<span class="badge bg-secondary me-1">{{ m.display_name }}</span>{% endfor %}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editGroup{{ group.id }}"><i class="bi bi-pencil"></i></button>
+                            <form method="POST" action="{{ url_for('admin.delete_group', group_id=group.id) }}" class="d-inline" onsubmit="return confirm('Gruppe löschen?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Speech Models Tab -->
+    <div class="tab-pane fade" id="speechTab">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Sprachmodelle (Transkription)</h5>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createSpeechModal">
+                <i class="bi bi-plus-lg me-1"></i>Neues Modell
+            </button>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Name</th><th>Anzeigename</th><th>Provider</th><th>Modell-ID</th><th>Aktiv</th><th>Aktionen</th></tr></thead>
+                    <tbody>
+                    {% for m in speech_models %}
+                    <tr>
+                        <td>{{ m.name }}</td>
+                        <td>{{ m.display_name }}</td>
+                        <td><span class="badge bg-info">{{ m.provider }}</span></td>
+                        <td><code>{{ m.model_id }}</code></td>
+                        <td><span class="badge {{ 'bg-success' if m.is_active else 'bg-danger' }}">{{ 'Ja' if m.is_active else 'Nein' }}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editSpeech{{ m.id }}"><i class="bi bi-pencil"></i></button>
+                            <form method="POST" action="{{ url_for('admin.delete_speech_model', model_id=m.id) }}" class="d-inline" onsubmit="return confirm('Modell löschen?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Text Models Tab -->
+    <div class="tab-pane fade" id="textTab">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Textmodelle (LLM)</h5>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createTextModal">
+                <i class="bi bi-plus-lg me-1"></i>Neues Modell
+            </button>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Name</th><th>Anzeigename</th><th>Provider</th><th>Modell-ID</th><th>Aktiv</th><th>Aktionen</th></tr></thead>
+                    <tbody>
+                    {% for m in text_models %}
+                    <tr>
+                        <td>{{ m.name }}</td>
+                        <td>{{ m.display_name }}</td>
+                        <td><span class="badge bg-info">{{ m.provider }}</span></td>
+                        <td><code>{{ m.model_id }}</code></td>
+                        <td><span class="badge {{ 'bg-success' if m.is_active else 'bg-danger' }}">{{ 'Ja' if m.is_active else 'Nein' }}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editText{{ m.id }}"><i class="bi bi-pencil"></i></button>
+                            <form method="POST" action="{{ url_for('admin.delete_text_model', model_id=m.id) }}" class="d-inline" onsubmit="return confirm('Modell löschen?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create User Modal -->
+<div class="modal fade" id="createUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.create_user') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Neuer Benutzer</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Benutzername</label><input type="text" class="form-control" name="username" required></div>
+                    <div class="mb-3"><label class="form-label">E-Mail</label><input type="email" class="form-control" name="email" required></div>
+                    <div class="mb-3"><label class="form-label">Passwort</label><input type="password" class="form-control" name="password" required></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="is_admin" id="newUserAdmin"><label class="form-check-label" for="newUserAdmin">Administrator</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit User Modals -->
+{% for user in users %}
+<div class="modal fade" id="editUser{{ user.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.update_user', user_id=user.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Benutzer bearbeiten: {{ user.username }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">E-Mail</label><input type="email" class="form-control" name="email" value="{{ user.email }}" required></div>
+                    <div class="mb-3"><label class="form-label">Neues Passwort (leer = unverändert)</label><input type="password" class="form-control" name="password"></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_admin" {{ 'checked' if user.is_admin }}><label class="form-check-label">Administrator</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="is_active_user" {{ 'checked' if user.is_active_user }}><label class="form-check-label">Aktiv</label></div>
+                    <div class="mb-3">
+                        <label class="form-label">Gruppen</label>
+                        {% for g in groups %}
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="group_ids" value="{{ g.id }}" {{ 'checked' if g in user.groups }}><label class="form-check-label">{{ g.name }}</label></div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<!-- Create Group Modal -->
+<div class="modal fade" id="createGroupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.create_group') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Neue Gruppe</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Name</label><input type="text" class="form-control" name="name" required></div>
+                    <div class="mb-3"><label class="form-label">Beschreibung</label><input type="text" class="form-control" name="description"></div>
+                    <div class="mb-3">
+                        <label class="form-label">Sprachmodelle</label>
+                        {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}"><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Textmodelle</label>
+                        {% for m in text_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="text_model_ids" value="{{ m.id }}"><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Group Modals -->
+{% for group in groups %}
+<div class="modal fade" id="editGroup{{ group.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.update_group', group_id=group.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Gruppe bearbeiten: {{ group.name }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Name</label><input type="text" class="form-control" name="name" value="{{ group.name }}" required></div>
+                    <div class="mb-3"><label class="form-label">Beschreibung</label><input type="text" class="form-control" name="description" value="{{ group.description or '' }}"></div>
+                    <div class="mb-3">
+                        <label class="form-label">Sprachmodelle</label>
+                        {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}" {{ 'checked' if m in group.speech_models }}><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Textmodelle</label>
+                        {% for m in text_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="text_model_ids" value="{{ m.id }}" {{ 'checked' if m in group.text_models }}><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<!-- Create Speech Model Modal -->
+<div class="modal fade" id="createSpeechModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.create_speech_model') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Neues Sprachmodell</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Interner Name</label><input type="text" class="form-control" name="name" required></div>
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" required></div>
+                    <div class="mb-3">
+                        <label class="form-label">Provider</label>
+                        <select class="form-select" name="provider" required>
+                            <option value="whisper_local">Lokaler Whisper-Server</option>
+                            <option value="openai">OpenAI API</option>
+                            <option value="azure">Azure AI OpenAI</option>
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label">Endpoint URL</label><input type="url" class="form-control" name="endpoint_url" placeholder="http://whisper:8080/v1/audio/transcriptions"></div>
+                    <div class="mb-3"><label class="form-label">API Key</label><input type="password" class="form-control" name="api_key"></div>
+                    <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="whisper-1"></div>
+                    <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment"></div>
+                    <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" placeholder="2024-06-01"></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Speech Model Modals -->
+{% for m in speech_models %}
+<div class="modal fade" id="editSpeech{{ m.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.update_speech_model', model_id=m.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Sprachmodell bearbeiten: {{ m.name }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Interner Name</label><input type="text" class="form-control" name="name" value="{{ m.name }}" required></div>
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" value="{{ m.display_name }}" required></div>
+                    <div class="mb-3">
+                        <label class="form-label">Provider</label>
+                        <select class="form-select" name="provider">
+                            <option value="whisper_local" {{ 'selected' if m.provider == 'whisper_local' }}>Lokaler Whisper-Server</option>
+                            <option value="openai" {{ 'selected' if m.provider == 'openai' }}>OpenAI API</option>
+                            <option value="azure" {{ 'selected' if m.provider == 'azure' }}>Azure AI OpenAI</option>
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label">Endpoint URL</label><input type="url" class="form-control" name="endpoint_url" value="{{ m.endpoint_url or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">API Key (leer = unverändert)</label><input type="password" class="form-control" name="api_key"></div>
+                    <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="{{ m.model_id or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment" value="{{ m.azure_deployment or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" value="{{ m.azure_api_version or '' }}"></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<!-- Create Text Model Modal -->
+<div class="modal fade" id="createTextModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.create_text_model') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Neues Textmodell</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Interner Name</label><input type="text" class="form-control" name="name" required></div>
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" required></div>
+                    <div class="mb-3">
+                        <label class="form-label">Provider</label>
+                        <select class="form-select" name="provider" required>
+                            <option value="ollama">Ollama</option>
+                            <option value="openai">OpenAI API</option>
+                            <option value="azure">Azure AI OpenAI</option>
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label">Endpoint URL</label><input type="url" class="form-control" name="endpoint_url" placeholder="http://ollama:11434"></div>
+                    <div class="mb-3"><label class="form-label">API Key</label><input type="password" class="form-control" name="api_key"></div>
+                    <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="llama3"></div>
+                    <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment"></div>
+                    <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" placeholder="2024-06-01"></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Text Model Modals -->
+{% for m in text_models %}
+<div class="modal fade" id="editText{{ m.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.update_text_model', model_id=m.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Textmodell bearbeiten: {{ m.name }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Interner Name</label><input type="text" class="form-control" name="name" value="{{ m.name }}" required></div>
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" value="{{ m.display_name }}" required></div>
+                    <div class="mb-3">
+                        <label class="form-label">Provider</label>
+                        <select class="form-select" name="provider">
+                            <option value="ollama" {{ 'selected' if m.provider == 'ollama' }}>Ollama</option>
+                            <option value="openai" {{ 'selected' if m.provider == 'openai' }}>OpenAI API</option>
+                            <option value="azure" {{ 'selected' if m.provider == 'azure' }}>Azure AI OpenAI</option>
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label">Endpoint URL</label><input type="url" class="form-control" name="endpoint_url" value="{{ m.endpoint_url or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">API Key (leer = unverändert)</label><input type="password" class="form-control" name="api_key"></div>
+                    <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="{{ m.model_id or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment" value="{{ m.azure_deployment or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" value="{{ m.azure_api_version or '' }}"></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+{% endblock %}

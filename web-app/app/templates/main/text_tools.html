@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Text Tools - TranscribeOps{% endblock %}
+{% block page_title %}Text Tools{% endblock %}
+{% block content %}
+<div class="row g-4">
+    <!-- Left: Text input -->
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-4"><i class="bi bi-type me-2"></i>Text verarbeiten</h5>
+
+                <div class="row g-3 mb-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Textmodell</label>
+                        <select class="form-select" id="textModel">
+                            {% for m in text_models %}
+                            <option value="{{ m.id }}">{{ m.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Aktion</label>
+                        <select class="form-select" id="toolAction" onchange="toggleTranslateField()">
+                            <option value="rewrite">Umschreiben</option>
+                            <option value="grammar">Grammatik prüfen</option>
+                            <option value="translate">Übersetzen</option>
+                            <option value="summarize">Zusammenfassen</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-3 d-none" id="translateField">
+                    <label class="form-label">Zielsprache</label>
+                    <select class="form-select" id="targetLanguage">
+                        <option value="Deutsch">Deutsch</option>
+                        <option value="Englisch">Englisch</option>
+                        <option value="Französisch">Französisch</option>
+                        <option value="Spanisch">Spanisch</option>
+                        <option value="Italienisch">Italienisch</option>
+                        <option value="Portugiesisch">Portugiesisch</option>
+                        <option value="Niederländisch">Niederländisch</option>
+                        <option value="Polnisch">Polnisch</option>
+                        <option value="Japanisch">Japanisch</option>
+                        <option value="Chinesisch">Chinesisch</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Text eingeben</label>
+                    <textarea class="form-control" id="inputText" rows="10" placeholder="Text hier einfügen..."></textarea>
+                </div>
+
+                <button class="btn btn-primary" id="processBtn" onclick="processText()">
+                    <i class="bi bi-play-fill me-2"></i>Verarbeiten
+                </button>
+            </div>
+        </div>
+
+        <!-- Result -->
+        <div class="card border-0 shadow-sm mt-4 d-none" id="resultCard">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0"><i class="bi bi-file-text me-2"></i>Ergebnis</h5>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('resultText').textContent)">
+                        <i class="bi bi-clipboard me-1"></i>Kopieren
+                    </button>
+                </div>
+                <div id="resultText" class="p-3 bg-body-secondary rounded" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: History -->
+    <div class="col-lg-5">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-3"><i class="bi bi-clock-history me-2"></i>Text Tool Historie</h5>
+                <div id="jobList" class="job-list">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox display-6"></i>
+                        <p class="mt-2">Noch keine Textverarbeitungen</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const JOB_TYPE = 'text_tool';
+
+function toggleTranslateField() {
+    const show = document.getElementById('toolAction').value === 'translate';
+    document.getElementById('translateField').classList.toggle('d-none', !show);
+}
+
+async function processText() {
+    const text = document.getElementById('inputText').value.trim();
+    if (!text) return alert('Bitte Text eingeben.');
+
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    const body = {
+        action: document.getElementById('toolAction').value,
+        text: text,
+        text_model_id: parseInt(document.getElementById('textModel').value),
+        target_language: document.getElementById('targetLanguage')?.value || ''
+    };
+
+    document.getElementById('processBtn').disabled = true;
+    document.getElementById('processBtn').innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Verarbeite...';
+
+    const resp = await fetch('/api/text-tool', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+        body: JSON.stringify(body)
+    });
+    const data = await resp.json();
+
+    document.getElementById('processBtn').disabled = false;
+    document.getElementById('processBtn').innerHTML = '<i class="bi bi-play-fill me-2"></i>Verarbeiten';
+
+    if (data.job_id) {
+        pollTextResult(data.job_id);
+    }
+    loadJobs(JOB_TYPE);
+}
+
+async function pollTextResult(jobId) {
+    const check = async () => {
+        const resp = await fetch(`/api/job/${jobId}`);
+        const job = await resp.json();
+        if (job.status === 'completed') {
+            document.getElementById('resultCard').classList.remove('d-none');
+            document.getElementById('resultText').textContent = job.result_text || '';
+            loadJobs(JOB_TYPE);
+        } else if (job.status === 'failed') {
+            document.getElementById('resultCard').classList.remove('d-none');
+            document.getElementById('resultText').textContent = 'Fehler: ' + (job.error_message || 'Unbekannt');
+            loadJobs(JOB_TYPE);
+        } else {
+            setTimeout(check, 2000);
+        }
+    };
+    check();
+}
+
+function showResult(job) {
+    document.getElementById('resultCard').classList.remove('d-none');
+    document.getElementById('resultText').textContent = job.result_text || job.error_message || '';
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadJobs(JOB_TYPE);
+    setInterval(() => loadJobs(JOB_TYPE), 5000);
+});
+</script>
+{% endblock %}

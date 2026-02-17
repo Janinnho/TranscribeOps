@@ -1,0 +1,197 @@
+// Sidebar toggle for mobile
+document.addEventListener('DOMContentLoaded', () => {
+    const toggle = document.getElementById('sidebarToggle');
+    const sidebar = document.getElementById('sidebar');
+    if (toggle && sidebar) {
+        toggle.addEventListener('click', () => sidebar.classList.toggle('show'));
+        document.addEventListener('click', (e) => {
+            if (sidebar.classList.contains('show') && !sidebar.contains(e.target) && e.target !== toggle) {
+                sidebar.classList.remove('show');
+            }
+        });
+    }
+});
+
+// File upload initialization
+function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId, fileSizeId,
+                    removeFileId, uploadBtnId, progressId, jobType) {
+    const form = document.getElementById(formId);
+    const fileInput = document.getElementById(fileInputId);
+    const dropZone = document.getElementById(dropZoneId);
+    const selectedFile = document.getElementById(selectedFileId);
+    const fileName = document.getElementById(fileNameId);
+    const fileSize = document.getElementById(fileSizeId);
+    const removeFile = document.getElementById(removeFileId);
+    const uploadBtn = document.getElementById(uploadBtnId);
+    const progress = document.getElementById(progressId);
+
+    if (!form || !fileInput || !dropZone) return;
+
+    // Click to select
+    dropZone.addEventListener('click', () => fileInput.click());
+
+    // Drag & drop
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            fileInput.files = e.dataTransfer.files;
+            showSelectedFile();
+        }
+    });
+
+    fileInput.addEventListener('change', showSelectedFile);
+
+    function showSelectedFile() {
+        if (fileInput.files.length) {
+            const f = fileInput.files[0];
+            fileName.textContent = f.name;
+            fileSize.textContent = formatSize(f.size);
+            selectedFile.classList.remove('d-none');
+            dropZone.classList.add('d-none');
+            uploadBtn.disabled = false;
+        }
+    }
+
+    removeFile.addEventListener('click', () => {
+        fileInput.value = '';
+        selectedFile.classList.add('d-none');
+        dropZone.classList.remove('d-none');
+        uploadBtn.disabled = true;
+    });
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!fileInput.files.length) return;
+
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        formData.append('job_type', jobType);
+        const speechModel = document.getElementById('speechModel');
+        if (speechModel) formData.append('speech_model_id', speechModel.value);
+        const language = document.getElementById('language');
+        if (language) formData.append('language', language.value);
+        const multiSpeaker = document.getElementById('multiSpeaker');
+        if (multiSpeaker) formData.append('multi_speaker', multiSpeaker.value);
+
+        uploadBtn.disabled = true;
+        progress.classList.remove('d-none');
+        const bar = progress.querySelector('.progress-bar');
+
+        const token = document.querySelector('meta[name="csrf-token"]').content;
+
+        const xhr = new XMLHttpRequest();
+        xhr.upload.addEventListener('progress', (ev) => {
+            if (ev.lengthComputable) {
+                const pct = Math.round((ev.loaded / ev.total) * 100);
+                bar.style.width = pct + '%';
+            }
+        });
+
+        xhr.addEventListener('load', () => {
+            progress.classList.add('d-none');
+            bar.style.width = '0%';
+            fileInput.value = '';
+            selectedFile.classList.add('d-none');
+            dropZone.classList.remove('d-none');
+            uploadBtn.disabled = true;
+            if (typeof loadJobs === 'function') loadJobs(jobType);
+        });
+
+        xhr.addEventListener('error', () => {
+            progress.classList.add('d-none');
+            uploadBtn.disabled = false;
+            alert('Upload fehlgeschlagen.');
+        });
+
+        xhr.open('POST', '/api/upload');
+        xhr.setRequestHeader('X-CSRFToken', token);
+        xhr.send(formData);
+    });
+}
+
+// Load jobs for a specific type
+async function loadJobs(jobType) {
+    const container = document.getElementById('jobList');
+    if (!container) return;
+
+    try {
+        const resp = await fetch(`/api/jobs/${jobType}`);
+        const jobs = await resp.json();
+
+        if (!jobs.length) {
+            container.innerHTML = `
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-inbox display-6"></i>
+                    <p class="mt-2">Noch keine Einträge</p>
+                </div>`;
+            return;
+        }
+
+        container.innerHTML = jobs.map(job => `
+            <div class="job-item" onclick="selectJob(${job.id}, '${jobType}')">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div class="flex-grow-1">
+                        <div class="fw-medium text-truncate" style="max-width: 250px;">${escapeHtml(job.title || 'Job #' + job.id)}</div>
+                        <small class="text-muted">${job.created_at}</small>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        ${statusBadge(job.status)}
+                        <button class="btn btn-sm btn-link text-danger p-0" onclick="event.stopPropagation(); deleteJob(${job.id}, '${jobType}')" title="Löschen">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                ${job.status === 'failed' ? `<small class="text-danger d-block mt-1">${escapeHtml(job.error_message || 'Fehler')}</small>` : ''}
+            </div>
+        `).join('');
+    } catch (err) {
+        console.error('Failed to load jobs:', err);
+    }
+}
+
+async function selectJob(jobId, jobType) {
+    try {
+        const resp = await fetch(`/api/job/${jobId}`);
+        const job = await resp.json();
+        if (typeof showResult === 'function') {
+            showResult(job);
+        }
+    } catch (err) {
+        console.error('Failed to load job:', err);
+    }
+}
+
+async function deleteJob(jobId, jobType) {
+    if (!confirm('Eintrag wirklich löschen?')) return;
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    await fetch(`/api/job/${jobId}`, {
+        method: 'DELETE',
+        headers: {'X-CSRFToken': token}
+    });
+    loadJobs(jobType);
+}
+
+function statusBadge(status) {
+    const map = {
+        'pending': '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Wartend</span>',
+        'processing': '<span class="badge bg-info"><span class="spinner-grow spinner-grow-sm me-1"></span>Verarbeite</span>',
+        'completed': '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Fertig</span>',
+        'failed': '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Fehler</span>'
+    };
+    return map[status] || `<span class="badge bg-secondary">${status}</span>`;
+}
+
+function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
