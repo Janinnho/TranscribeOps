@@ -1,0 +1,27 @@
+services:
+  whisper:
+    build: .
+    ports:
+      - "8090:8000"
+    environment:
+      - WHISPER_API_KEY=${WHISPER_API_KEY:-my-secret-key}
+      - WHISPER_MODEL=${WHISPER_MODEL:-medium}
+      - WHISPER_DEVICE=cpu
+      - WHISPER_COMPUTE_TYPE=int8
+    volumes:
+      - whisper_cache:/root/.cache
+    networks:
+      - transcribeops
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+
+volumes:
+  whisper_cache:
+
+networks:
+  transcribeops:
+    external: true
+    name: transcribeops-shared

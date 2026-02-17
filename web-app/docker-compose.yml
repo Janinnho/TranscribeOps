@@ -12,6 +12,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
+    networks:
+      - default
+      - transcribeops
     restart: unless-stopped
 
   worker:
@@ -26,6 +29,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
+    networks:
+      - default
+      - transcribeops
     restart: unless-stopped
 
   redis:
@@ -38,3 +44,8 @@ volumes:
   db_data:
   upload_data:
   redis_data:
+
+networks:
+  transcribeops:
+    external: true
+    name: transcribeops-shared

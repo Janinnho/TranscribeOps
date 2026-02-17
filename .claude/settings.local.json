@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(docker compose exec worker python:*)"
+      "Bash(docker compose exec worker python:*)",
+      "Bash(docker compose up:*)"
     ]
   }
 }
