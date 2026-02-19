@@ -72,55 +72,6 @@
                 </form>
             </div>
         </div>
-
-        <!-- Result display -->
-        <div class="card border-0 shadow-sm mt-4 d-none" id="resultCard">
-            <div class="card-body p-4">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="card-title mb-0"><i class="bi bi-file-text me-2"></i>Transkript</h5>
-                    <div class="d-flex gap-1 flex-wrap">
-                        <button class="btn btn-sm btn-outline-secondary" onclick="copyResult()">
-                            <i class="bi bi-clipboard me-1"></i>Kopieren
-                        </button>
-                        <a class="btn btn-sm btn-outline-secondary d-none" id="downloadBtn" href="#">
-                            <i class="bi bi-download me-1"></i>Download
-                        </a>
-                        <div class="btn-group">
-                            <button class="btn btn-sm btn-outline-primary dropdown-toggle" data-bs-toggle="dropdown">
-                                <i class="bi bi-magic me-1"></i>Zusammenfassen
-                            </button>
-                            <ul class="dropdown-menu">
-                                {% for m in text_models %}
-                                <li><a class="dropdown-item" href="#" onclick="summarizeJob(currentJobId, {{ m.id }})">{{ m.display_name }}</a></li>
-                                {% endfor %}
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Diarized speaker edit section -->
-                <div id="speakerEditSection" class="d-none mb-3">
-                    <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
-                        <small class="text-muted fw-medium">Sprecher umbenennen:</small>
-                        <div id="speakerInputs" class="d-flex gap-2 flex-wrap"></div>
-                        <button class="btn btn-sm btn-outline-success" onclick="saveSpeakerNames()">
-                            <i class="bi bi-check-lg me-1"></i>Anwenden
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Diarized view -->
-                <div id="diarizedView" class="d-none p-3 bg-body-secondary rounded" style="max-height: 400px; overflow-y: auto;"></div>
-
-                <!-- Plain text view -->
-                <div id="resultText" class="d-none p-3 bg-body-secondary rounded" style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;"></div>
-
-                <div id="summarySection" class="d-none mt-3">
-                    <h6><i class="bi bi-lightning me-1"></i>Zusammenfassung</h6>
-                    <div id="summaryText" class="p-3 bg-body-secondary rounded" style="white-space: pre-wrap;"></div>
-                </div>
-            </div>
-        </div>
     </div>
 
     <!-- Right: Job history -->
@@ -143,8 +94,6 @@
 {% block scripts %}
 <script>
 const JOB_TYPE = 'transcription';
-let currentJobId = null;
-let currentJobData = null;
 
 const singleModels = [{% for m in single_models %}{id:{{ m.id }},name:"{{ m.display_name }}"},{% endfor %}];
 const multiModels = [{% for m in multi_models %}{id:{{ m.id }},name:"{{ m.display_name }}"},{% endfor %}];
@@ -156,120 +105,12 @@ function updateModelList() {
     select.innerHTML = models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
 }
 
-// Speaker color palette
-const speakerColors = ['#4a90d9', '#e67e22', '#27ae60', '#e74c3c', '#9b59b6', '#1abc9c', '#f39c12', '#2c3e50'];
-function getSpeakerColor(idx) { return speakerColors[idx % speakerColors.length]; }
-
-function showResult(job) {
-    currentJobId = job.id;
-    currentJobData = job;
-    const card = document.getElementById('resultCard');
-    card.classList.remove('d-none');
-
-    // Download button
-    const dl = document.getElementById('downloadBtn');
-    dl.href = `/api/job/${job.id}/download`;
-    dl.classList.remove('d-none');
-
-    // Check for diarized segments
-    if (job.diarized_segments && job.diarized_segments.length > 0) {
-        document.getElementById('diarizedView').classList.remove('d-none');
-        document.getElementById('resultText').classList.add('d-none');
-        renderDiarized(job.diarized_segments);
-        showSpeakerEditor(job.diarized_segments);
-    } else {
-        document.getElementById('diarizedView').classList.add('d-none');
-        document.getElementById('resultText').classList.remove('d-none');
-        document.getElementById('speakerEditSection').classList.add('d-none');
-        document.getElementById('resultText').textContent = job.result_text || '';
-    }
-
-    if (job.summary_text) {
-        document.getElementById('summarySection').classList.remove('d-none');
-        document.getElementById('summaryText').textContent = job.summary_text;
-    } else {
-        document.getElementById('summarySection').classList.add('d-none');
-    }
-}
-
-function renderDiarized(segments) {
-    const container = document.getElementById('diarizedView');
-    const speakers = [...new Set(segments.map(s => s.speaker))];
-    container.innerHTML = segments.map(seg => {
-        const idx = speakers.indexOf(seg.speaker);
-        const color = getSpeakerColor(idx);
-        const ts = fmtTime(seg.start) + ' - ' + fmtTime(seg.end);
-        return `<div class="mb-2"><span class="badge me-2" style="background:${color}">${escapeHtml(seg.speaker)}</span><small class="text-muted">${ts}</small><div class="ms-1 mt-1">${escapeHtml(seg.text.trim())}</div></div>`;
-    }).join('');
-}
-
-function showSpeakerEditor(segments) {
-    const speakers = [...new Set(segments.map(s => s.speaker))];
-    const container = document.getElementById('speakerInputs');
-    container.innerHTML = speakers.map((sp, idx) => {
-        const color = getSpeakerColor(idx);
-        return `<div class="input-group input-group-sm" style="width:auto">
-            <span class="input-group-text" style="background:${color};color:#fff;border-color:${color}">${escapeHtml(sp)}</span>
-            <input type="text" class="form-control" data-original="${escapeHtml(sp)}" placeholder="Neuer Name" style="width:100px">
-        </div>`;
-    }).join('');
-    document.getElementById('speakerEditSection').classList.remove('d-none');
-}
-
-async function saveSpeakerNames() {
-    const inputs = document.querySelectorAll('#speakerInputs input');
-    const renames = {};
-    inputs.forEach(inp => {
-        const newName = inp.value.trim();
-        if (newName && newName !== inp.dataset.original) {
-            renames[inp.dataset.original] = newName;
-        }
-    });
-    if (!Object.keys(renames).length) return;
-
-    const token = document.querySelector('meta[name="csrf-token"]').content;
-    const resp = await fetch(`/api/job/${currentJobId}/speakers`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
-        body: JSON.stringify({renames})
-    });
-    const job = await resp.json();
-    showResult(job);
-    loadJobs(JOB_TYPE);
-}
-
-function fmtTime(sec) {
-    const m = Math.floor(sec / 60).toString().padStart(2, '0');
-    const s = Math.floor(sec % 60).toString().padStart(2, '0');
-    return m + ':' + s;
-}
-
-function copyResult() {
-    let text;
-    if (currentJobData && currentJobData.diarized_segments && currentJobData.diarized_segments.length) {
-        text = currentJobData.diarized_segments.map(s => `[${s.speaker}]: ${s.text.trim()}`).join('\n');
-    } else {
-        text = document.getElementById('resultText').textContent;
-    }
-    navigator.clipboard.writeText(text);
-}
-
-async function summarizeJob(jobId, textModelId) {
-    const token = document.querySelector('meta[name="csrf-token"]').content;
-    await fetch(`/api/summarize/${jobId}`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
-        body: JSON.stringify({text_model_id: textModelId})
-    });
-    loadJobs(JOB_TYPE);
-}
-
 document.addEventListener('DOMContentLoaded', () => {
     updateModelList();
     initUpload('uploadForm', 'fileInput', 'dropZone', 'selectedFile', 'fileName', 'fileSize',
                'removeFile', 'uploadBtn', 'uploadProgress', JOB_TYPE);
     loadJobs(JOB_TYPE);
-    setInterval(() => loadJobs(JOB_TYPE), 3000);
+    setInterval(() => loadJobs(JOB_TYPE), 5000);
 });
 </script>
 {% endblock %}

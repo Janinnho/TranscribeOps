@@ -164,11 +164,6 @@ async function pollDictResult(jobId) {
     check();
 }
 
-function showResult(job) {
-    document.getElementById('dictateResult').classList.remove('d-none');
-    document.getElementById('dictateText').textContent = job.result_text || job.error_message || '';
-}
-
 document.addEventListener('DOMContentLoaded', () => {
     loadJobs(JOB_TYPE);
     setInterval(() => loadJobs(JOB_TYPE), 5000);

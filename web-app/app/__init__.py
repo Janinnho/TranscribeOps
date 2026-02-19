@@ -1,3 +1,4 @@
+import uuid
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
@@ -60,19 +61,52 @@ def _apply_migrations():
         cols = [c['name'] for c in inspector.get_columns(table)]
         return column in cols
 
+    def _has_table(table):
+        return table in inspector.get_table_names()
+
+    def _safe_execute(conn, sql):
+        """Execute ALTER TABLE safely, ignoring duplicate column errors."""
+        try:
+            conn.execute(text(sql))
+            conn.commit()
+        except Exception:
+            conn.rollback()
+
     with db.engine.connect() as conn:
-        if not _has_column('speech_models', 'speaker_mode'):
-            conn.execute(text("ALTER TABLE speech_models ADD COLUMN speaker_mode VARCHAR(10) DEFAULT 'single'"))
-            conn.commit()
-        if not _has_column('jobs', 'diarized_segments'):
-            conn.execute(text("ALTER TABLE jobs ADD COLUMN diarized_segments TEXT"))
-            conn.commit()
+        # Speech models
+        if _has_table('speech_models') and not _has_column('speech_models', 'speaker_mode'):
+            _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN speaker_mode VARCHAR(10) DEFAULT 'single'")
+
+        # Jobs
+        if _has_table('jobs'):
+            if not _has_column('jobs', 'diarized_segments'):
+                _safe_execute(conn, "ALTER TABLE jobs ADD COLUMN diarized_segments TEXT")
+            if not _has_column('jobs', 'summary_status'):
+                _safe_execute(conn, "ALTER TABLE jobs ADD COLUMN summary_status VARCHAR(20)")
+            if not _has_column('jobs', 'public_id'):
+                _safe_execute(conn, "ALTER TABLE jobs ADD COLUMN public_id VARCHAR(32)")
+                # Backfill existing jobs with random public_ids
+                try:
+                    from app.models import Job
+                    for job in Job.query.filter(Job.public_id.is_(None)).all():
+                        job.public_id = uuid.uuid4().hex
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+
+        # Groups
+        if _has_table('groups') and not _has_column('groups', 'is_default'):
+            _safe_execute(conn, "ALTER TABLE groups ADD COLUMN is_default BOOLEAN DEFAULT 0")
+
+        # Users: rename username -> display_name
+        if _has_table('users') and _has_column('users', 'username') and not _has_column('users', 'display_name'):
+            _safe_execute(conn, "ALTER TABLE users RENAME COLUMN username TO display_name")
 
 
 def _seed_defaults(app):
-    from app.models import User, SpeechModel, TextModel
+    from app.models import User, Group, SpeechModel, TextModel
     if not User.query.first():
-        admin = User(username='admin', email='admin@transcribeops.local', is_admin=True)
+        admin = User(display_name='Administrator', email='admin@transcribeops.local', is_admin=True)
         admin.set_password('admin')
         db.session.add(admin)
         db.session.commit()
@@ -98,4 +132,13 @@ def _seed_defaults(app):
             is_active=True
         )
         db.session.add(default_text)
+        db.session.commit()
+    # Seed default group if none exists
+    if not Group.query.first():
+        default_group = Group(
+            name='Standard',
+            description='Standard-Gruppe für neue Benutzer',
+            is_default=True
+        )
+        db.session.add(default_group)
         db.session.commit()

@@ -57,7 +57,7 @@ def upload():
     from app.tasks import process_transcription
     process_transcription.delay(job.id)
 
-    return jsonify({'job_id': job.id, 'status': 'pending'})
+    return jsonify({'job_id': job.public_id, 'status': 'pending'})
 
 
 @api_bp.route('/upload-audio', methods=['POST'])
@@ -95,7 +95,7 @@ def upload_audio():
     from app.tasks import process_transcription
     process_transcription.delay(job.id)
 
-    return jsonify({'job_id': job.id, 'status': 'pending'})
+    return jsonify({'job_id': job.public_id, 'status': 'pending'})
 
 
 @api_bp.route('/text-tool', methods=['POST'])
@@ -136,14 +136,14 @@ def text_tool():
     from app.tasks import process_text_tool
     process_text_tool.delay(job.id)
 
-    return jsonify({'job_id': job.id, 'status': 'pending'})
+    return jsonify({'job_id': job.public_id, 'status': 'pending'})
 
 
-@api_bp.route('/summarize/<int:job_id>', methods=['POST'])
+@api_bp.route('/summarize/<string:public_id>', methods=['POST'])
 @login_required
-def summarize(job_id):
-    job = db.session.get(Job, job_id)
-    if not job or job.user_id != current_user.id:
+def summarize(public_id):
+    job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not job:
         return jsonify({'error': 'Job nicht gefunden'}), 404
 
     data = request.get_json() or {}
@@ -153,6 +153,10 @@ def summarize(job_id):
     except (TypeError, ValueError):
         return jsonify({'error': 'Kein Textmodell ausgewählt'}), 400
 
+    job.summary_status = 'processing'
+    job.summary_text = None
+    db.session.commit()
+
     from app.tasks import process_summary
     process_summary.delay(job.id, text_model_id)
 
@@ -161,13 +165,14 @@ def summarize(job_id):
 
 def _job_to_dict(j):
     return {
-        'id': j.id,
+        'id': j.public_id,
         'title': j.title,
         'status': j.status,
         'created_at': j.created_at.strftime('%d.%m.%Y %H:%M'),
         'result_text': j.result_text,
         'diarized_segments': json.loads(j.diarized_segments) if j.diarized_segments else None,
         'summary_text': j.summary_text,
+        'summary_status': j.summary_status,
         'error_message': j.error_message,
         'tool_action': j.tool_action,
         'multi_speaker': j.multi_speaker,
@@ -189,20 +194,20 @@ def get_jobs(job_type):
     return jsonify([_job_to_dict(j) for j in jobs])
 
 
-@api_bp.route('/job/<int:job_id>')
+@api_bp.route('/job/<string:public_id>')
 @login_required
-def get_job(job_id):
-    job = db.session.get(Job, job_id)
-    if not job or job.user_id != current_user.id:
+def get_job(public_id):
+    job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not job:
         return jsonify({'error': 'Nicht gefunden'}), 404
     return jsonify(_job_to_dict(job))
 
 
-@api_bp.route('/job/<int:job_id>/speakers', methods=['POST'])
+@api_bp.route('/job/<string:public_id>/speakers', methods=['POST'])
 @login_required
-def update_speakers(job_id):
-    job = db.session.get(Job, job_id)
-    if not job or job.user_id != current_user.id:
+def update_speakers(public_id):
+    job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not job:
         return jsonify({'error': 'Nicht gefunden'}), 404
     if not job.diarized_segments:
         return jsonify({'error': 'Keine Sprechersegmente'}), 400
@@ -229,11 +234,11 @@ def update_speakers(job_id):
     return jsonify(_job_to_dict(job))
 
 
-@api_bp.route('/job/<int:job_id>/download')
+@api_bp.route('/job/<string:public_id>/download')
 @login_required
-def download_job(job_id):
-    job = db.session.get(Job, job_id)
-    if not job or job.user_id != current_user.id:
+def download_job(public_id):
+    job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not job:
         return jsonify({'error': 'Nicht gefunden'}), 404
 
     if job.diarized_segments:
@@ -249,7 +254,7 @@ def download_job(job_id):
     if job.summary_text:
         content += '\n\n--- Zusammenfassung ---\n' + job.summary_text
 
-    title = job.title or f'job_{job.id}'
+    title = job.title or f'job_{job.public_id}'
     safe_title = ''.join(c for c in title if c.isalnum() or c in ' _-.')[:50]
     filename = f"{safe_title}.txt"
 
@@ -266,11 +271,11 @@ def _fmt_time(seconds):
     return f"{m:02d}:{s:02d}"
 
 
-@api_bp.route('/job/<int:job_id>', methods=['DELETE'])
+@api_bp.route('/job/<string:public_id>', methods=['DELETE'])
 @login_required
-def delete_job(job_id):
-    job = db.session.get(Job, job_id)
-    if not job or job.user_id != current_user.id:
+def delete_job(public_id):
+    job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not job:
         return jsonify({'error': 'Nicht gefunden'}), 404
     if job.file_path and os.path.exists(job.file_path):
         os.remove(job.file_path)

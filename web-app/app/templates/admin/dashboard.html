@@ -30,11 +30,11 @@
         <div class="card border-0 shadow-sm">
             <div class="table-responsive">
                 <table class="table table-hover mb-0">
-                    <thead><tr><th>Benutzername</th><th>E-Mail</th><th>Admin</th><th>Aktiv</th><th>Gruppen</th><th>Aktionen</th></tr></thead>
+                    <thead><tr><th>Anzeigename</th><th>E-Mail</th><th>Admin</th><th>Aktiv</th><th>Gruppen</th><th>Aktionen</th></tr></thead>
                     <tbody>
                     {% for user in users %}
                     <tr>
-                        <td><i class="bi bi-person-circle me-1"></i>{{ user.username }}</td>
+                        <td><i class="bi bi-person-circle me-1"></i>{{ user.display_name }}</td>
                         <td>{{ user.email }}</td>
                         <td><span class="badge {{ 'bg-primary' if user.is_admin else 'bg-secondary' }}">{{ 'Ja' if user.is_admin else 'Nein' }}</span></td>
                         <td><span class="badge {{ 'bg-success' if user.is_active_user else 'bg-danger' }}">{{ 'Ja' if user.is_active_user else 'Nein' }}</span></td>
@@ -67,12 +67,19 @@
         <div class="card border-0 shadow-sm">
             <div class="table-responsive">
                 <table class="table table-hover mb-0">
-                    <thead><tr><th>Name</th><th>Beschreibung</th><th>Benutzer</th><th>Sprachmodelle</th><th>Textmodelle</th><th>Aktionen</th></tr></thead>
+                    <thead><tr><th>Name</th><th>Beschreibung</th><th>Default</th><th>Benutzer</th><th>Sprachmodelle</th><th>Textmodelle</th><th>Aktionen</th></tr></thead>
                     <tbody>
                     {% for group in groups %}
                     <tr>
                         <td>{{ group.name }}</td>
                         <td>{{ group.description or '-' }}</td>
+                        <td>
+                            {% if group.is_default %}
+                            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Default</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Nein</span>
+                            {% endif %}
+                        </td>
                         <td>{{ group.users.count() }}</td>
                         <td>{% for m in group.speech_models %}<span class="badge bg-secondary me-1">{{ m.display_name }}</span>{% endfor %}</td>
                         <td>{% for m in group.text_models %}<span class="badge bg-secondary me-1">{{ m.display_name }}</span>{% endfor %}</td>
@@ -171,7 +178,7 @@
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="modal-header"><h5 class="modal-title">Neuer Benutzer</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
                 <div class="modal-body">
-                    <div class="mb-3"><label class="form-label">Benutzername</label><input type="text" class="form-control" name="username" required></div>
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" required></div>
                     <div class="mb-3"><label class="form-label">E-Mail</label><input type="email" class="form-control" name="email" required></div>
                     <div class="mb-3"><label class="form-label">Passwort</label><input type="password" class="form-control" name="password" required></div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_admin" id="newUserAdmin"><label class="form-check-label" for="newUserAdmin">Administrator</label></div>
@@ -189,8 +196,9 @@
         <div class="modal-content">
             <form method="POST" action="{{ url_for('admin.update_user', user_id=user.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="modal-header"><h5 class="modal-title">Benutzer bearbeiten: {{ user.username }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-header"><h5 class="modal-title">Benutzer bearbeiten: {{ user.display_name }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
                 <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" value="{{ user.display_name }}" required></div>
                     <div class="mb-3"><label class="form-label">E-Mail</label><input type="email" class="form-control" name="email" value="{{ user.email }}" required></div>
                     <div class="mb-3"><label class="form-label">Neues Passwort (leer = unverändert)</label><input type="password" class="form-control" name="password"></div>
                     <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_admin" {{ 'checked' if user.is_admin }}><label class="form-check-label">Administrator</label></div>
@@ -198,7 +206,7 @@
                     <div class="mb-3">
                         <label class="form-label">Gruppen</label>
                         {% for g in groups %}
-                        <div class="form-check"><input class="form-check-input" type="checkbox" name="group_ids" value="{{ g.id }}" {{ 'checked' if g in user.groups }}><label class="form-check-label">{{ g.name }}</label></div>
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="group_ids" value="{{ g.id }}" {{ 'checked' if g in user.groups }}><label class="form-check-label">{{ g.name }}{% if g.is_default %} <span class="badge bg-success badge-sm">Default</span>{% endif %}</label></div>
                         {% endfor %}
                     </div>
                 </div>
@@ -219,6 +227,7 @@
                 <div class="modal-body">
                     <div class="mb-3"><label class="form-label">Name</label><input type="text" class="form-control" name="name" required></div>
                     <div class="mb-3"><label class="form-label">Beschreibung</label><input type="text" class="form-control" name="description"></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="is_default" id="newGroupDefault"><label class="form-check-label" for="newGroupDefault">Als Default-Gruppe festlegen <small class="text-muted">(neue Benutzer werden automatisch zugewiesen)</small></label></div>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
                         {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}"><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
@@ -245,6 +254,7 @@
                 <div class="modal-body">
                     <div class="mb-3"><label class="form-label">Name</label><input type="text" class="form-control" name="name" value="{{ group.name }}" required></div>
                     <div class="mb-3"><label class="form-label">Beschreibung</label><input type="text" class="form-control" name="description" value="{{ group.description or '' }}"></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="is_default" {{ 'checked' if group.is_default }}><label class="form-check-label">Als Default-Gruppe festlegen <small class="text-muted">(neue Benutzer werden automatisch zugewiesen)</small></label></div>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
                         {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}" {{ 'checked' if m in group.speech_models }}><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}

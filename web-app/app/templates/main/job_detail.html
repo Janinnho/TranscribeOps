@@ -1,0 +1,404 @@
+{% extends "base.html" %}
+{% block title %}{{ job.title or 'Job' }} - TranscribeOps{% endblock %}
+{% block page_title %}
+<a href="{{ back_url }}" class="text-decoration-none text-muted me-2"><i class="bi bi-arrow-left"></i></a>
+{{ job.title or 'Job' }}
+{% endblock %}
+
+{% block content %}
+<div class="row g-4">
+    <!-- Left: Transkription -->
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-file-text me-2"></i>
+                        {% if job.job_type == 'meeting' %}Meeting-Transkript
+                        {% elif job.job_type == 'dictation' %}Diktat
+                        {% else %}Transkript{% endif %}
+                    </h5>
+                    <div class="d-flex align-items-center gap-2">
+                        <small class="text-muted">{{ job.created_at.strftime('%d.%m.%Y %H:%M') }}</small>
+                        <span id="statusBadge"></span>
+                    </div>
+                </div>
+
+                <!-- Processing state -->
+                <div id="processingState" class="d-none">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
+                            <span class="visually-hidden">Laden...</span>
+                        </div>
+                        <p class="text-muted mb-3" id="processingLabel">Transkription wird verarbeitet...</p>
+                        <div class="progress mx-auto" style="max-width: 300px; height: 4px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width: 100%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error state -->
+                <div id="errorState" class="d-none">
+                    <div class="alert alert-danger mb-0">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Fehler:</strong> <span id="errorMessage"></span>
+                    </div>
+                </div>
+
+                <!-- Diarized speaker edit -->
+                <div id="speakerEditSection" class="d-none mb-3">
+                    <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
+                        <small class="text-muted fw-medium">Sprecher umbenennen:</small>
+                        <div id="speakerInputs" class="d-flex gap-2 flex-wrap"></div>
+                        <button class="btn btn-sm btn-outline-success" onclick="saveSpeakerNames()">
+                            <i class="bi bi-check-lg me-1"></i>Anwenden
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Diarized view -->
+                <div id="diarizedView" class="d-none p-3 bg-body-secondary rounded" style="max-height: 600px; overflow-y: auto;"></div>
+
+                <!-- Plain text view -->
+                <div id="resultText" class="d-none p-3 bg-body-secondary rounded" style="white-space: pre-wrap; max-height: 600px; overflow-y: auto;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Tools & Zusammenfassung -->
+    <div class="col-lg-5">
+        <!-- Actions -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body p-4">
+                <h6 class="card-title mb-3"><i class="bi bi-tools me-2"></i>Aktionen</h6>
+                <div class="d-flex flex-wrap gap-2" id="actionButtons">
+                    <button class="btn btn-outline-secondary btn-sm" onclick="copyResult()" id="copyBtn" disabled>
+                        <i class="bi bi-clipboard me-1"></i>Text kopieren
+                    </button>
+                    <a class="btn btn-outline-secondary btn-sm" id="downloadBtn" href="/api/job/{{ job.public_id }}/download" style="pointer-events: none; opacity: 0.5;">
+                        <i class="bi bi-download me-1"></i>Download
+                    </a>
+                    <div class="btn-group" id="summarizeGroup">
+                        <button class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" disabled id="summarizeBtn">
+                            <i class="bi bi-magic me-1"></i>Zusammenfassen
+                        </button>
+                        <ul class="dropdown-menu">
+                            {% for m in text_models %}
+                            <li><a class="dropdown-item" href="#" onclick="summarizeJob({{ m.id }})">{{ m.display_name }}</a></li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Zusammenfassung -->
+        <div class="card border-0 shadow-sm" id="summaryCard">
+            <div class="card-body p-4">
+                <h6 class="card-title mb-3"><i class="bi bi-lightning me-2"></i>Zusammenfassung</h6>
+
+                <!-- Summary processing -->
+                <div id="summaryProcessing" class="d-none">
+                    <div class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+                        <span class="text-muted">Zusammenfassung wird generiert...</span>
+                        <div class="progress mt-3" style="height: 3px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" style="width: 100%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Summary error -->
+                <div id="summaryError" class="d-none">
+                    <div class="alert alert-danger alert-sm mb-0">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <span id="summaryErrorText"></span>
+                    </div>
+                </div>
+
+                <!-- Summary content (rendered markdown) -->
+                <div id="summaryContent" class="d-none">
+                    <div id="summaryRendered" class="markdown-content bg-body-secondary rounded p-3" style="max-height: 500px; overflow-y: auto;"></div>
+                    <div class="mt-2 text-end">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="copySummary()">
+                            <i class="bi bi-clipboard me-1"></i>Kopieren
+                        </button>
+                    </div>
+                </div>
+
+                <!-- No summary yet -->
+                <div id="summaryEmpty">
+                    <p class="text-muted mb-0 text-center py-2">
+                        <i class="bi bi-info-circle me-1"></i>Noch keine Zusammenfassung erstellt.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Job Info -->
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-body p-4">
+                <h6 class="card-title mb-3"><i class="bi bi-info-circle me-2"></i>Details</h6>
+                <table class="table table-sm table-borderless mb-0">
+                    <tr><td class="text-muted" style="width:40%">Typ</td><td>
+                        {% if job.job_type == 'transcription' %}Transkription
+                        {% elif job.job_type == 'meeting' %}Meeting
+                        {% elif job.job_type == 'dictation' %}Diktat
+                        {% else %}{{ job.job_type }}{% endif %}
+                    </td></tr>
+                    {% if job.original_filename %}
+                    <tr><td class="text-muted">Datei</td><td class="text-break">{{ job.original_filename }}</td></tr>
+                    {% endif %}
+                    {% if job.speech_model %}
+                    <tr><td class="text-muted">Modell</td><td>{{ job.speech_model.display_name }}</td></tr>
+                    {% endif %}
+                    {% if job.language %}
+                    <tr><td class="text-muted">Sprache</td><td>{{ job.language }}</td></tr>
+                    {% endif %}
+                    {% if job.multi_speaker %}
+                    <tr><td class="text-muted">Modus</td><td>Mehrere Sprecher</td></tr>
+                    {% endif %}
+                    <tr><td class="text-muted">Erstellt</td><td>{{ job.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</td></tr>
+                    {% if job.completed_at %}
+                    <tr><td class="text-muted">Fertig</td><td>{{ job.completed_at.strftime('%d.%m.%Y %H:%M:%S') }}</td></tr>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const JOB_ID = '{{ job.public_id }}';
+let jobData = null;
+let pollingInterval = null;
+
+// Speaker color palette
+const speakerColors = ['#4a90d9', '#e67e22', '#27ae60', '#e74c3c', '#9b59b6', '#1abc9c', '#f39c12', '#2c3e50'];
+function getSpeakerColor(idx) { return speakerColors[idx % speakerColors.length]; }
+
+function fmtTime(sec) {
+    const m = Math.floor(sec / 60).toString().padStart(2, '0');
+    const s = Math.floor(sec % 60).toString().padStart(2, '0');
+    return m + ':' + s;
+}
+
+function updateStatusBadge(status) {
+    const badge = document.getElementById('statusBadge');
+    const map = {
+        'pending': '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Wartend</span>',
+        'processing': '<span class="badge bg-info"><span class="spinner-grow spinner-grow-sm me-1"></span>Verarbeite</span>',
+        'completed': '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Fertig</span>',
+        'failed': '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Fehler</span>'
+    };
+    badge.innerHTML = map[status] || `<span class="badge bg-secondary">${status}</span>`;
+}
+
+function renderJob(job) {
+    jobData = job;
+    updateStatusBadge(job.status);
+
+    const processing = document.getElementById('processingState');
+    const error = document.getElementById('errorState');
+    const diarized = document.getElementById('diarizedView');
+    const resultText = document.getElementById('resultText');
+    const speakerEdit = document.getElementById('speakerEditSection');
+
+    // Hide all content areas first
+    processing.classList.add('d-none');
+    error.classList.add('d-none');
+    diarized.classList.add('d-none');
+    resultText.classList.add('d-none');
+    speakerEdit.classList.add('d-none');
+
+    if (job.status === 'pending' || job.status === 'processing') {
+        processing.classList.remove('d-none');
+        document.getElementById('processingLabel').textContent =
+            job.status === 'pending' ? 'Job wartet auf Verarbeitung...' : 'Transkription wird verarbeitet...';
+        disableActions();
+    } else if (job.status === 'failed') {
+        error.classList.remove('d-none');
+        document.getElementById('errorMessage').textContent = job.error_message || 'Unbekannter Fehler';
+        disableActions();
+    } else if (job.status === 'completed') {
+        enableActions();
+
+        if (job.diarized_segments && job.diarized_segments.length > 0) {
+            diarized.classList.remove('d-none');
+            renderDiarized(job.diarized_segments);
+            showSpeakerEditor(job.diarized_segments);
+        } else {
+            resultText.classList.remove('d-none');
+            resultText.textContent = job.result_text || '';
+        }
+    }
+
+    // Summary section
+    renderSummary(job);
+
+    // Decide if polling is needed
+    const needsPolling = (job.status === 'pending' || job.status === 'processing' || job.summary_status === 'processing');
+    if (needsPolling && !pollingInterval) {
+        pollingInterval = setInterval(refreshJob, 3000);
+    } else if (!needsPolling && pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+}
+
+function renderSummary(job) {
+    const processingEl = document.getElementById('summaryProcessing');
+    const errorEl = document.getElementById('summaryError');
+    const contentEl = document.getElementById('summaryContent');
+    const emptyEl = document.getElementById('summaryEmpty');
+
+    processingEl.classList.add('d-none');
+    errorEl.classList.add('d-none');
+    contentEl.classList.add('d-none');
+    emptyEl.classList.add('d-none');
+
+    if (job.summary_status === 'processing') {
+        processingEl.classList.remove('d-none');
+    } else if (job.summary_status === 'failed' && job.summary_text && job.summary_text.startsWith('Fehler:')) {
+        errorEl.classList.remove('d-none');
+        document.getElementById('summaryErrorText').textContent = job.summary_text;
+    } else if (job.summary_text) {
+        contentEl.classList.remove('d-none');
+        // Render Markdown
+        if (typeof marked !== 'undefined') {
+            document.getElementById('summaryRendered').innerHTML = marked.parse(job.summary_text);
+        } else {
+            document.getElementById('summaryRendered').textContent = job.summary_text;
+        }
+    } else {
+        emptyEl.classList.remove('d-none');
+    }
+}
+
+function enableActions() {
+    document.getElementById('copyBtn').disabled = false;
+    document.getElementById('summarizeBtn').disabled = false;
+    const dl = document.getElementById('downloadBtn');
+    dl.style.pointerEvents = '';
+    dl.style.opacity = '';
+}
+
+function disableActions() {
+    document.getElementById('copyBtn').disabled = true;
+    document.getElementById('summarizeBtn').disabled = true;
+    const dl = document.getElementById('downloadBtn');
+    dl.style.pointerEvents = 'none';
+    dl.style.opacity = '0.5';
+}
+
+function renderDiarized(segments) {
+    const container = document.getElementById('diarizedView');
+    const speakers = [...new Set(segments.map(s => s.speaker))];
+    container.innerHTML = segments.map(seg => {
+        const idx = speakers.indexOf(seg.speaker);
+        const color = getSpeakerColor(idx);
+        const ts = fmtTime(seg.start) + ' - ' + fmtTime(seg.end);
+        return `<div class="mb-2 pb-2 border-bottom border-opacity-25">
+            <div class="d-flex align-items-center gap-2 mb-1">
+                <span class="badge" style="background:${color}">${escapeHtml(seg.speaker)}</span>
+                <small class="text-muted">${ts}</small>
+            </div>
+            <div class="ps-1">${escapeHtml(seg.text.trim())}</div>
+        </div>`;
+    }).join('');
+}
+
+function showSpeakerEditor(segments) {
+    const speakers = [...new Set(segments.map(s => s.speaker))];
+    const container = document.getElementById('speakerInputs');
+    container.innerHTML = speakers.map((sp, idx) => {
+        const color = getSpeakerColor(idx);
+        return `<div class="input-group input-group-sm" style="width:auto">
+            <span class="input-group-text" style="background:${color};color:#fff;border-color:${color}">${escapeHtml(sp)}</span>
+            <input type="text" class="form-control" data-original="${escapeHtml(sp)}" placeholder="Neuer Name" style="width:100px">
+        </div>`;
+    }).join('');
+    document.getElementById('speakerEditSection').classList.remove('d-none');
+}
+
+async function saveSpeakerNames() {
+    const inputs = document.querySelectorAll('#speakerInputs input');
+    const renames = {};
+    inputs.forEach(inp => {
+        const newName = inp.value.trim();
+        if (newName && newName !== inp.dataset.original) {
+            renames[inp.dataset.original] = newName;
+        }
+    });
+    if (!Object.keys(renames).length) return;
+
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    const resp = await fetch(`/api/job/${JOB_ID}/speakers`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+        body: JSON.stringify({renames})
+    });
+    const job = await resp.json();
+    renderJob(job);
+}
+
+function copyResult() {
+    let text;
+    if (jobData && jobData.diarized_segments && jobData.diarized_segments.length) {
+        text = jobData.diarized_segments.map(s => `[${s.speaker}]: ${s.text.trim()}`).join('\n');
+    } else {
+        text = jobData ? (jobData.result_text || '') : '';
+    }
+    navigator.clipboard.writeText(text);
+    showToast('Text kopiert!');
+}
+
+function copySummary() {
+    if (jobData && jobData.summary_text) {
+        navigator.clipboard.writeText(jobData.summary_text);
+        showToast('Zusammenfassung kopiert!');
+    }
+}
+
+function showToast(msg) {
+    // Quick inline toast
+    const toast = document.createElement('div');
+    toast.className = 'position-fixed bottom-0 end-0 m-3 p-2 px-3 bg-success text-white rounded shadow';
+    toast.style.zIndex = '9999';
+    toast.innerHTML = `<i class="bi bi-check-circle me-1"></i>${msg}`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2000);
+}
+
+async function summarizeJob(textModelId) {
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    await fetch(`/api/summarize/${JOB_ID}`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+        body: JSON.stringify({text_model_id: textModelId})
+    });
+    // Immediately show processing state
+    renderSummary({summary_status: 'processing', summary_text: null});
+    // Start polling if not already
+    if (!pollingInterval) {
+        pollingInterval = setInterval(refreshJob, 3000);
+    }
+}
+
+async function refreshJob() {
+    try {
+        const resp = await fetch(`/api/job/${JOB_ID}`);
+        const job = await resp.json();
+        renderJob(job);
+    } catch (err) {
+        console.error('Failed to refresh job:', err);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    refreshJob();
+});
+</script>
+{% endblock %}

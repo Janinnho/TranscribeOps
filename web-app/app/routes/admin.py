@@ -36,24 +36,31 @@ def dashboard():
 @admin_required
 def create_user():
     data = request.form
-    username = data.get('username', '').strip()
+    display_name = data.get('display_name', '').strip()
     email = data.get('email', '').strip()
     password = data.get('password', '')
     is_admin = data.get('is_admin') == 'on'
 
-    if not username or not email or not password:
+    if not display_name or not email or not password:
         flash('Alle Felder sind erforderlich.', 'danger')
         return redirect(url_for('admin.dashboard'))
 
-    if User.query.filter((User.username == username) | (User.email == email)).first():
-        flash('Benutzername oder E-Mail existiert bereits.', 'danger')
+    if User.query.filter_by(email=email).first():
+        flash('E-Mail-Adresse existiert bereits.', 'danger')
         return redirect(url_for('admin.dashboard'))
 
-    user = User(username=username, email=email, is_admin=is_admin)
+    user = User(display_name=display_name, email=email, is_admin=is_admin)
     user.set_password(password)
     db.session.add(user)
+    db.session.flush()  # get user.id before committing
+
+    # Auto-assign to default groups
+    default_groups = Group.query.filter_by(is_default=True).all()
+    for g in default_groups:
+        user.groups.append(g)
+
     db.session.commit()
-    flash(f'Benutzer "{username}" erstellt.', 'success')
+    flash(f'Benutzer "{display_name}" erstellt.', 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -65,6 +72,7 @@ def update_user(user_id):
         flash('Benutzer nicht gefunden.', 'danger')
         return redirect(url_for('admin.dashboard'))
 
+    user.display_name = request.form.get('display_name', user.display_name).strip()
     user.email = request.form.get('email', user.email).strip()
     user.is_admin = request.form.get('is_admin') == 'on'
     user.is_active_user = request.form.get('is_active_user') == 'on'
@@ -76,7 +84,7 @@ def update_user(user_id):
     user.groups = Group.query.filter(Group.id.in_(group_ids)).all() if group_ids else []
 
     db.session.commit()
-    flash(f'Benutzer "{user.username}" aktualisiert.', 'success')
+    flash(f'Benutzer "{user.display_name}" aktualisiert.', 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -103,11 +111,16 @@ def delete_user(user_id):
 def create_group():
     name = request.form.get('name', '').strip()
     description = request.form.get('description', '').strip()
+    is_default = request.form.get('is_default') == 'on'
     if not name:
         flash('Gruppenname erforderlich.', 'danger')
         return redirect(url_for('admin.dashboard'))
 
-    group = Group(name=name, description=description)
+    # If setting as default, unset other defaults
+    if is_default:
+        Group.query.filter_by(is_default=True).update({'is_default': False})
+
+    group = Group(name=name, description=description, is_default=is_default)
 
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)
@@ -130,6 +143,12 @@ def update_group(group_id):
 
     group.name = request.form.get('name', group.name).strip()
     group.description = request.form.get('description', '').strip()
+    is_default = request.form.get('is_default') == 'on'
+
+    # If setting as default, unset other defaults
+    if is_default and not group.is_default:
+        Group.query.filter(Group.id != group.id, Group.is_default == True).update({'is_default': False})
+    group.is_default = is_default
 
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)

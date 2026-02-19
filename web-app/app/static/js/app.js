@@ -132,27 +132,26 @@ async function loadJobs(jobType) {
             return;
         }
 
-        // Detect newly completed jobs and auto-show result
+        // Detect newly completed jobs and navigate to detail page
         for (const job of jobs) {
             const prevStatus = _prevJobStates[job.id];
             if (prevStatus && prevStatus !== 'completed' && job.status === 'completed') {
-                if (typeof showResult === 'function') {
-                    showResult(job);
-                }
+                window.location.href = '/job/' + job.id;
+                return;
             }
             _prevJobStates[job.id] = job.status;
         }
 
         container.innerHTML = jobs.map(job => `
-            <div class="job-item ${job.id === (typeof currentJobId !== 'undefined' ? currentJobId : null) ? 'active' : ''}" onclick="selectJob(${job.id}, '${jobType}')">
+            <div class="job-item ${job.id === (typeof currentJobId !== 'undefined' ? currentJobId : null) ? 'active' : ''}" onclick="selectJob('${job.id}', '${jobType}')">
                 <div class="d-flex justify-content-between align-items-start">
                     <div class="flex-grow-1">
-                        <div class="fw-medium text-truncate" style="max-width: 250px;">${escapeHtml(job.title || 'Job #' + job.id)}</div>
+                        <div class="fw-medium text-truncate" style="max-width: 250px;">${escapeHtml(job.title || 'Job')}</div>
                         <small class="text-muted">${job.created_at}</small>
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         ${statusBadge(job.status)}
-                        <button class="btn btn-sm btn-link text-danger p-0" onclick="event.stopPropagation(); deleteJob(${job.id}, '${jobType}')" title="Löschen">
+                        <button class="btn btn-sm btn-link text-danger p-0" onclick="event.stopPropagation(); deleteJob('${job.id}', '${jobType}')" title="Löschen">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
@@ -166,16 +165,8 @@ async function loadJobs(jobType) {
     }
 }
 
-async function selectJob(jobId, jobType) {
-    try {
-        const resp = await fetch(`/api/job/${jobId}`);
-        const job = await resp.json();
-        if (typeof showResult === 'function') {
-            showResult(job);
-        }
-    } catch (err) {
-        console.error('Failed to load job:', err);
-    }
+function selectJob(jobId, jobType) {
+    window.location.href = '/job/' + jobId;
 }
 
 async function deleteJob(jobId, jobType) {

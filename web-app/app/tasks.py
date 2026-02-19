@@ -99,12 +99,17 @@ def process_summary(self, job_id, text_model_id):
         if not job or not text_model:
             return {'error': 'Job or model not found'}
 
+        job.summary_status = 'processing'
+        db.session.commit()
+
         try:
             prompt = f"Fasse den folgenden Text zusammen. Gib eine strukturierte Zusammenfassung:\n\n{job.result_text}"
             result = _call_text_api(text_model, prompt)
             job.summary_text = result
+            job.summary_status = 'completed'
         except Exception as e:
             job.summary_text = f"Fehler: {str(e)}"
+            job.summary_status = 'failed'
 
         db.session.commit()
         return {'status': 'done', 'job_id': job_id}
