@@ -41,15 +41,21 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-    def get_available_speech_models(self):
+    def get_available_speech_models(self, mode=None):
         if self.is_admin:
-            return SpeechModel.query.filter_by(is_active=True).all()
-        models = set()
-        for group in self.groups:
-            for model in group.speech_models:
-                if model.is_active:
-                    models.add(model)
-        return list(models)
+            q = SpeechModel.query.filter_by(is_active=True)
+        else:
+            model_ids = set()
+            for group in self.groups:
+                for model in group.speech_models:
+                    if model.is_active:
+                        model_ids.add(model.id)
+            q = SpeechModel.query.filter(SpeechModel.id.in_(model_ids)) if model_ids else SpeechModel.query.filter(False)
+        if mode == 'single':
+            q = q.filter(SpeechModel.speaker_mode.in_(['single', 'both']))
+        elif mode == 'multi':
+            q = q.filter(SpeechModel.speaker_mode.in_(['multi', 'both']))
+        return q.all()
 
     def get_available_text_models(self):
         if self.is_admin:
@@ -86,6 +92,7 @@ class SpeechModel(db.Model):
     model_id = db.Column(db.String(100))
     azure_deployment = db.Column(db.String(100))
     azure_api_version = db.Column(db.String(50))
+    speaker_mode = db.Column(db.String(10), default='single')  # single, multi, both
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -120,6 +127,7 @@ class Job(db.Model):
     multi_speaker = db.Column(db.Boolean, default=False)
     input_text = db.Column(db.Text)
     result_text = db.Column(db.Text)
+    diarized_segments = db.Column(db.Text)  # JSON: [{speaker, text, start, end}, ...]
     summary_text = db.Column(db.Text)
     tool_action = db.Column(db.String(30))  # rewrite, grammar, translate
     target_language = db.Column(db.String(50))

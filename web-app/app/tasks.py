@@ -10,6 +10,10 @@ def get_app():
     return create_app()
 
 
+def _is_diarize_model(model):
+    return 'diarize' in (model.model_id or '').lower()
+
+
 @celery.task(bind=True)
 def process_transcription(self, job_id):
     app = get_app()
@@ -30,9 +34,16 @@ def process_transcription(self, job_id):
             if not speech_model:
                 raise Exception('Kein Sprachmodell konfiguriert')
 
-            result_text = _call_speech_api(speech_model, job.file_path, job.language, job.multi_speaker,
-                                                     original_filename=job.original_filename)
-            job.result_text = result_text
+            result = _call_speech_api(speech_model, job.file_path, job.language,
+                                      job.multi_speaker, original_filename=job.original_filename)
+
+            if isinstance(result, dict) and 'segments' in result:
+                # Diarized result
+                job.result_text = result.get('text', '')
+                job.diarized_segments = json.dumps(result['segments'], ensure_ascii=False)
+            else:
+                job.result_text = result if isinstance(result, str) else result.get('text', str(result))
+
             job.status = 'completed'
             job.completed_at = datetime.now(timezone.utc)
         except Exception as e:
@@ -117,11 +128,16 @@ MIME_TYPES = {
 }
 
 
-def _whisper_local(model, file_path, language=None, original_filename=None):
-    url = model.endpoint_url
+def _get_file_info(file_path, original_filename):
     filename = original_filename or os.path.basename(file_path)
     ext = os.path.splitext(filename)[1].lower()
     mime = MIME_TYPES.get(ext, 'application/octet-stream')
+    return filename, mime
+
+
+def _whisper_local(model, file_path, language=None, original_filename=None):
+    url = model.endpoint_url
+    filename, mime = _get_file_info(file_path, original_filename)
     with open(file_path, 'rb') as f:
         files = {'file': (filename, f, mime)}
         data = {'model': model.model_id or 'whisper-1'}
@@ -143,17 +159,23 @@ def _whisper_local(model, file_path, language=None, original_filename=None):
 
 def _openai_speech(model, file_path, language=None, original_filename=None):
     url = 'https://api.openai.com/v1/audio/transcriptions'
-    filename = original_filename or os.path.basename(file_path)
-    ext = os.path.splitext(filename)[1].lower()
-    mime = MIME_TYPES.get(ext, 'application/octet-stream')
+    filename, mime = _get_file_info(file_path, original_filename)
+    diarize = _is_diarize_model(model)
+
     with open(file_path, 'rb') as f:
         files = {'file': (filename, f, mime)}
         data = {'model': model.model_id or 'whisper-1'}
         if language:
             data['language'] = language
+        if diarize:
+            data['response_format'] = 'diarized_json'
+            data['chunking_strategy'] = 'auto'
         headers = {'Authorization': f'Bearer {model.api_key}'}
         resp = requests.post(url, files=files, data=data, headers=headers, timeout=600)
     resp.raise_for_status()
+
+    if diarize:
+        return _parse_diarized_response(resp)
     result = resp.json()
     return result.get('text', json.dumps(result))
 
@@ -162,19 +184,73 @@ def _azure_speech(model, file_path, language=None, original_filename=None):
     api_version = model.azure_api_version or '2024-06-01'
     deployment = model.azure_deployment or model.model_id
     url = f"{model.endpoint_url}/openai/deployments/{deployment}/audio/transcriptions?api-version={api_version}"
-    filename = original_filename or os.path.basename(file_path)
-    ext = os.path.splitext(filename)[1].lower()
-    mime = MIME_TYPES.get(ext, 'application/octet-stream')
+    filename, mime = _get_file_info(file_path, original_filename)
+    diarize = _is_diarize_model(model)
+
     with open(file_path, 'rb') as f:
         files = {'file': (filename, f, mime)}
         data = {}
         if language:
             data['language'] = language
+        if diarize:
+            data['response_format'] = 'diarized_json'
+            data['chunking_strategy'] = 'auto'
         headers = {'api-key': model.api_key}
         resp = requests.post(url, files=files, data=data, headers=headers, timeout=600)
     resp.raise_for_status()
+
+    if diarize:
+        return _parse_diarized_response(resp)
     result = resp.json()
     return result.get('text', json.dumps(result))
+
+
+def _parse_diarized_response(resp):
+    """Parse SSE or JSON diarized response from OpenAI/Azure."""
+    content_type = resp.headers.get('content-type', '')
+    segments = []
+    full_text = ''
+
+    if 'text/event-stream' in content_type or resp.text.strip().startswith('{'):
+        # Could be SSE (newline-delimited JSON) or single JSON
+        for line in resp.text.strip().split('\n'):
+            line = line.strip()
+            if line.startswith('data: '):
+                line = line[6:]
+            if not line or line == '[DONE]':
+                continue
+            try:
+                obj = json.loads(line)
+                if obj.get('type') == 'transcript.text.segment':
+                    segments.append({
+                        'speaker': obj.get('speaker', '?'),
+                        'text': obj.get('text', ''),
+                        'start': obj.get('start', 0),
+                        'end': obj.get('end', 0),
+                    })
+                elif obj.get('type') == 'transcript.text.done':
+                    full_text = obj.get('text', '')
+                elif 'segments' in obj:
+                    # Direct JSON with segments array
+                    for seg in obj['segments']:
+                        segments.append({
+                            'speaker': seg.get('speaker', '?'),
+                            'text': seg.get('text', ''),
+                            'start': seg.get('start', 0),
+                            'end': seg.get('end', 0),
+                        })
+                    full_text = obj.get('text', '')
+                elif 'text' in obj and not segments:
+                    full_text = obj['text']
+            except json.JSONDecodeError:
+                continue
+
+    if not full_text and segments:
+        full_text = ' '.join(s['text'].strip() for s in segments)
+
+    if segments:
+        return {'text': full_text, 'segments': segments}
+    return full_text or resp.text
 
 
 def _build_text_prompt(action, text, target_language=None):

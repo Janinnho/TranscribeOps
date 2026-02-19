@@ -45,9 +45,28 @@ def create_app(config_class=Config):
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         os.makedirs(os.path.dirname(app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')), exist_ok=True)
         db.create_all()
+        _apply_migrations()
         _seed_defaults(app)
 
     return app
+
+
+def _apply_migrations():
+    """Add missing columns to existing tables (lightweight auto-migration)."""
+    from sqlalchemy import text, inspect
+    inspector = inspect(db.engine)
+
+    def _has_column(table, column):
+        cols = [c['name'] for c in inspector.get_columns(table)]
+        return column in cols
+
+    with db.engine.connect() as conn:
+        if not _has_column('speech_models', 'speaker_mode'):
+            conn.execute(text("ALTER TABLE speech_models ADD COLUMN speaker_mode VARCHAR(10) DEFAULT 'single'"))
+            conn.commit()
+        if not _has_column('jobs', 'diarized_segments'):
+            conn.execute(text("ALTER TABLE jobs ADD COLUMN diarized_segments TEXT"))
+            conn.commit()
 
 
 def _seed_defaults(app):
@@ -64,6 +83,7 @@ def _seed_defaults(app):
             provider='whisper_local',
             endpoint_url='http://whisper:8080/v1/audio/transcriptions',
             model_id='whisper-1',
+            speaker_mode='both',
             is_active=True
         )
         db.session.add(default_speech)

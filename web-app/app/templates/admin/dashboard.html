@@ -102,7 +102,7 @@
         <div class="card border-0 shadow-sm">
             <div class="table-responsive">
                 <table class="table table-hover mb-0">
-                    <thead><tr><th>Name</th><th>Anzeigename</th><th>Provider</th><th>Modell-ID</th><th>Aktiv</th><th>Aktionen</th></tr></thead>
+                    <thead><tr><th>Name</th><th>Anzeigename</th><th>Provider</th><th>Modell-ID</th><th>Modus</th><th>Aktiv</th><th>Aktionen</th></tr></thead>
                     <tbody>
                     {% for m in speech_models %}
                     <tr>
@@ -110,6 +110,7 @@
                         <td>{{ m.display_name }}</td>
                         <td><span class="badge bg-info">{{ m.provider }}</span></td>
                         <td><code>{{ m.model_id }}</code></td>
+                        <td><span class="badge bg-secondary">{{ {'single':'Einzel','multi':'Multi','both':'Beides'}.get(m.speaker_mode, m.speaker_mode) }}</span></td>
                         <td><span class="badge {{ 'bg-success' if m.is_active else 'bg-danger' }}">{{ 'Ja' if m.is_active else 'Nein' }}</span></td>
                         <td>
                             <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editSpeech{{ m.id }}"><i class="bi bi-pencil"></i></button>
@@ -283,6 +284,15 @@
                     <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="whisper-1"></div>
                     <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment"></div>
                     <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" placeholder="2024-06-01"></div>
+                    <div class="mb-3">
+                        <label class="form-label">Sprecher-Modus</label>
+                        <select class="form-select" name="speaker_mode">
+                            <option value="single">Einzelperson</option>
+                            <option value="multi">Mehrere Personen</option>
+                            <option value="both">Beides</option>
+                        </select>
+                        <small class="text-muted">Bestimmt, wo dieses Modell auswählbar ist.</small>
+                    </div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
@@ -315,6 +325,14 @@
                     <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="{{ m.model_id or '' }}"></div>
                     <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment" value="{{ m.azure_deployment or '' }}"></div>
                     <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" value="{{ m.azure_api_version or '' }}"></div>
+                    <div class="mb-3">
+                        <label class="form-label">Sprecher-Modus</label>
+                        <select class="form-select" name="speaker_mode">
+                            <option value="single" {{ 'selected' if m.speaker_mode == 'single' }}>Einzelperson</option>
+                            <option value="multi" {{ 'selected' if m.speaker_mode == 'multi' }}>Mehrere Personen</option>
+                            <option value="both" {{ 'selected' if m.speaker_mode == 'both' }}>Beides</option>
+                        </select>
+                    </div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>

@@ -12,6 +12,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
+// Track previous job states for auto-display on completion
+let _prevJobStates = {};
+
 // File upload initialization
 function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId, fileSizeId,
                     removeFileId, uploadBtnId, progressId, jobType) {
@@ -27,10 +30,8 @@ function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId,
 
     if (!form || !fileInput || !dropZone) return;
 
-    // Click to select
     dropZone.addEventListener('click', () => fileInput.click());
 
-    // Drag & drop
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
     dropZone.addEventListener('drop', (e) => {
@@ -112,7 +113,7 @@ function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId,
     });
 }
 
-// Load jobs for a specific type
+// Load jobs for a specific type - with auto-show on completion
 async function loadJobs(jobType) {
     const container = document.getElementById('jobList');
     if (!container) return;
@@ -127,11 +128,23 @@ async function loadJobs(jobType) {
                     <i class="bi bi-inbox display-6"></i>
                     <p class="mt-2">Noch keine Einträge</p>
                 </div>`;
+            _prevJobStates = {};
             return;
         }
 
+        // Detect newly completed jobs and auto-show result
+        for (const job of jobs) {
+            const prevStatus = _prevJobStates[job.id];
+            if (prevStatus && prevStatus !== 'completed' && job.status === 'completed') {
+                if (typeof showResult === 'function') {
+                    showResult(job);
+                }
+            }
+            _prevJobStates[job.id] = job.status;
+        }
+
         container.innerHTML = jobs.map(job => `
-            <div class="job-item" onclick="selectJob(${job.id}, '${jobType}')">
+            <div class="job-item ${job.id === (typeof currentJobId !== 'undefined' ? currentJobId : null) ? 'active' : ''}" onclick="selectJob(${job.id}, '${jobType}')">
                 <div class="d-flex justify-content-between align-items-start">
                     <div class="flex-grow-1">
                         <div class="fw-medium text-truncate" style="max-width: 250px;">${escapeHtml(job.title || 'Job #' + job.id)}</div>
@@ -144,6 +157,7 @@ async function loadJobs(jobType) {
                         </button>
                     </div>
                 </div>
+                ${job.status === 'processing' ? '<div class="mt-2"><div class="progress" style="height:3px"><div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:100%"></div></div></div>' : ''}
                 ${job.status === 'failed' ? `<small class="text-danger d-block mt-1">${escapeHtml(job.error_message || 'Fehler')}</small>` : ''}
             </div>
         `).join('');

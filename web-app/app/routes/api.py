@@ -1,7 +1,8 @@
 import os
+import json
 import uuid
 from datetime import datetime, timezone, timedelta
-from flask import Blueprint, request, jsonify, current_app
+from flask import Blueprint, request, jsonify, current_app, Response
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from app import db
@@ -62,7 +63,6 @@ def upload():
 @api_bp.route('/upload-audio', methods=['POST'])
 @login_required
 def upload_audio():
-    """Upload recorded audio (from microphone)."""
     if 'audio' not in request.files:
         return jsonify({'error': 'Keine Audiodaten'}), 400
 
@@ -70,6 +70,7 @@ def upload_audio():
     job_type = request.form.get('job_type', 'dictation')
     speech_model_id = request.form.get('speech_model_id', type=int)
     language = request.form.get('language', '').strip() or None
+    multi_speaker = request.form.get('multi_speaker') == 'true'
 
     ext = 'webm'
     unique_name = f"{uuid.uuid4().hex}_recording.{ext}"
@@ -85,6 +86,7 @@ def upload_audio():
         file_path=filepath,
         speech_model_id=speech_model_id,
         language=language,
+        multi_speaker=multi_speaker,
         status='pending'
     )
     db.session.add(job)
@@ -105,7 +107,7 @@ def text_tool():
 
     action = data.get('action')
     text = data.get('text', '').strip()
-    text_model_id = data.get('text_model_id', type=int) if isinstance(data.get('text_model_id'), int) else data.get('text_model_id')
+    text_model_id = data.get('text_model_id')
     target_language = data.get('target_language', '')
 
     if not text:
@@ -157,6 +159,21 @@ def summarize(job_id):
     return jsonify({'status': 'processing'})
 
 
+def _job_to_dict(j):
+    return {
+        'id': j.id,
+        'title': j.title,
+        'status': j.status,
+        'created_at': j.created_at.strftime('%d.%m.%Y %H:%M'),
+        'result_text': j.result_text,
+        'diarized_segments': json.loads(j.diarized_segments) if j.diarized_segments else None,
+        'summary_text': j.summary_text,
+        'error_message': j.error_message,
+        'tool_action': j.tool_action,
+        'multi_speaker': j.multi_speaker,
+    }
+
+
 @api_bp.route('/jobs/<string:job_type>')
 @login_required
 def get_jobs(job_type):
@@ -169,16 +186,7 @@ def get_jobs(job_type):
         job_type=job_type
     ).filter(Job.created_at >= cutoff).order_by(Job.created_at.desc()).limit(50).all()
 
-    return jsonify([{
-        'id': j.id,
-        'title': j.title,
-        'status': j.status,
-        'created_at': j.created_at.strftime('%d.%m.%Y %H:%M'),
-        'result_text': j.result_text,
-        'summary_text': j.summary_text,
-        'error_message': j.error_message,
-        'tool_action': j.tool_action,
-    } for j in jobs])
+    return jsonify([_job_to_dict(j) for j in jobs])
 
 
 @api_bp.route('/job/<int:job_id>')
@@ -187,17 +195,75 @@ def get_job(job_id):
     job = db.session.get(Job, job_id)
     if not job or job.user_id != current_user.id:
         return jsonify({'error': 'Nicht gefunden'}), 404
+    return jsonify(_job_to_dict(job))
 
-    return jsonify({
-        'id': job.id,
-        'title': job.title,
-        'status': job.status,
-        'created_at': job.created_at.strftime('%d.%m.%Y %H:%M'),
-        'result_text': job.result_text,
-        'summary_text': job.summary_text,
-        'error_message': job.error_message,
-        'tool_action': job.tool_action,
-    })
+
+@api_bp.route('/job/<int:job_id>/speakers', methods=['POST'])
+@login_required
+def update_speakers(job_id):
+    job = db.session.get(Job, job_id)
+    if not job or job.user_id != current_user.id:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    if not job.diarized_segments:
+        return jsonify({'error': 'Keine Sprechersegmente'}), 400
+
+    data = request.get_json()
+    renames = data.get('renames', {})
+    if not renames:
+        return jsonify({'error': 'Keine Umbenennungen'}), 400
+
+    segments = json.loads(job.diarized_segments)
+    for seg in segments:
+        old_name = seg.get('speaker', '')
+        if old_name in renames:
+            seg['speaker'] = renames[old_name]
+
+    job.diarized_segments = json.dumps(segments, ensure_ascii=False)
+
+    lines = []
+    for seg in segments:
+        lines.append(f"[{seg['speaker']}]: {seg['text'].strip()}")
+    job.result_text = '\n'.join(lines)
+
+    db.session.commit()
+    return jsonify(_job_to_dict(job))
+
+
+@api_bp.route('/job/<int:job_id>/download')
+@login_required
+def download_job(job_id):
+    job = db.session.get(Job, job_id)
+    if not job or job.user_id != current_user.id:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+
+    if job.diarized_segments:
+        segments = json.loads(job.diarized_segments)
+        lines = []
+        for seg in segments:
+            ts = f"[{_fmt_time(seg.get('start', 0))} - {_fmt_time(seg.get('end', 0))}]"
+            lines.append(f"{ts} {seg['speaker']}: {seg['text'].strip()}")
+        content = '\n'.join(lines)
+    else:
+        content = job.result_text or ''
+
+    if job.summary_text:
+        content += '\n\n--- Zusammenfassung ---\n' + job.summary_text
+
+    title = job.title or f'job_{job.id}'
+    safe_title = ''.join(c for c in title if c.isalnum() or c in ' _-.')[:50]
+    filename = f"{safe_title}.txt"
+
+    return Response(
+        content,
+        mimetype='text/plain; charset=utf-8',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'}
+    )
+
+
+def _fmt_time(seconds):
+    m = int(seconds // 60)
+    s = int(seconds % 60)
+    return f"{m:02d}:{s:02d}"
 
 
 @api_bp.route('/job/<int:job_id>', methods=['DELETE'])
