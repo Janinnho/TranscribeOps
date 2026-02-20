@@ -61,6 +61,9 @@
 
                 <!-- Plain text view -->
                 <div id="resultText" class="d-none p-3 bg-body-secondary rounded" style="white-space: pre-wrap; max-height: 600px; overflow-y: auto;"></div>
+
+                <!-- Timestamp segment view (non-diarized with timestamps) -->
+                <div id="timestampView" class="d-none p-3 bg-body-secondary rounded" style="max-height: 600px; overflow-y: auto;"></div>
             </div>
         </div>
     </div>
@@ -78,6 +81,9 @@
                     <a class="btn btn-outline-secondary btn-sm" id="downloadBtn" href="/api/job/{{ job.public_id }}/download" style="pointer-events: none; opacity: 0.5;">
                         <i class="bi bi-download me-1"></i>Download
                     </a>
+                    <button class="btn btn-outline-secondary btn-sm d-none" id="toggleTimestampsBtn" onclick="toggleTimestamps()">
+                        <i class="bi bi-clock-history me-1"></i>Zeitstempel
+                    </button>
                     <div class="btn-group" id="summarizeGroup">
                         <button class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" disabled id="summarizeBtn">
                             <i class="bi bi-magic me-1"></i>Zusammenfassen
@@ -174,6 +180,7 @@
 const JOB_ID = '{{ job.public_id }}';
 let jobData = null;
 let pollingInterval = null;
+let timestampActive = false;
 
 // Speaker color palette
 const speakerColors = ['#4a90d9', '#e67e22', '#27ae60', '#e74c3c', '#9b59b6', '#1abc9c', '#f39c12', '#2c3e50'];
@@ -204,14 +211,21 @@ function renderJob(job) {
     const error = document.getElementById('errorState');
     const diarized = document.getElementById('diarizedView');
     const resultText = document.getElementById('resultText');
+    const timestampView = document.getElementById('timestampView');
     const speakerEdit = document.getElementById('speakerEditSection');
+    const tsBtn = document.getElementById('toggleTimestampsBtn');
 
     // Hide all content areas first
     processing.classList.add('d-none');
     error.classList.add('d-none');
     diarized.classList.add('d-none');
     resultText.classList.add('d-none');
+    timestampView.classList.add('d-none');
     speakerEdit.classList.add('d-none');
+    tsBtn.classList.add('d-none');
+    timestampActive = false;
+    tsBtn.classList.remove('btn-secondary');
+    tsBtn.classList.add('btn-outline-secondary');
 
     if (job.status === 'pending' || job.status === 'processing') {
         processing.classList.remove('d-none');
@@ -225,11 +239,19 @@ function renderJob(job) {
     } else if (job.status === 'completed') {
         enableActions();
 
-        if (job.diarized_segments && job.diarized_segments.length > 0) {
+        if (job.diarized_segments && job.diarized_segments.length > 0 && job.has_speakers) {
+            // Case 1: Diarized with speakers — speaker view
             diarized.classList.remove('d-none');
             renderDiarized(job.diarized_segments);
             showSpeakerEditor(job.diarized_segments);
+        } else if (job.diarized_segments && job.diarized_segments.length > 0 && !job.has_speakers) {
+            // Case 2: Segments without speakers (timestamp-only) — plain text + toggle
+            resultText.classList.remove('d-none');
+            resultText.textContent = job.result_text || '';
+            tsBtn.classList.remove('d-none');
+            renderTimestampSegments(job.diarized_segments);
         } else {
+            // Case 3: No segments (old jobs or fallback) — plain text only
             resultText.classList.remove('d-none');
             resultText.textContent = job.result_text || '';
         }
@@ -323,6 +345,39 @@ function showSpeakerEditor(segments) {
     document.getElementById('speakerEditSection').classList.remove('d-none');
 }
 
+function toggleTimestamps() {
+    const resultText = document.getElementById('resultText');
+    const timestampView = document.getElementById('timestampView');
+    const btn = document.getElementById('toggleTimestampsBtn');
+
+    timestampActive = !timestampActive;
+
+    if (timestampActive) {
+        resultText.classList.add('d-none');
+        timestampView.classList.remove('d-none');
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('btn-secondary');
+    } else {
+        resultText.classList.remove('d-none');
+        timestampView.classList.add('d-none');
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-outline-secondary');
+    }
+}
+
+function renderTimestampSegments(segments) {
+    const container = document.getElementById('timestampView');
+    container.innerHTML = segments.map(seg => {
+        const ts = fmtTime(seg.start) + ' - ' + fmtTime(seg.end);
+        return `<div class="mb-2 pb-2 border-bottom border-opacity-25">
+            <div class="d-flex align-items-start gap-3">
+                <small class="text-muted text-nowrap" style="min-width: 90px; font-family: monospace;">[${ts}]</small>
+                <div>${escapeHtml(seg.text.trim())}</div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
 async function saveSpeakerNames() {
     const inputs = document.querySelectorAll('#speakerInputs input');
     const renames = {};
@@ -346,7 +401,13 @@ async function saveSpeakerNames() {
 
 function copyResult() {
     let text;
-    if (jobData && jobData.diarized_segments && jobData.diarized_segments.length) {
+    if (timestampActive && jobData && jobData.diarized_segments && jobData.diarized_segments.length && !jobData.has_speakers) {
+        // Timestamp view active (non-diarized segments)
+        text = jobData.diarized_segments.map(s =>
+            `[${fmtTime(s.start)} - ${fmtTime(s.end)}] ${s.text.trim()}`
+        ).join('\n');
+    } else if (jobData && jobData.diarized_segments && jobData.diarized_segments.length && jobData.has_speakers) {
+        // Diarized with speakers
         text = jobData.diarized_segments.map(s => `[${s.speaker}]: ${s.text.trim()}`).join('\n');
     } else {
         text = jobData ? (jobData.result_text || '') : '';

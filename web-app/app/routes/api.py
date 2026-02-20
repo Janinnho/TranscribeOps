@@ -210,13 +210,16 @@ def summarize(public_id):
 
 
 def _job_to_dict(j):
+    segments = json.loads(j.diarized_segments) if j.diarized_segments else None
+    has_speakers = bool(segments and any('speaker' in seg for seg in segments))
     return {
         'id': j.public_id,
         'title': j.title,
         'status': j.status,
         'created_at': j.created_at.strftime('%d.%m.%Y %H:%M'),
         'result_text': j.result_text,
-        'diarized_segments': json.loads(j.diarized_segments) if j.diarized_segments else None,
+        'diarized_segments': segments,
+        'has_speakers': has_speakers,
         'summary_text': j.summary_text,
         'summary_status': j.summary_status,
         'error_message': j.error_message,
@@ -292,7 +295,10 @@ def download_job(public_id):
         lines = []
         for seg in segments:
             ts = f"[{_fmt_time(seg.get('start', 0))} - {_fmt_time(seg.get('end', 0))}]"
-            lines.append(f"{ts} {seg['speaker']}: {seg['text'].strip()}")
+            if 'speaker' in seg:
+                lines.append(f"{ts} {seg['speaker']}: {seg['text'].strip()}")
+            else:
+                lines.append(f"{ts} {seg['text'].strip()}")
         content = '\n'.join(lines)
     else:
         content = job.result_text or ''

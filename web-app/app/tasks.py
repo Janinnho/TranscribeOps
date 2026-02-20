@@ -162,7 +162,8 @@ def _whisper_local(model, file_path, language=None, original_filename=None, dict
     filename, mime = _get_file_info(file_path, original_filename)
     with open(file_path, 'rb') as f:
         files = {'file': (filename, f, mime)}
-        data = {'model': model.model_id or 'whisper-1'}
+        data = {'model': model.model_id or 'whisper-1',
+                'response_format': 'verbose_json'}
         if language:
             data['language'] = language
         if dictionary_prompt:
@@ -178,24 +179,28 @@ def _whisper_local(model, file_path, language=None, original_filename=None, dict
             err_detail = resp.text[:500]
         raise Exception(f"Whisper API Fehler ({resp.status_code}): {err_detail}")
     result = resp.json()
-    return result.get('text', json.dumps(result))
+    return _parse_verbose_json(result)
 
 
 def _openai_speech(model, file_path, language=None, original_filename=None, dictionary_prompt=None):
     url = 'https://api.openai.com/v1/audio/transcriptions'
     filename, mime = _get_file_info(file_path, original_filename)
     diarize = _is_diarize_model(model)
+    is_whisper = 'whisper' in (model.model_id or '').lower()
 
     with open(file_path, 'rb') as f:
         files = {'file': (filename, f, mime)}
         data = {'model': model.model_id or 'whisper-1'}
         if language:
             data['language'] = language
-        if dictionary_prompt:
+        # prompt (dictionary) is only supported by whisper models
+        if dictionary_prompt and is_whisper:
             data['prompt'] = dictionary_prompt
         if diarize:
             data['response_format'] = 'diarized_json'
             data['chunking_strategy'] = 'auto'
+        elif is_whisper:
+            data['response_format'] = 'verbose_json'
         headers = {'Authorization': f'Bearer {model.api_key}'}
         resp = requests.post(url, files=files, data=data, headers=headers, timeout=600)
     resp.raise_for_status()
@@ -203,7 +208,9 @@ def _openai_speech(model, file_path, language=None, original_filename=None, dict
     if diarize:
         return _parse_diarized_response(resp)
     result = resp.json()
-    return result.get('text', json.dumps(result))
+    if is_whisper:
+        return _parse_verbose_json(result)
+    return result.get('text', str(result))
 
 
 def _azure_speech(model, file_path, language=None, original_filename=None, dictionary_prompt=None):
@@ -212,17 +219,21 @@ def _azure_speech(model, file_path, language=None, original_filename=None, dicti
     url = f"{model.endpoint_url}/openai/deployments/{deployment}/audio/transcriptions?api-version={api_version}"
     filename, mime = _get_file_info(file_path, original_filename)
     diarize = _is_diarize_model(model)
+    is_whisper = 'whisper' in (model.model_id or '').lower()
 
     with open(file_path, 'rb') as f:
         files = {'file': (filename, f, mime)}
         data = {}
         if language:
             data['language'] = language
-        if dictionary_prompt:
+        # prompt (dictionary) is only supported by whisper models
+        if dictionary_prompt and is_whisper:
             data['prompt'] = dictionary_prompt
         if diarize:
             data['response_format'] = 'diarized_json'
             data['chunking_strategy'] = 'auto'
+        elif is_whisper:
+            data['response_format'] = 'verbose_json'
         headers = {'api-key': model.api_key}
         resp = requests.post(url, files=files, data=data, headers=headers, timeout=600)
     resp.raise_for_status()
@@ -230,7 +241,9 @@ def _azure_speech(model, file_path, language=None, original_filename=None, dicti
     if diarize:
         return _parse_diarized_response(resp)
     result = resp.json()
-    return result.get('text', json.dumps(result))
+    if is_whisper:
+        return _parse_verbose_json(result)
+    return result.get('text', str(result))
 
 
 def _parse_diarized_response(resp):
@@ -279,6 +292,21 @@ def _parse_diarized_response(resp):
     if segments:
         return {'text': full_text, 'segments': segments}
     return full_text or resp.text
+
+
+def _parse_verbose_json(result):
+    """Parse verbose_json response into text + timestamp segments (no speaker info)."""
+    text = result.get('text', '')
+    raw_segments = result.get('segments', [])
+    if raw_segments:
+        segments = [{
+            'text': s.get('text', ''),
+            'start': s.get('start', 0),
+            'end': s.get('end', 0),
+        } for s in raw_segments]
+        return {'text': text, 'segments': segments}
+    # Fallback: no segments available
+    return text
 
 
 def _build_text_prompt(action, text, target_language=None):
