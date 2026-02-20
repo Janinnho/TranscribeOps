@@ -72,6 +72,11 @@ class User(UserMixin, db.Model):
                     models.add(model)
         return list(models)
 
+    def has_dictionary_access(self):
+        if self.is_admin:
+            return True
+        return any(g.dictionary_enabled for g in self.groups)
+
 
 class Group(db.Model):
     __tablename__ = 'groups'
@@ -79,6 +84,7 @@ class Group(db.Model):
     name = db.Column(db.String(80), unique=True, nullable=False)
     description = db.Column(db.String(255))
     is_default = db.Column(db.Boolean, default=False)
+    dictionary_enabled = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     speech_models = db.relationship('SpeechModel', secondary=group_speech_models,
@@ -146,3 +152,32 @@ class Job(db.Model):
 
     speech_model = db.relationship('SpeechModel', backref='jobs')
     text_model = db.relationship('TextModel', backref='jobs')
+
+
+class TextTask(db.Model):
+    __tablename__ = 'text_tasks'
+    id = db.Column(db.Integer, primary_key=True)
+    public_id = db.Column(db.String(32), unique=True, nullable=False, default=_gen_uid)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    action = db.Column(db.String(30), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    input_text = db.Column(db.Text, nullable=False)
+    result_text = db.Column(db.Text)
+    target_language = db.Column(db.String(50))
+    text_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'))
+    error_message = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at = db.Column(db.DateTime)
+
+    text_model = db.relationship('TextModel')
+
+
+class DictionaryEntry(db.Model):
+    __tablename__ = 'dictionary_entries'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    word = db.Column(db.String(200), nullable=False)
+    description = db.Column(db.String(500))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = db.relationship('User', backref=db.backref('dictionary_entries', lazy='dynamic'))

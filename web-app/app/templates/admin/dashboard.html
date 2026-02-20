@@ -67,7 +67,7 @@
         <div class="card border-0 shadow-sm">
             <div class="table-responsive">
                 <table class="table table-hover mb-0">
-                    <thead><tr><th>Name</th><th>Beschreibung</th><th>Default</th><th>Benutzer</th><th>Sprachmodelle</th><th>Textmodelle</th><th>Aktionen</th></tr></thead>
+                    <thead><tr><th>Name</th><th>Beschreibung</th><th>Default</th><th>Wörterbuch</th><th>Benutzer</th><th>Sprachmodelle</th><th>Textmodelle</th><th>Aktionen</th></tr></thead>
                     <tbody>
                     {% for group in groups %}
                     <tr>
@@ -76,6 +76,13 @@
                         <td>
                             {% if group.is_default %}
                             <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Default</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Nein</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if group.dictionary_enabled %}
+                            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Ja</span>
                             {% else %}
                             <span class="badge bg-secondary">Nein</span>
                             {% endif %}
@@ -227,7 +234,8 @@
                 <div class="modal-body">
                     <div class="mb-3"><label class="form-label">Name</label><input type="text" class="form-control" name="name" required></div>
                     <div class="mb-3"><label class="form-label">Beschreibung</label><input type="text" class="form-control" name="description"></div>
-                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="is_default" id="newGroupDefault"><label class="form-check-label" for="newGroupDefault">Als Default-Gruppe festlegen <small class="text-muted">(neue Benutzer werden automatisch zugewiesen)</small></label></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_default" id="newGroupDefault"><label class="form-check-label" for="newGroupDefault">Als Default-Gruppe festlegen <small class="text-muted">(neue Benutzer werden automatisch zugewiesen)</small></label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" id="newGroupDict" checked><label class="form-check-label" for="newGroupDict">Wörterbuch aktiviert <small class="text-muted">(Benutzer können eigene Wörterbucheinträge verwalten)</small></label></div>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
                         {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}"><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
@@ -254,7 +262,8 @@
                 <div class="modal-body">
                     <div class="mb-3"><label class="form-label">Name</label><input type="text" class="form-control" name="name" value="{{ group.name }}" required></div>
                     <div class="mb-3"><label class="form-label">Beschreibung</label><input type="text" class="form-control" name="description" value="{{ group.description or '' }}"></div>
-                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="is_default" {{ 'checked' if group.is_default }}><label class="form-check-label">Als Default-Gruppe festlegen <small class="text-muted">(neue Benutzer werden automatisch zugewiesen)</small></label></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_default" {{ 'checked' if group.is_default }}><label class="form-check-label">Als Default-Gruppe festlegen <small class="text-muted">(neue Benutzer werden automatisch zugewiesen)</small></label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" {{ 'checked' if group.dictionary_enabled }}><label class="form-check-label">Wörterbuch aktiviert <small class="text-muted">(Benutzer können eigene Wörterbucheinträge verwalten)</small></label></div>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
                         {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}" {{ 'checked' if m in group.speech_models }}><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}

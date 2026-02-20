@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify, current_app, Response
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from app import db
-from app.models import Job
+from app.models import Job, TextTask, DictionaryEntry
 
 api_bp = Blueprint('api', __name__)
 
@@ -98,9 +98,9 @@ def upload_audio():
     return jsonify({'job_id': job.public_id, 'status': 'pending'})
 
 
-@api_bp.route('/text-tool', methods=['POST'])
+@api_bp.route('/text-task', methods=['POST'])
 @login_required
-def text_tool():
+def create_text_task():
     data = request.get_json()
     if not data:
         return jsonify({'error': 'Keine Daten'}), 400
@@ -120,23 +120,69 @@ def text_tool():
     except (TypeError, ValueError):
         return jsonify({'error': 'Kein Textmodell ausgewählt'}), 400
 
-    job = Job(
+    task = TextTask(
         user_id=current_user.id,
-        job_type='text_tool',
-        title=f"Text Tool: {action}",
-        tool_action=action,
+        action=action,
         input_text=text,
         text_model_id=text_model_id,
         target_language=target_language,
         status='pending'
     )
-    db.session.add(job)
+    db.session.add(task)
     db.session.commit()
 
     from app.tasks import process_text_tool
-    process_text_tool.delay(job.id)
+    process_text_tool.delay(task.id)
 
-    return jsonify({'job_id': job.public_id, 'status': 'pending'})
+    return jsonify({'id': task.public_id, 'status': 'pending'})
+
+
+@api_bp.route('/text-task/<string:public_id>')
+@login_required
+def get_text_task(public_id):
+    task = TextTask.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not task:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    return jsonify(_text_task_to_dict(task))
+
+
+@api_bp.route('/text-tasks')
+@login_required
+def get_text_tasks():
+    tasks = TextTask.query.filter_by(
+        user_id=current_user.id
+    ).order_by(TextTask.created_at.desc()).limit(20).all()
+    return jsonify([_text_task_to_dict(t) for t in tasks])
+
+
+@api_bp.route('/text-task/<string:public_id>', methods=['DELETE'])
+@login_required
+def delete_text_task(public_id):
+    task = TextTask.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not task:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    db.session.delete(task)
+    db.session.commit()
+    return jsonify({'status': 'deleted'})
+
+
+def _text_task_to_dict(t):
+    ACTION_LABELS = {
+        'rewrite': 'Umschreiben',
+        'grammar': 'Grammatik',
+        'translate': 'Übersetzen',
+        'summarize': 'Zusammenfassen',
+    }
+    return {
+        'id': t.public_id,
+        'action': t.action,
+        'action_label': ACTION_LABELS.get(t.action, t.action),
+        'status': t.status,
+        'input_text': t.input_text,
+        'result_text': t.result_text,
+        'error_message': t.error_message,
+        'created_at': t.created_at.strftime('%d.%m.%Y %H:%M'),
+    }
 
 
 @api_bp.route('/summarize/<string:public_id>', methods=['POST'])
@@ -263,6 +309,95 @@ def download_job(public_id):
         mimetype='text/plain; charset=utf-8',
         headers={'Content-Disposition': f'attachment; filename="{filename}"'}
     )
+
+
+# --- Dictionary ---
+
+@api_bp.route('/dictionary')
+@login_required
+def get_dictionary():
+    if not current_user.has_dictionary_access():
+        return jsonify({'error': 'Kein Zugriff auf das Wörterbuch'}), 403
+    entries = DictionaryEntry.query.filter_by(
+        user_id=current_user.id
+    ).order_by(DictionaryEntry.word).all()
+    return jsonify([_dict_entry_to_dict(e) for e in entries])
+
+
+@api_bp.route('/dictionary', methods=['POST'])
+@login_required
+def create_dictionary_entry():
+    if not current_user.has_dictionary_access():
+        return jsonify({'error': 'Kein Zugriff auf das Wörterbuch'}), 403
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'Keine Daten'}), 400
+
+    word = (data.get('word') or '').strip()
+    description = (data.get('description') or '').strip()
+    if not word:
+        return jsonify({'error': 'Wort ist erforderlich'}), 400
+
+    # Check for duplicate
+    existing = DictionaryEntry.query.filter_by(user_id=current_user.id, word=word).first()
+    if existing:
+        return jsonify({'error': 'Dieses Wort existiert bereits'}), 409
+
+    entry = DictionaryEntry(user_id=current_user.id, word=word, description=description)
+    db.session.add(entry)
+    db.session.commit()
+    return jsonify(_dict_entry_to_dict(entry)), 201
+
+
+@api_bp.route('/dictionary/<int:entry_id>', methods=['PUT'])
+@login_required
+def update_dictionary_entry(entry_id):
+    if not current_user.has_dictionary_access():
+        return jsonify({'error': 'Kein Zugriff auf das Wörterbuch'}), 403
+    entry = DictionaryEntry.query.filter_by(id=entry_id, user_id=current_user.id).first()
+    if not entry:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+
+    data = request.get_json()
+    word = (data.get('word') or '').strip()
+    if not word:
+        return jsonify({'error': 'Wort ist erforderlich'}), 400
+
+    # Check duplicate (different entry)
+    existing = DictionaryEntry.query.filter(
+        DictionaryEntry.user_id == current_user.id,
+        DictionaryEntry.word == word,
+        DictionaryEntry.id != entry_id
+    ).first()
+    if existing:
+        return jsonify({'error': 'Dieses Wort existiert bereits'}), 409
+
+    entry.word = word
+    entry.description = (data.get('description') or '').strip()
+    db.session.commit()
+    return jsonify(_dict_entry_to_dict(entry))
+
+
+@api_bp.route('/dictionary/<int:entry_id>', methods=['DELETE'])
+@login_required
+def delete_dictionary_entry(entry_id):
+    if not current_user.has_dictionary_access():
+        return jsonify({'error': 'Kein Zugriff auf das Wörterbuch'}), 403
+    entry = DictionaryEntry.query.filter_by(id=entry_id, user_id=current_user.id).first()
+    if not entry:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    db.session.delete(entry)
+    db.session.commit()
+    return jsonify({'status': 'deleted'})
+
+
+def _dict_entry_to_dict(e):
+    return {
+        'id': e.id,
+        'word': e.word,
+        'description': e.description or '',
+        'created_at': e.created_at.strftime('%d.%m.%Y %H:%M'),
+    }
 
 
 def _fmt_time(seconds):

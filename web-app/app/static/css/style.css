@@ -236,3 +236,22 @@
 .markdown-content > *:last-child {
     margin-bottom: 0;
 }
+
+/* Text Tools gradient background */
+.text-tools-bg {
+    min-height: 100%;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(168, 85, 247, 0.08) 50%, rgba(59, 130, 246, 0.05) 100%);
+}
+
+[data-bs-theme="dark"] .text-tools-bg {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.08) 50%, rgba(59, 130, 246, 0.06) 100%);
+}
+
+.text-tools-bg .history-item {
+    background: var(--bs-body-bg);
+    transition: all 0.15s;
+}
+
+.text-tools-bg .history-item:hover {
+    border-color: var(--bs-primary) !important;
+}

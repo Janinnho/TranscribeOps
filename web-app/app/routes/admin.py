@@ -120,7 +120,8 @@ def create_group():
     if is_default:
         Group.query.filter_by(is_default=True).update({'is_default': False})
 
-    group = Group(name=name, description=description, is_default=is_default)
+    dictionary_enabled = request.form.get('dictionary_enabled') == 'on'
+    group = Group(name=name, description=description, is_default=is_default, dictionary_enabled=dictionary_enabled)
 
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)
@@ -149,6 +150,7 @@ def update_group(group_id):
     if is_default and not group.is_default:
         Group.query.filter(Group.id != group.id, Group.is_default == True).update({'is_default': False})
     group.is_default = is_default
+    group.dictionary_enabled = request.form.get('dictionary_enabled') == 'on'
 
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)

@@ -45,7 +45,10 @@ def create_app(config_class=Config):
         import os
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         os.makedirs(os.path.dirname(app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')), exist_ok=True)
-        db.create_all()
+        try:
+            db.create_all()
+        except Exception:
+            pass  # Table may already exist (race condition with multiple workers)
         _apply_migrations()
         _seed_defaults(app)
 
@@ -101,6 +104,10 @@ def _apply_migrations():
         # Users: rename username -> display_name
         if _has_table('users') and _has_column('users', 'username') and not _has_column('users', 'display_name'):
             _safe_execute(conn, "ALTER TABLE users RENAME COLUMN username TO display_name")
+
+        # Groups: dictionary_enabled
+        if _has_table('groups') and not _has_column('groups', 'dictionary_enabled'):
+            _safe_execute(conn, "ALTER TABLE groups ADD COLUMN dictionary_enabled BOOLEAN DEFAULT 1")
 
 
 def _seed_defaults(app):

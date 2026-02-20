@@ -23,11 +23,11 @@
     <div class="d-flex vh-100">
         <!-- Sidebar -->
         <nav class="sidebar d-flex flex-column flex-shrink-0 p-3" id="sidebar">
-            <a href="{{ url_for('main.transcription') }}" class="d-flex align-items-center mb-3 text-decoration-none sidebar-brand">
+            <a href="{{ url_for('main.transcription') }}" class="d-flex align-items-center mb-2 text-decoration-none sidebar-brand">
                 <i class="bi bi-soundwave fs-4 me-2"></i>
                 <span class="fs-5 fw-semibold">TranscribeOps</span>
             </a>
-            <hr>
+            <hr class="mt-0 mb-2">
             <ul class="nav nav-pills flex-column mb-auto">
                 <li class="nav-item">
                     <a href="{{ url_for('main.transcription') }}" class="nav-link {% if request.endpoint == 'main.transcription' %}active{% endif %}">
@@ -49,19 +49,26 @@
                         <i class="bi bi-type me-2"></i>Text Tools
                     </a>
                 </li>
-                {% if current_user.is_admin %}
-                <li class="nav-item mt-3">
-                    <a href="{{ url_for('admin.dashboard') }}" class="nav-link {% if 'admin' in request.endpoint %}active{% endif %}">
-                        <i class="bi bi-gear-wide-connected me-2"></i>Admin
+                {% if current_user.has_dictionary_access() %}
+                <li class="nav-item">
+                    <a href="{{ url_for('main.dictionary') }}" class="nav-link {% if request.endpoint == 'main.dictionary' %}active{% endif %}">
+                        <i class="bi bi-book me-2"></i>Wörterbuch
                     </a>
                 </li>
                 {% endif %}
+                <li class="nav-item">
+                    <a href="{{ url_for('main.settings') }}" class="nav-link {% if request.endpoint == 'main.settings' %}active{% endif %}">
+                        <i class="bi bi-sliders me-2"></i>Einstellungen
+                    </a>
+                </li>
             </ul>
-            <hr>
             <div class="mt-auto">
-                <a href="{{ url_for('main.settings') }}" class="nav-link {% if request.endpoint == 'main.settings' %}active{% endif %} mb-2">
-                    <i class="bi bi-sliders me-2"></i>Einstellungen
+                {% if current_user.is_admin %}
+                <a href="{{ url_for('admin.dashboard') }}" class="nav-link {% if 'admin' in request.endpoint %}active{% endif %} mb-2">
+                    <i class="bi bi-gear-wide-connected me-2"></i>Admin
                 </a>
+                {% endif %}
+                <hr class="my-2">
                 <div class="dropdown">
                     <a href="#" class="d-flex align-items-center text-decoration-none dropdown-toggle" data-bs-toggle="dropdown">
                         <i class="bi bi-person-circle me-2"></i>

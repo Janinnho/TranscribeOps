@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
 from app import db
-from app.models import Job
+from app.models import Job, DictionaryEntry
 
 main_bp = Blueprint('main', __name__)
 
@@ -67,6 +67,15 @@ def job_detail(public_id):
     back_url = url_for(back_urls.get(job.job_type, 'main.transcription'))
     return render_template('main/job_detail.html',
                            job=job, text_models=text_models, back_url=back_url)
+
+
+@main_bp.route('/dictionary')
+@login_required
+def dictionary():
+    if not current_user.has_dictionary_access():
+        flash('Kein Zugriff auf das Wörterbuch.', 'danger')
+        return redirect(url_for('main.transcription'))
+    return render_template('main/dictionary.html')
 
 
 @main_bp.route('/settings', methods=['GET', 'POST'])

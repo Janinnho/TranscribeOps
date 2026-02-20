@@ -34,8 +34,12 @@ def process_transcription(self, job_id):
             if not speech_model:
                 raise Exception('Kein Sprachmodell konfiguriert')
 
+            # Load dictionary entries for prompt context
+            dictionary_prompt = _get_dictionary_prompt(job.user_id)
+
             result = _call_speech_api(speech_model, job.file_path, job.language,
-                                      job.multi_speaker, original_filename=job.original_filename)
+                                      job.multi_speaker, original_filename=job.original_filename,
+                                      dictionary_prompt=dictionary_prompt)
 
             if isinstance(result, dict) and 'segments' in result:
                 # Diarized result
@@ -55,36 +59,35 @@ def process_transcription(self, job_id):
 
 
 @celery.task(bind=True)
-def process_text_tool(self, job_id):
+def process_text_tool(self, task_id):
     app = get_app()
     with app.app_context():
         from app import db
-        from app.models import Job
+        from app.models import TextTask
 
-        job = db.session.get(Job, job_id)
-        if not job:
-            return {'error': 'Job not found'}
+        task = db.session.get(TextTask, task_id)
+        if not task:
+            return {'error': 'Task not found'}
 
-        job.status = 'processing'
-        job.celery_task_id = self.request.id
+        task.status = 'processing'
         db.session.commit()
 
         try:
-            text_model = job.text_model
+            text_model = task.text_model
             if not text_model:
                 raise Exception('Kein Textmodell konfiguriert')
 
-            prompt = _build_text_prompt(job.tool_action, job.input_text, job.target_language)
+            prompt = _build_text_prompt(task.action, task.input_text, task.target_language)
             result = _call_text_api(text_model, prompt)
-            job.result_text = result
-            job.status = 'completed'
-            job.completed_at = datetime.now(timezone.utc)
+            task.result_text = result
+            task.status = 'completed'
+            task.completed_at = datetime.now(timezone.utc)
         except Exception as e:
-            job.status = 'failed'
-            job.error_message = str(e)
+            task.status = 'failed'
+            task.error_message = str(e)
 
         db.session.commit()
-        return {'status': job.status, 'job_id': job_id}
+        return {'status': task.status, 'task_id': task_id}
 
 
 @celery.task(bind=True)
@@ -115,13 +118,27 @@ def process_summary(self, job_id, text_model_id):
         return {'status': 'done', 'job_id': job_id}
 
 
-def _call_speech_api(model, file_path, language=None, multi_speaker=False, original_filename=None):
+def _get_dictionary_prompt(user_id):
+    """Build a prompt string from the user's dictionary entries."""
+    from app import db
+    from app.models import DictionaryEntry, User
+    user = db.session.get(User, user_id)
+    if not user or not user.has_dictionary_access():
+        return None
+    entries = DictionaryEntry.query.filter_by(user_id=user_id).order_by(DictionaryEntry.word).all()
+    if not entries:
+        return None
+    words = [e.word for e in entries]
+    return ', '.join(words)
+
+
+def _call_speech_api(model, file_path, language=None, multi_speaker=False, original_filename=None, dictionary_prompt=None):
     if model.provider == 'whisper_local':
-        return _whisper_local(model, file_path, language, original_filename)
+        return _whisper_local(model, file_path, language, original_filename, dictionary_prompt)
     elif model.provider == 'openai':
-        return _openai_speech(model, file_path, language, original_filename)
+        return _openai_speech(model, file_path, language, original_filename, dictionary_prompt)
     elif model.provider == 'azure':
-        return _azure_speech(model, file_path, language, original_filename)
+        return _azure_speech(model, file_path, language, original_filename, dictionary_prompt)
     else:
         raise Exception(f'Unbekannter Provider: {model.provider}')
 
@@ -140,7 +157,7 @@ def _get_file_info(file_path, original_filename):
     return filename, mime
 
 
-def _whisper_local(model, file_path, language=None, original_filename=None):
+def _whisper_local(model, file_path, language=None, original_filename=None, dictionary_prompt=None):
     url = model.endpoint_url
     filename, mime = _get_file_info(file_path, original_filename)
     with open(file_path, 'rb') as f:
@@ -148,6 +165,8 @@ def _whisper_local(model, file_path, language=None, original_filename=None):
         data = {'model': model.model_id or 'whisper-1'}
         if language:
             data['language'] = language
+        if dictionary_prompt:
+            data['prompt'] = dictionary_prompt
         headers = {}
         if model.api_key:
             headers['Authorization'] = f'Bearer {model.api_key}'
@@ -162,7 +181,7 @@ def _whisper_local(model, file_path, language=None, original_filename=None):
     return result.get('text', json.dumps(result))
 
 
-def _openai_speech(model, file_path, language=None, original_filename=None):
+def _openai_speech(model, file_path, language=None, original_filename=None, dictionary_prompt=None):
     url = 'https://api.openai.com/v1/audio/transcriptions'
     filename, mime = _get_file_info(file_path, original_filename)
     diarize = _is_diarize_model(model)
@@ -172,6 +191,8 @@ def _openai_speech(model, file_path, language=None, original_filename=None):
         data = {'model': model.model_id or 'whisper-1'}
         if language:
             data['language'] = language
+        if dictionary_prompt:
+            data['prompt'] = dictionary_prompt
         if diarize:
             data['response_format'] = 'diarized_json'
             data['chunking_strategy'] = 'auto'
@@ -185,7 +206,7 @@ def _openai_speech(model, file_path, language=None, original_filename=None):
     return result.get('text', json.dumps(result))
 
 
-def _azure_speech(model, file_path, language=None, original_filename=None):
+def _azure_speech(model, file_path, language=None, original_filename=None, dictionary_prompt=None):
     api_version = model.azure_api_version or '2024-06-01'
     deployment = model.azure_deployment or model.model_id
     url = f"{model.endpoint_url}/openai/deployments/{deployment}/audio/transcriptions?api-version={api_version}"
@@ -197,6 +218,8 @@ def _azure_speech(model, file_path, language=None, original_filename=None):
         data = {}
         if language:
             data['language'] = language
+        if dictionary_prompt:
+            data['prompt'] = dictionary_prompt
         if diarize:
             data['response_format'] = 'diarized_json'
             data['chunking_strategy'] = 'auto'

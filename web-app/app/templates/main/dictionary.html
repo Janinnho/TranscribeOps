@@ -1,0 +1,267 @@
+{% extends "base.html" %}
+{% block title %}Wörterbuch - TranscribeOps{% endblock %}
+{% block page_title %}Wörterbuch{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h5 class="card-title mb-1"><i class="bi bi-book me-2"></i>Wörterbuch</h5>
+                        <p class="text-muted small mb-0">Definiere Schreibweisen für Wörter, die bei der Transkription bevorzugt werden sollen. Die Wörter werden als Kontext an das Sprachmodell übergeben.</p>
+                    </div>
+                </div>
+
+                <!-- Add new entry form -->
+                <form id="addEntryForm" class="mb-4" onsubmit="addEntry(event)">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-sm-4">
+                            <label class="form-label small fw-medium">Wort / Begriff</label>
+                            <input type="text" class="form-control" id="newWord" placeholder="z.B. TranscribeOps" required>
+                        </div>
+                        <div class="col-sm">
+                            <label class="form-label small fw-medium">Beschreibung <span class="text-muted">(optional)</span></label>
+                            <input type="text" class="form-control" id="newDescription" placeholder="z.B. Produktname, immer zusammengeschrieben">
+                        </div>
+                        <div class="col-sm-auto">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-plus-lg me-1"></i>Hinzufügen
+                            </button>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Search -->
+                <div class="mb-3">
+                    <div class="input-group input-group-sm" style="max-width: 300px;">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="searchInput" placeholder="Suchen..." oninput="filterEntries()">
+                    </div>
+                </div>
+
+                <!-- Entry count -->
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <small class="text-muted" id="entryCount"></small>
+                    <small class="text-muted" id="tokenHint"></small>
+                </div>
+
+                <!-- Dictionary entries list -->
+                <div id="entriesList"></div>
+
+                <!-- Empty state -->
+                <div id="emptyState" class="d-none text-center py-5">
+                    <i class="bi bi-book text-muted" style="font-size: 3rem;"></i>
+                    <p class="text-muted mt-3 mb-0">Noch keine Einträge vorhanden.<br>Füge Wörter hinzu, die bei der Transkription korrekt geschrieben werden sollen.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info card -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h6 class="card-title"><i class="bi bi-info-circle me-2"></i>Wie funktioniert das Wörterbuch?</h6>
+                <ul class="small text-muted mb-0">
+                    <li class="mb-1">Die eingetragenen Wörter werden als Kontext-Prompt an das Sprachmodell gesendet.</li>
+                    <li class="mb-1">Das Modell bevorzugt dann diese Schreibweisen bei der Transkription.</li>
+                    <li class="mb-1">Besonders nützlich für <strong>Eigennamen</strong>, <strong>Fachbegriffe</strong> und <strong>ungewöhnliche Schreibweisen</strong>.</li>
+                    <li class="mb-1">Der Prompt hat ein Limit von ca. 200 Wörtern &mdash; halte das Wörterbuch daher fokussiert.</li>
+                    <li>Es ist ein Hinweis an das Modell, keine Garantie. Die meisten Wörter werden aber korrekt übernommen.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit modal -->
+<div class="modal fade" id="editEntryModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Eintrag bearbeiten</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="editEntryId">
+                <div class="mb-3">
+                    <label class="form-label">Wort / Begriff</label>
+                    <input type="text" class="form-control" id="editWord" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Beschreibung</label>
+                    <input type="text" class="form-control" id="editDescription">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button>
+                <button type="button" class="btn btn-primary" onclick="saveEdit()">Speichern</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allEntries = [];
+
+async function loadEntries() {
+    try {
+        const resp = await fetch('/api/dictionary');
+        allEntries = await resp.json();
+        renderEntries();
+    } catch (err) {
+        console.error('Failed to load dictionary:', err);
+    }
+}
+
+function renderEntries() {
+    const container = document.getElementById('entriesList');
+    const emptyState = document.getElementById('emptyState');
+    const countEl = document.getElementById('entryCount');
+    const tokenHint = document.getElementById('tokenHint');
+    const searchTerm = (document.getElementById('searchInput').value || '').toLowerCase();
+
+    const filtered = searchTerm
+        ? allEntries.filter(e => e.word.toLowerCase().includes(searchTerm) || e.description.toLowerCase().includes(searchTerm))
+        : allEntries;
+
+    countEl.textContent = `${allEntries.length} ${allEntries.length === 1 ? 'Eintrag' : 'Einträge'}`;
+
+    // Rough token estimate: ~1.3 tokens per word on average
+    const totalChars = allEntries.reduce((sum, e) => sum + e.word.length, 0);
+    const estimatedTokens = Math.ceil(totalChars / 3);
+    const maxTokens = 224;
+    const pct = Math.round((estimatedTokens / maxTokens) * 100);
+    if (allEntries.length > 0) {
+        const color = pct > 80 ? 'text-danger' : pct > 50 ? 'text-warning' : 'text-muted';
+        tokenHint.innerHTML = `<span class="${color}">~${estimatedTokens}/${maxTokens} Tokens</span>`;
+    } else {
+        tokenHint.textContent = '';
+    }
+
+    if (!allEntries.length) {
+        container.innerHTML = '';
+        emptyState.classList.remove('d-none');
+        return;
+    }
+    emptyState.classList.add('d-none');
+
+    if (!filtered.length) {
+        container.innerHTML = '<p class="text-muted text-center py-3">Keine Treffer</p>';
+        return;
+    }
+
+    container.innerHTML = `<div class="table-responsive"><table class="table table-hover mb-0 align-middle">
+        <thead><tr><th>Wort</th><th>Beschreibung</th><th style="width:100px">Aktionen</th></tr></thead>
+        <tbody>${filtered.map(e => `<tr>
+            <td><strong>${escapeHtml(e.word)}</strong></td>
+            <td class="text-muted">${escapeHtml(e.description) || '<span class="fst-italic">—</span>'}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-primary me-1" onclick="openEdit(${e.id}, '${escapeAttr(e.word)}', '${escapeAttr(e.description)}')" title="Bearbeiten"><i class="bi bi-pencil"></i></button>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteEntry(${e.id})" title="Löschen"><i class="bi bi-trash"></i></button>
+            </td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+function filterEntries() {
+    renderEntries();
+}
+
+async function addEntry(event) {
+    event.preventDefault();
+    const word = document.getElementById('newWord').value.trim();
+    const description = document.getElementById('newDescription').value.trim();
+    if (!word) return;
+
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    try {
+        const resp = await fetch('/api/dictionary', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+            body: JSON.stringify({word, description})
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast(data.error || 'Fehler', 'danger');
+            return;
+        }
+        document.getElementById('newWord').value = '';
+        document.getElementById('newDescription').value = '';
+        document.getElementById('newWord').focus();
+        loadEntries();
+    } catch (err) {
+        showToast('Fehler beim Speichern', 'danger');
+    }
+}
+
+function openEdit(id, word, description) {
+    document.getElementById('editEntryId').value = id;
+    document.getElementById('editWord').value = word;
+    document.getElementById('editDescription').value = description;
+    new bootstrap.Modal(document.getElementById('editEntryModal')).show();
+}
+
+async function saveEdit() {
+    const id = document.getElementById('editEntryId').value;
+    const word = document.getElementById('editWord').value.trim();
+    const description = document.getElementById('editDescription').value.trim();
+    if (!word) return;
+
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    try {
+        const resp = await fetch(`/api/dictionary/${id}`, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+            body: JSON.stringify({word, description})
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast(data.error || 'Fehler', 'danger');
+            return;
+        }
+        bootstrap.Modal.getInstance(document.getElementById('editEntryModal')).hide();
+        loadEntries();
+    } catch (err) {
+        showToast('Fehler beim Speichern', 'danger');
+    }
+}
+
+async function deleteEntry(id) {
+    if (!confirm('Eintrag löschen?')) return;
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    try {
+        await fetch(`/api/dictionary/${id}`, {
+            method: 'DELETE',
+            headers: {'X-CSRFToken': token}
+        });
+        loadEntries();
+    } catch (err) {
+        showToast('Fehler beim Löschen', 'danger');
+    }
+}
+
+function showToast(message, type) {
+    const toast = document.createElement('div');
+    toast.className = `position-fixed bottom-0 end-0 m-3 p-2 px-3 bg-${type} text-white rounded shadow`;
+    toast.style.zIndex = '9999';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+function escapeAttr(text) {
+    return (text || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadEntries();
+});
+</script>
+{% endblock %}
