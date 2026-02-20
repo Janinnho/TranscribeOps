@@ -109,6 +109,15 @@ def _apply_migrations():
         if _has_table('groups') and not _has_column('groups', 'dictionary_enabled'):
             _safe_execute(conn, "ALTER TABLE groups ADD COLUMN dictionary_enabled BOOLEAN DEFAULT 1")
 
+        # Speech models: capability flags
+        if _has_table('speech_models'):
+            if not _has_column('speech_models', 'supports_prompt'):
+                _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN supports_prompt BOOLEAN DEFAULT 1")
+            if not _has_column('speech_models', 'supports_timestamps'):
+                _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN supports_timestamps BOOLEAN DEFAULT 1")
+            if not _has_column('speech_models', 'supports_diarize'):
+                _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN supports_diarize BOOLEAN DEFAULT 0")
+
 
 def _seed_defaults(app):
     from app.models import User, Group, SpeechModel, TextModel

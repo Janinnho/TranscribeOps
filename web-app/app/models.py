@@ -105,6 +105,9 @@ class SpeechModel(db.Model):
     azure_deployment = db.Column(db.String(100))
     azure_api_version = db.Column(db.String(50))
     speaker_mode = db.Column(db.String(10), default='single')
+    supports_prompt = db.Column(db.Boolean, default=True)
+    supports_timestamps = db.Column(db.Boolean, default=True)
+    supports_diarize = db.Column(db.Boolean, default=False)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 

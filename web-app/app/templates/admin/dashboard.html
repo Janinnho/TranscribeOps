@@ -116,7 +116,7 @@
         <div class="card border-0 shadow-sm">
             <div class="table-responsive">
                 <table class="table table-hover mb-0">
-                    <thead><tr><th>Name</th><th>Anzeigename</th><th>Provider</th><th>Modell-ID</th><th>Modus</th><th>Aktiv</th><th>Aktionen</th></tr></thead>
+                    <thead><tr><th>Name</th><th>Anzeigename</th><th>Provider</th><th>Modell-ID</th><th>Modus</th><th>Features</th><th>Aktiv</th><th>Aktionen</th></tr></thead>
                     <tbody>
                     {% for m in speech_models %}
                     <tr>
@@ -125,6 +125,11 @@
                         <td><span class="badge bg-info">{{ m.provider }}</span></td>
                         <td><code>{{ m.model_id }}</code></td>
                         <td><span class="badge bg-secondary">{{ {'single':'Einzel','multi':'Multi','both':'Beides'}.get(m.speaker_mode, m.speaker_mode) }}</span></td>
+                        <td>
+                            {% if m.supports_prompt %}<span class="badge bg-success me-1" title="Wörterbuch/Prompt">Prompt</span>{% endif %}
+                            {% if m.supports_timestamps %}<span class="badge bg-success me-1" title="Zeitstempel">Timestamps</span>{% endif %}
+                            {% if m.supports_diarize %}<span class="badge bg-success" title="Sprecher-Erkennung">Diarize</span>{% endif %}
+                        </td>
                         <td><span class="badge {{ 'bg-success' if m.is_active else 'bg-danger' }}">{{ 'Ja' if m.is_active else 'Nein' }}</span></td>
                         <td>
                             <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editSpeech{{ m.id }}"><i class="bi bi-pencil"></i></button>
@@ -312,6 +317,11 @@
                         </select>
                         <small class="text-muted">Bestimmt, wo dieses Modell auswählbar ist.</small>
                     </div>
+                    <hr>
+                    <label class="form-label fw-medium">Modell-Fähigkeiten</label>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" id="newSpeechPrompt" checked><label class="form-check-label" for="newSpeechPrompt">Wörterbuch / Prompt <small class="text-muted">(Whisper-Modelle)</small></label></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" id="newSpeechTimestamps" checked><label class="form-check-label" for="newSpeechTimestamps">Zeitstempel / verbose_json <small class="text-muted">(Whisper-Modelle)</small></label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" id="newSpeechDiarize"><label class="form-check-label" for="newSpeechDiarize">Diarisierung / diarized_json <small class="text-muted">(gpt-4o-transcribe-diarize)</small></label></div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
@@ -352,6 +362,11 @@
                             <option value="both" {{ 'selected' if m.speaker_mode == 'both' }}>Beides</option>
                         </select>
                     </div>
+                    <hr>
+                    <label class="form-label fw-medium">Modell-Fähigkeiten</label>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" {{ 'checked' if m.supports_prompt }}><label class="form-check-label">Wörterbuch / Prompt <small class="text-muted">(Whisper-Modelle)</small></label></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" {{ 'checked' if m.supports_timestamps }}><label class="form-check-label">Zeitstempel / verbose_json <small class="text-muted">(Whisper-Modelle)</small></label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" {{ 'checked' if m.supports_diarize }}><label class="form-check-label">Diarisierung / diarized_json <small class="text-muted">(gpt-4o-transcribe-diarize)</small></label></div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>

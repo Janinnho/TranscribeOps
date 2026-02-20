@@ -190,6 +190,9 @@ def create_speech_model():
         azure_deployment=request.form.get('azure_deployment', '').strip(),
         azure_api_version=request.form.get('azure_api_version', '').strip(),
         speaker_mode=request.form.get('speaker_mode', 'single'),
+        supports_prompt=request.form.get('supports_prompt') == 'on',
+        supports_timestamps=request.form.get('supports_timestamps') == 'on',
+        supports_diarize=request.form.get('supports_diarize') == 'on',
         is_active=request.form.get('is_active') == 'on'
     )
     db.session.add(model)
@@ -214,6 +217,9 @@ def update_speech_model(model_id):
     model.azure_deployment = request.form.get('azure_deployment', '').strip()
     model.azure_api_version = request.form.get('azure_api_version', '').strip()
     model.speaker_mode = request.form.get('speaker_mode', model.speaker_mode)
+    model.supports_prompt = request.form.get('supports_prompt') == 'on'
+    model.supports_timestamps = request.form.get('supports_timestamps') == 'on'
+    model.supports_diarize = request.form.get('supports_diarize') == 'on'
     model.is_active = request.form.get('is_active') == 'on'
     new_key = request.form.get('api_key', '').strip()
     if new_key:
