@@ -14,8 +14,8 @@
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="card-title mb-0">
                         <i class="bi bi-file-text me-2"></i>
-                        {% if job.job_type == 'meeting' %}Meeting-Transkript
-                        {% elif job.job_type == 'dictation' %}Diktat
+                        {% if record_type == 'meeting' %}Meeting-Transkript
+                        {% elif record_type == 'dictation' %}Diktat
                         {% else %}Transkript{% endif %}
                     </h5>
                     <div class="d-flex align-items-center gap-2">
@@ -78,12 +78,13 @@
                     <button class="btn btn-outline-secondary btn-sm" onclick="copyResult()" id="copyBtn" disabled>
                         <i class="bi bi-clipboard me-1"></i>Text kopieren
                     </button>
-                    <a class="btn btn-outline-secondary btn-sm" id="downloadBtn" href="/api/job/{{ job.public_id }}/download" style="pointer-events: none; opacity: 0.5;">
+                    <a class="btn btn-outline-secondary btn-sm" id="downloadBtn" href="/api/{% if record_type == 'meeting' %}meeting{% elif record_type == 'dictation' %}dictation{% else %}job{% endif %}/{{ job.public_id }}/download" style="pointer-events: none; opacity: 0.5;">
                         <i class="bi bi-download me-1"></i>Download
                     </a>
                     <button class="btn btn-outline-secondary btn-sm d-none" id="toggleTimestampsBtn" onclick="toggleTimestamps()">
                         <i class="bi bi-clock-history me-1"></i>Zeitstempel
                     </button>
+                    {% if record_type != 'dictation' %}
                     <div class="btn-group" id="summarizeGroup">
                         <button class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" disabled id="summarizeBtn">
                             <i class="bi bi-magic me-1"></i>Zusammenfassen
@@ -94,11 +95,13 @@
                             {% endfor %}
                         </ul>
                     </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
 
         <!-- Zusammenfassung -->
+        {% if record_type != 'dictation' %}
         <div class="card border-0 shadow-sm" id="summaryCard">
             <div class="card-body p-4">
                 <h6 class="card-title mb-3"><i class="bi bi-lightning me-2"></i>Zusammenfassung</h6>
@@ -140,6 +143,7 @@
                 </div>
             </div>
         </div>
+        {% endif %}
 
         <!-- Job Info -->
         <div class="card border-0 shadow-sm mt-4">
@@ -147,10 +151,10 @@
                 <h6 class="card-title mb-3"><i class="bi bi-info-circle me-2"></i>Details</h6>
                 <table class="table table-sm table-borderless mb-0">
                     <tr><td class="text-muted" style="width:40%">Typ</td><td>
-                        {% if job.job_type == 'transcription' %}Transkription
-                        {% elif job.job_type == 'meeting' %}Meeting
-                        {% elif job.job_type == 'dictation' %}Diktat
-                        {% else %}{{ job.job_type }}{% endif %}
+                        {% if record_type == 'job' %}Transkription
+                        {% elif record_type == 'meeting' %}Meeting
+                        {% elif record_type == 'dictation' %}Diktat
+                        {% else %}{{ record_type }}{% endif %}
                     </td></tr>
                     {% if job.original_filename %}
                     <tr><td class="text-muted">Datei</td><td class="text-break">{{ job.original_filename }}</td></tr>
@@ -161,7 +165,9 @@
                     {% if job.language %}
                     <tr><td class="text-muted">Sprache</td><td>{{ job.language }}</td></tr>
                     {% endif %}
-                    {% if job.multi_speaker %}
+                    {% if record_type == 'meeting' %}
+                    <tr><td class="text-muted">Modus</td><td>Mehrere Sprecher</td></tr>
+                    {% elif record_type == 'job' and job.multi_speaker %}
                     <tr><td class="text-muted">Modus</td><td>Mehrere Sprecher</td></tr>
                     {% endif %}
                     <tr><td class="text-muted">Erstellt</td><td>{{ job.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</td></tr>
@@ -178,6 +184,9 @@
 {% block scripts %}
 <script>
 const JOB_ID = '{{ job.public_id }}';
+const RECORD_TYPE = '{{ record_type }}';
+const API_BASE = RECORD_TYPE === 'meeting' ? '/api/meeting' : RECORD_TYPE === 'dictation' ? '/api/dictation' : '/api/job';
+const SUMMARIZE_URL = RECORD_TYPE === 'meeting' ? '/api/summarize-meeting' : '/api/summarize';
 let jobData = null;
 let pollingInterval = null;
 let timestampActive = false;
@@ -257,8 +266,10 @@ function renderJob(job) {
         }
     }
 
-    // Summary section
-    renderSummary(job);
+    // Summary section (not for dictation)
+    if (RECORD_TYPE !== 'dictation') {
+        renderSummary(job);
+    }
 
     // Decide if polling is needed
     const needsPolling = (job.status === 'pending' || job.status === 'processing' || job.summary_status === 'processing');
@@ -301,7 +312,8 @@ function renderSummary(job) {
 
 function enableActions() {
     document.getElementById('copyBtn').disabled = false;
-    document.getElementById('summarizeBtn').disabled = false;
+    const sumBtn = document.getElementById('summarizeBtn');
+    if (sumBtn) sumBtn.disabled = false;
     const dl = document.getElementById('downloadBtn');
     dl.style.pointerEvents = '';
     dl.style.opacity = '';
@@ -309,7 +321,8 @@ function enableActions() {
 
 function disableActions() {
     document.getElementById('copyBtn').disabled = true;
-    document.getElementById('summarizeBtn').disabled = true;
+    const sumBtn = document.getElementById('summarizeBtn');
+    if (sumBtn) sumBtn.disabled = true;
     const dl = document.getElementById('downloadBtn');
     dl.style.pointerEvents = 'none';
     dl.style.opacity = '0.5';
@@ -390,7 +403,7 @@ async function saveSpeakerNames() {
     if (!Object.keys(renames).length) return;
 
     const token = document.querySelector('meta[name="csrf-token"]').content;
-    const resp = await fetch(`/api/job/${JOB_ID}/speakers`, {
+    const resp = await fetch(`${API_BASE}/${JOB_ID}/speakers`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
         body: JSON.stringify({renames})
@@ -435,7 +448,7 @@ function showToast(msg) {
 
 async function summarizeJob(textModelId) {
     const token = document.querySelector('meta[name="csrf-token"]').content;
-    await fetch(`/api/summarize/${JOB_ID}`, {
+    await fetch(`${SUMMARIZE_URL}/${JOB_ID}`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
         body: JSON.stringify({text_model_id: textModelId})
@@ -450,7 +463,7 @@ async function summarizeJob(textModelId) {
 
 async function refreshJob() {
     try {
-        const resp = await fetch(`/api/job/${JOB_ID}`);
+        const resp = await fetch(`${API_BASE}/${JOB_ID}`);
         const job = await resp.json();
         renderJob(job);
     } catch (err) {

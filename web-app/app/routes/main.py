@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, abort
 from flask_login import login_required, current_user
 from app import db
-from app.models import Job, DictionaryEntry
+from app.models import Job, Meeting, Dictation, DictionaryEntry
 
 main_bp = Blueprint('main', __name__)
 
@@ -50,23 +50,56 @@ def text_tools():
                            text_models=text_models)
 
 
-@main_bp.route('/job/<string:public_id>')
+@main_bp.route('/transcription-job/<string:public_id>')
 @login_required
-def job_detail(public_id):
+def transcription_job_detail(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
         abort(404)
     text_models = current_user.get_available_text_models()
-    # Determine back URL based on job type
-    back_urls = {
-        'transcription': 'main.transcription',
-        'meeting': 'main.meeting',
-        'dictation': 'main.dictation',
-        'text_tool': 'main.text_tools',
-    }
-    back_url = url_for(back_urls.get(job.job_type, 'main.transcription'))
     return render_template('main/job_detail.html',
-                           job=job, text_models=text_models, back_url=back_url)
+                           job=job, record_type='job',
+                           text_models=text_models,
+                           back_url=url_for('main.transcription'))
+
+
+@main_bp.route('/meeting-job/<string:public_id>')
+@login_required
+def meeting_job_detail(public_id):
+    m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not m:
+        abort(404)
+    text_models = current_user.get_available_text_models()
+    return render_template('main/job_detail.html',
+                           job=m, record_type='meeting',
+                           text_models=text_models,
+                           back_url=url_for('main.meeting'))
+
+
+@main_bp.route('/dictation-job/<string:public_id>')
+@login_required
+def dictation_job_detail(public_id):
+    d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not d:
+        abort(404)
+    text_models = current_user.get_available_text_models()
+    return render_template('main/job_detail.html',
+                           job=d, record_type='dictation',
+                           text_models=text_models,
+                           back_url=url_for('main.dictation'))
+
+
+@main_bp.route('/job/<string:public_id>')
+@login_required
+def job_detail_legacy(public_id):
+    """Legacy redirect — find record type and redirect to typed URL."""
+    if Job.query.filter_by(public_id=public_id, user_id=current_user.id).first():
+        return redirect(url_for('main.transcription_job_detail', public_id=public_id))
+    if Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first():
+        return redirect(url_for('main.meeting_job_detail', public_id=public_id))
+    if Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first():
+        return redirect(url_for('main.dictation_job_detail', public_id=public_id))
+    abort(404)
 
 
 @main_bp.route('/dictionary')

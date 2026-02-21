@@ -142,21 +142,21 @@ async function uploadDictation(blob) {
     if (data.job_id) {
         pollDictResult(data.job_id);
     }
-    loadJobs(JOB_TYPE);
+    loadJobs('/api/dictations', '/api/dictation', '/dictation-job');
 }
 
 async function pollDictResult(jobId) {
     const check = async () => {
-        const resp = await fetch(`/api/job/${jobId}`);
+        const resp = await fetch(`/api/dictation/${jobId}`);
         const job = await resp.json();
         if (job.status === 'completed') {
             document.getElementById('dictateResult').classList.remove('d-none');
             document.getElementById('dictateText').textContent = job.result_text || '';
-            loadJobs(JOB_TYPE);
+            loadJobs('/api/dictations', '/api/dictation', '/dictation-job');
         } else if (job.status === 'failed') {
             document.getElementById('dictateResult').classList.remove('d-none');
             document.getElementById('dictateText').textContent = 'Fehler: ' + (job.error_message || 'Unbekannt');
-            loadJobs(JOB_TYPE);
+            loadJobs('/api/dictations', '/api/dictation', '/dictation-job');
         } else {
             setTimeout(check, 2000);
         }
@@ -165,8 +165,8 @@ async function pollDictResult(jobId) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    loadJobs(JOB_TYPE);
-    setInterval(() => loadJobs(JOB_TYPE), 5000);
+    loadJobs('/api/dictations', '/api/dictation', '/dictation-job');
+    setInterval(() => loadJobs('/api/dictations', '/api/dictation', '/dictation-job'), 5000);
 });
 </script>
 {% endblock %}

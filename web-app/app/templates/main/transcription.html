@@ -109,8 +109,8 @@ document.addEventListener('DOMContentLoaded', () => {
     updateModelList();
     initUpload('uploadForm', 'fileInput', 'dropZone', 'selectedFile', 'fileName', 'fileSize',
                'removeFile', 'uploadBtn', 'uploadProgress', JOB_TYPE);
-    loadJobs(JOB_TYPE);
-    setInterval(() => loadJobs(JOB_TYPE), 5000);
+    loadJobs('/api/jobs/transcription', '/api/job', '/transcription-job');
+    setInterval(() => loadJobs('/api/jobs/transcription', '/api/job', '/transcription-job'), 5000);
 });
 </script>
 {% endblock %}

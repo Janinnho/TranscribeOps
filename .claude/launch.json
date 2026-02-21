@@ -1,0 +1,29 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-app",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "-f", "web-app/docker-compose.yml", "up", "--build"],
+      "port": 5050
+    },
+    {
+      "name": "whisper-api",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "-f", "whisper-api/docker-compose.yml", "up", "--build"],
+      "port": 8090
+    },
+    {
+      "name": "web-app-dev",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["web-app/run.py"],
+      "port": 5000
+    },
+    {
+      "name": "whisper-api-dev",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["whisper-api/app.py"],
+      "port": 8000
+    }
+  ]
+}

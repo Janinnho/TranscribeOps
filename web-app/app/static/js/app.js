@@ -98,7 +98,8 @@ function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId,
             selectedFile.classList.add('d-none');
             dropZone.classList.remove('d-none');
             uploadBtn.disabled = true;
-            if (typeof loadJobs === 'function') loadJobs(jobType);
+            if (_currentListUrl) loadJobs(_currentListUrl, _currentDeleteBase, _currentDetailBase);
+            else if (typeof loadJobs === 'function') loadJobs('/api/jobs/' + jobType, '/api/job', '/transcription-job');
         });
 
         xhr.addEventListener('error', () => {
@@ -113,13 +114,21 @@ function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId,
     });
 }
 
-// Load jobs for a specific type - with auto-show on completion
-async function loadJobs(jobType) {
+// Track current API URLs for reload after upload
+let _currentListUrl = null;
+let _currentDeleteBase = null;
+let _currentDetailBase = null;
+
+// Load jobs from API - accepts list URL, delete base URL, and detail page base URL
+async function loadJobs(listUrl, deleteUrlBase, detailBase) {
+    _currentListUrl = listUrl;
+    _currentDeleteBase = deleteUrlBase;
+    if (detailBase) _currentDetailBase = detailBase;
     const container = document.getElementById('jobList');
     if (!container) return;
 
     try {
-        const resp = await fetch(`/api/jobs/${jobType}`);
+        const resp = await fetch(listUrl);
         const jobs = await resp.json();
 
         if (!jobs.length) {
@@ -136,14 +145,15 @@ async function loadJobs(jobType) {
         for (const job of jobs) {
             const prevStatus = _prevJobStates[job.id];
             if (prevStatus && prevStatus !== 'completed' && job.status === 'completed') {
-                window.location.href = '/job/' + job.id;
+                window.location.href = (_currentDetailBase || '/job') + '/' + job.id;
                 return;
             }
             _prevJobStates[job.id] = job.status;
         }
 
+        const dBase = _currentDetailBase || '/job';
         container.innerHTML = jobs.map(job => `
-            <div class="job-item ${job.id === (typeof currentJobId !== 'undefined' ? currentJobId : null) ? 'active' : ''}" onclick="selectJob('${job.id}', '${jobType}')">
+            <div class="job-item ${job.id === (typeof currentJobId !== 'undefined' ? currentJobId : null) ? 'active' : ''}" onclick="selectJob('${job.id}', '${dBase}')">
                 <div class="d-flex justify-content-between align-items-start">
                     <div class="flex-grow-1">
                         <div class="fw-medium text-truncate" style="max-width: 250px;">${escapeHtml(job.title || 'Job')}</div>
@@ -151,7 +161,7 @@ async function loadJobs(jobType) {
                     </div>
                     <div class="d-flex align-items-center gap-2">
                         ${statusBadge(job.status)}
-                        <button class="btn btn-sm btn-link text-danger p-0" onclick="event.stopPropagation(); deleteJob('${job.id}', '${jobType}')" title="Löschen">
+                        <button class="btn btn-sm btn-link text-danger p-0" onclick="event.stopPropagation(); deleteItem('${job.id}', '${listUrl}', '${deleteUrlBase}')" title="Löschen">
                             <i class="bi bi-trash"></i>
                         </button>
                     </div>
@@ -165,18 +175,18 @@ async function loadJobs(jobType) {
     }
 }
 
-function selectJob(jobId, jobType) {
-    window.location.href = '/job/' + jobId;
+function selectJob(jobId, detailBase) {
+    window.location.href = (detailBase || '/job') + '/' + jobId;
 }
 
-async function deleteJob(jobId, jobType) {
+async function deleteItem(itemId, listUrl, deleteUrlBase) {
     if (!confirm('Eintrag wirklich löschen?')) return;
     const token = document.querySelector('meta[name="csrf-token"]').content;
-    await fetch(`/api/job/${jobId}`, {
+    await fetch(`${deleteUrlBase}/${itemId}`, {
         method: 'DELETE',
         headers: {'X-CSRFToken': token}
     });
-    loadJobs(jobType);
+    loadJobs(listUrl, deleteUrlBase);
 }
 
 function statusBadge(status) {

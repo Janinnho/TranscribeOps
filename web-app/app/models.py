@@ -157,6 +157,52 @@ class Job(db.Model):
     text_model = db.relationship('TextModel', backref='jobs')
 
 
+class Meeting(db.Model):
+    __tablename__ = 'meetings'
+    id = db.Column(db.Integer, primary_key=True)
+    public_id = db.Column(db.String(32), unique=True, nullable=False, default=_gen_uid)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    title = db.Column(db.String(255))
+    original_filename = db.Column(db.String(255))
+    file_path = db.Column(db.String(500))
+    speech_model_id = db.Column(db.Integer, db.ForeignKey('speech_models.id'))
+    text_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'))
+    language = db.Column(db.String(10))
+    result_text = db.Column(db.Text)
+    diarized_segments = db.Column(db.Text)
+    summary_text = db.Column(db.Text)
+    summary_status = db.Column(db.String(20))
+    error_message = db.Column(db.Text)
+    celery_task_id = db.Column(db.String(155))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at = db.Column(db.DateTime)
+
+    speech_model = db.relationship('SpeechModel')
+    text_model = db.relationship('TextModel')
+
+
+class Dictation(db.Model):
+    __tablename__ = 'dictations'
+    id = db.Column(db.Integer, primary_key=True)
+    public_id = db.Column(db.String(32), unique=True, nullable=False, default=_gen_uid)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    title = db.Column(db.String(255))
+    original_filename = db.Column(db.String(255))
+    file_path = db.Column(db.String(500))
+    speech_model_id = db.Column(db.Integer, db.ForeignKey('speech_models.id'))
+    language = db.Column(db.String(10))
+    result_text = db.Column(db.Text)
+    diarized_segments = db.Column(db.Text)
+    error_message = db.Column(db.Text)
+    celery_task_id = db.Column(db.String(155))
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    completed_at = db.Column(db.DateTime)
+
+    speech_model = db.relationship('SpeechModel')
+
+
 class TextTask(db.Model):
     __tablename__ = 'text_tasks'
     id = db.Column(db.Integer, primary_key=True)

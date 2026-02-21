@@ -14,6 +14,36 @@ def _is_diarize_model(model):
     return model.supports_diarize
 
 
+def _run_speech_processing(record, multi_speaker=False):
+    """Shared audio processing logic for Job, Meeting, and Dictation."""
+    from app import db
+
+    try:
+        speech_model = record.speech_model
+        if not speech_model:
+            raise Exception('Kein Sprachmodell konfiguriert')
+
+        dictionary_prompt = _get_dictionary_prompt(record.user_id)
+
+        result = _call_speech_api(speech_model, record.file_path, record.language,
+                                  multi_speaker, original_filename=record.original_filename,
+                                  dictionary_prompt=dictionary_prompt)
+
+        if isinstance(result, dict) and 'segments' in result:
+            record.result_text = result.get('text', '')
+            record.diarized_segments = json.dumps(result['segments'], ensure_ascii=False)
+        else:
+            record.result_text = result if isinstance(result, str) else result.get('text', str(result))
+
+        record.status = 'completed'
+        record.completed_at = datetime.now(timezone.utc)
+    except Exception as e:
+        record.status = 'failed'
+        record.error_message = str(e)
+
+    db.session.commit()
+
+
 @celery.task(bind=True)
 def process_transcription(self, job_id):
     app = get_app()
@@ -28,34 +58,44 @@ def process_transcription(self, job_id):
         job.status = 'processing'
         job.celery_task_id = self.request.id
         db.session.commit()
-
-        try:
-            speech_model = job.speech_model
-            if not speech_model:
-                raise Exception('Kein Sprachmodell konfiguriert')
-
-            # Load dictionary entries for prompt context
-            dictionary_prompt = _get_dictionary_prompt(job.user_id)
-
-            result = _call_speech_api(speech_model, job.file_path, job.language,
-                                      job.multi_speaker, original_filename=job.original_filename,
-                                      dictionary_prompt=dictionary_prompt)
-
-            if isinstance(result, dict) and 'segments' in result:
-                # Diarized result
-                job.result_text = result.get('text', '')
-                job.diarized_segments = json.dumps(result['segments'], ensure_ascii=False)
-            else:
-                job.result_text = result if isinstance(result, str) else result.get('text', str(result))
-
-            job.status = 'completed'
-            job.completed_at = datetime.now(timezone.utc)
-        except Exception as e:
-            job.status = 'failed'
-            job.error_message = str(e)
-
-        db.session.commit()
+        _run_speech_processing(job, multi_speaker=job.multi_speaker)
         return {'status': job.status, 'job_id': job_id}
+
+
+@celery.task(bind=True)
+def process_meeting(self, meeting_id):
+    app = get_app()
+    with app.app_context():
+        from app import db
+        from app.models import Meeting
+
+        meeting = db.session.get(Meeting, meeting_id)
+        if not meeting:
+            return {'error': 'Meeting not found'}
+
+        meeting.status = 'processing'
+        meeting.celery_task_id = self.request.id
+        db.session.commit()
+        _run_speech_processing(meeting, multi_speaker=True)
+        return {'status': meeting.status, 'meeting_id': meeting_id}
+
+
+@celery.task(bind=True)
+def process_dictation(self, dictation_id):
+    app = get_app()
+    with app.app_context():
+        from app import db
+        from app.models import Dictation
+
+        dictation = db.session.get(Dictation, dictation_id)
+        if not dictation:
+            return {'error': 'Dictation not found'}
+
+        dictation.status = 'processing'
+        dictation.celery_task_id = self.request.id
+        db.session.commit()
+        _run_speech_processing(dictation, multi_speaker=False)
+        return {'status': dictation.status, 'dictation_id': dictation_id}
 
 
 @celery.task(bind=True)
@@ -91,31 +131,34 @@ def process_text_tool(self, task_id):
 
 
 @celery.task(bind=True)
-def process_summary(self, job_id, text_model_id):
+def process_summary(self, record_id, text_model_id, model_type='job'):
     app = get_app()
     with app.app_context():
         from app import db
-        from app.models import Job, TextModel
+        from app.models import Job, Meeting, TextModel
 
-        job = db.session.get(Job, job_id)
+        model_map = {'job': Job, 'meeting': Meeting}
+        model_cls = model_map.get(model_type, Job)
+
+        record = db.session.get(model_cls, record_id)
         text_model = db.session.get(TextModel, text_model_id)
-        if not job or not text_model:
-            return {'error': 'Job or model not found'}
+        if not record or not text_model:
+            return {'error': 'Record or model not found'}
 
-        job.summary_status = 'processing'
+        record.summary_status = 'processing'
         db.session.commit()
 
         try:
-            prompt = f"Fasse den folgenden Text zusammen. Gib eine strukturierte Zusammenfassung:\n\n{job.result_text}"
+            prompt = f"Fasse den folgenden Text zusammen. Gib eine strukturierte Zusammenfassung:\n\n{record.result_text}"
             result = _call_text_api(text_model, prompt)
-            job.summary_text = result
-            job.summary_status = 'completed'
+            record.summary_text = result
+            record.summary_status = 'completed'
         except Exception as e:
-            job.summary_text = f"Fehler: {str(e)}"
-            job.summary_status = 'failed'
+            record.summary_text = f"Fehler: {str(e)}"
+            record.summary_status = 'failed'
 
         db.session.commit()
-        return {'status': 'done', 'job_id': job_id}
+        return {'status': 'done', 'record_id': record_id}
 
 
 def _get_dictionary_prompt(user_id):

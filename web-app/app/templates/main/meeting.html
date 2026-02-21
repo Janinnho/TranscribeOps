@@ -162,14 +162,14 @@ async function uploadRecording(blob) {
     const data = await resp.json();
     document.getElementById('recordStatus').textContent = 'Klicken um Aufnahme zu starten';
     document.getElementById('recordTimer').classList.add('d-none');
-    loadJobs(JOB_TYPE);
+    loadJobs('/api/meetings', '/api/meeting', '/meeting-job');
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     initUpload('uploadForm', 'fileInput', 'dropZone', 'selectedFile', 'fileName', 'fileSize',
                'removeFile', 'uploadBtn', 'uploadProgress', JOB_TYPE);
-    loadJobs(JOB_TYPE);
-    setInterval(() => loadJobs(JOB_TYPE), 5000);
+    loadJobs('/api/meetings', '/api/meeting', '/meeting-job');
+    setInterval(() => loadJobs('/api/meetings', '/api/meeting', '/meeting-job'), 5000);
 });
 </script>
 {% endblock %}
