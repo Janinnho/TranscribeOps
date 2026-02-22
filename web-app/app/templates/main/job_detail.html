@@ -23,7 +23,12 @@
                         {% else %}Transkript{% endif %}
                     </h5>
                     <div class="d-flex align-items-center gap-2">
-                        <small class="text-muted">{{ job.created_at.strftime('%d.%m.%Y %H:%M') }}</small>
+                        <div class="input-group input-group-sm" style="width: 200px;">
+                            <span class="input-group-text"><i class="bi bi-search"></i></span>
+                            <input type="text" class="form-control" id="transcriptSearchInput" placeholder="Suchen..." autocomplete="off">
+                            <span class="input-group-text d-none" id="transcriptSearchCount">0</span>
+                        </div>
+                        <small class="text-muted text-nowrap">{{ job.created_at.strftime('%d.%m.%Y %H:%M') }}</small>
                         <span id="statusBadge"></span>
                     </div>
                 </div>
@@ -73,7 +78,7 @@
     </div>
 
     <!-- Right: Tools & Zusammenfassung -->
-    <div class="col-lg-5 d-flex flex-column" style="min-height: 0; overflow-y: auto;">
+    <div class="col-lg-5 d-flex flex-column" style="min-height: 0; max-height: 100%; overflow-y: auto;">
         <!-- Actions -->
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-body p-4">
@@ -223,6 +228,14 @@ function renderJob(job) {
     jobData = job;
     updateStatusBadge(job.status);
 
+    // Guard: don't re-render transcript if user is currently editing a segment
+    const isEditing = document.querySelector('.segment-text textarea');
+    if (isEditing) {
+        // Only update summary section, not the transcript
+        if (RECORD_TYPE !== 'dictation') renderSummary(job);
+        return;
+    }
+
     const processing = document.getElementById('processingState');
     const error = document.getElementById('errorState');
     const diarized = document.getElementById('diarizedView');
@@ -343,7 +356,7 @@ function disableActions() {
 function renderDiarized(segments) {
     const container = document.getElementById('diarizedView');
     const speakers = [...new Set(segments.map(s => s.speaker))];
-    container.innerHTML = segments.map(seg => {
+    container.innerHTML = segments.map((seg, segIdx) => {
         const idx = speakers.indexOf(seg.speaker);
         const color = getSpeakerColor(idx);
         const ts = fmtTime(seg.start) + ' - ' + fmtTime(seg.end);
@@ -352,7 +365,7 @@ function renderDiarized(segments) {
                 <span class="badge" style="background:${color}">${escapeHtml(seg.speaker)}</span>
                 <small class="text-muted">${ts}</small>
             </div>
-            <div class="ps-1">${escapeHtml(seg.text.trim())}</div>
+            <div class="ps-1 segment-text" data-seg-index="${segIdx}">${escapeHtml(seg.text.trim())}</div>
         </div>`;
     }).join('');
 }
@@ -392,12 +405,12 @@ function toggleTimestamps() {
 
 function renderTimestampSegments(segments) {
     const container = document.getElementById('timestampView');
-    container.innerHTML = segments.map(seg => {
+    container.innerHTML = segments.map((seg, segIdx) => {
         const ts = fmtTime(seg.start) + ' \u2013 ' + fmtTime(seg.end);
         return `<div class="mb-2 pb-2 border-bottom border-opacity-25">
             <div class="d-flex align-items-start gap-3">
                 <small class="text-muted text-nowrap" style="min-width: 110px; flex-shrink: 0; font-family: monospace; font-size: 0.8rem;">[${ts}]</small>
-                <div style="min-width: 0;">${escapeHtml(seg.text.trim())}</div>
+                <div class="segment-text" data-seg-index="${segIdx}" style="min-width: 0;">${escapeHtml(seg.text.trim())}</div>
             </div>
         </div>`;
     }).join('');
@@ -557,8 +570,157 @@ function toggleDetails() {
     }
 }
 
+// --- Transcript search with highlighting ---
+function initTranscriptSearch() {
+    const input = document.getElementById('transcriptSearchInput');
+    if (!input) return;
+    input.addEventListener('input', () => {
+        highlightTranscript(input.value.trim());
+    });
+}
+
+function highlightTranscript(query) {
+    const countBadge = document.getElementById('transcriptSearchCount');
+    const views = ['diarizedView', 'timestampView', 'resultText'];
+
+    for (const viewId of views) {
+        const el = document.getElementById(viewId);
+        if (el.classList.contains('d-none')) continue;
+
+        // Re-render from source data to clear previous highlights
+        if (viewId === 'diarizedView' && jobData && jobData.diarized_segments && jobData.has_speakers) {
+            renderDiarized(jobData.diarized_segments);
+        } else if (viewId === 'timestampView' && jobData && jobData.diarized_segments) {
+            renderTimestampSegments(jobData.diarized_segments);
+        } else if (viewId === 'resultText') {
+            el.textContent = jobData ? (jobData.result_text || '') : '';
+        }
+
+        if (!query) {
+            countBadge.classList.add('d-none');
+            return;
+        }
+
+        const count = highlightTextNodes(el, query);
+        countBadge.textContent = count;
+        countBadge.classList.remove('d-none');
+
+        if (count > 0) {
+            const firstMark = el.querySelector('mark');
+            if (firstMark) firstMark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        return;
+    }
+}
+
+function highlightTextNodes(container, query) {
+    let count = 0;
+    const lowerQuery = query.toLowerCase();
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const textNodes = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode);
+
+    for (const node of textNodes) {
+        const text = node.textContent;
+        const lowerText = text.toLowerCase();
+        if (!lowerText.includes(lowerQuery)) continue;
+
+        const frag = document.createDocumentFragment();
+        let lastIdx = 0;
+        let idx;
+        while ((idx = lowerText.indexOf(lowerQuery, lastIdx)) !== -1) {
+            if (idx > lastIdx) frag.appendChild(document.createTextNode(text.substring(lastIdx, idx)));
+            const mark = document.createElement('mark');
+            mark.textContent = text.substring(idx, idx + query.length);
+            frag.appendChild(mark);
+            count++;
+            lastIdx = idx + query.length;
+        }
+        if (lastIdx < text.length) frag.appendChild(document.createTextNode(text.substring(lastIdx)));
+        node.parentNode.replaceChild(frag, node);
+    }
+    return count;
+}
+
+// --- Inline segment editing (double-click) ---
+function initSegmentEditing() {
+    const containers = ['diarizedView', 'timestampView'];
+    for (const id of containers) {
+        document.getElementById(id).addEventListener('dblclick', (e) => {
+            const segEl = e.target.closest('.segment-text');
+            if (!segEl || segEl.querySelector('textarea')) return;
+            startSegmentEdit(segEl);
+        });
+    }
+}
+
+function startSegmentEdit(el) {
+    const idx = parseInt(el.dataset.segIndex);
+    const originalText = jobData.diarized_segments[idx].text.trim();
+
+    const textarea = document.createElement('textarea');
+    textarea.className = 'form-control form-control-sm';
+    textarea.value = originalText;
+    textarea.style.minHeight = '60px';
+    textarea.style.resize = 'vertical';
+
+    el.textContent = '';
+    el.appendChild(textarea);
+    textarea.focus();
+    textarea.style.height = textarea.scrollHeight + 'px';
+
+    let saving = false;
+
+    async function save() {
+        if (saving) return;
+        const newText = textarea.value.trim();
+        if (!newText || newText === originalText) {
+            el.textContent = originalText;
+            return;
+        }
+        saving = true;
+        textarea.disabled = true;
+
+        const token = document.querySelector('meta[name="csrf-token"]').content;
+        try {
+            const resp = await fetch(`${API_BASE}/${JOB_ID}/segment`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'X-CSRFToken': token },
+                body: JSON.stringify({ segment_index: idx, text: newText })
+            });
+            const job = await resp.json();
+            if (resp.ok) {
+                // Remove textarea before renderJob so polling guard doesn't block
+                el.textContent = newText;
+                renderJob(job);
+                showToast('Segment gespeichert!');
+            } else {
+                el.textContent = originalText;
+                showToast(job.error || 'Fehler beim Speichern');
+            }
+        } catch (err) {
+            console.error('Segment save failed:', err);
+            el.textContent = originalText;
+        }
+    }
+
+    textarea.addEventListener('blur', save);
+    textarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            textarea.blur();
+        }
+        if (e.key === 'Escape') {
+            saving = true;
+            el.textContent = originalText;
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     refreshJob();
+    initTranscriptSearch();
+    initSegmentEditing();
 });
 </script>
 {% endblock %}

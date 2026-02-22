@@ -83,6 +83,40 @@
     background: var(--bs-primary-bg-subtle);
 }
 
+/* Inline segment editing */
+.segment-text {
+    cursor: text;
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    transition: background-color 0.15s;
+}
+
+.segment-text:hover {
+    background-color: var(--bs-tertiary-bg);
+}
+
+.segment-text textarea {
+    width: 100%;
+}
+
+/* Transcript search highlight */
+#diarizedView mark,
+#timestampView mark,
+#resultText mark {
+    background-color: #ffc107;
+    color: #000;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+[data-bs-theme="dark"] #diarizedView mark,
+[data-bs-theme="dark"] #timestampView mark,
+[data-bs-theme="dark"] #resultText mark {
+    background-color: #b8860b;
+    color: #fff;
+}
+
 /* Status badges */
 .status-pending { color: var(--bs-warning); }
 .status-processing { color: var(--bs-info); }

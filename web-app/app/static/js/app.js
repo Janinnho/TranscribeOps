@@ -118,6 +118,7 @@ function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId,
 let _currentListUrl = null;
 let _currentDeleteBase = null;
 let _currentDetailBase = null;
+let _currentJobs = [];
 
 // Load jobs from API - accepts list URL, delete base URL, and detail page base URL
 async function loadJobs(listUrl, deleteUrlBase, detailBase) {
@@ -130,15 +131,10 @@ async function loadJobs(listUrl, deleteUrlBase, detailBase) {
     try {
         const resp = await fetch(listUrl);
         const jobs = await resp.json();
+        _currentJobs = jobs;
 
         if (!jobs.length) {
-            container.innerHTML = `
-                <div class="text-center text-muted py-4">
-                    <i class="bi bi-inbox display-6"></i>
-                    <p class="mt-2">Noch keine Einträge</p>
-                </div>`;
             _prevJobStates = {};
-            return;
         }
 
         // Detect newly completed jobs and navigate to detail page
@@ -151,29 +147,71 @@ async function loadJobs(listUrl, deleteUrlBase, detailBase) {
             _prevJobStates[job.id] = job.status;
         }
 
-        const dBase = _currentDetailBase || '/job';
-        container.innerHTML = jobs.map(job => `
-            <div class="job-item ${job.id === (typeof currentJobId !== 'undefined' ? currentJobId : null) ? 'active' : ''}" onclick="selectJob('${job.id}', '${dBase}')">
-                <div class="d-flex justify-content-between align-items-start">
-                    <div class="flex-grow-1">
-                        <div class="fw-medium text-truncate" style="max-width: 250px;">${escapeHtml(job.title || 'Job')}</div>
-                        <small class="text-muted">${job.created_at}</small>
-                    </div>
-                    <div class="d-flex align-items-center gap-2">
-                        ${statusBadge(job.status)}
-                        <button class="btn btn-sm btn-link text-danger p-0" onclick="event.stopPropagation(); deleteItem('${job.id}', '${listUrl}', '${deleteUrlBase}')" title="Löschen">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                </div>
-                ${job.status === 'processing' ? '<div class="mt-2"><div class="progress" style="height:3px"><div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:100%"></div></div></div>' : ''}
-                ${job.status === 'failed' ? `<small class="text-danger d-block mt-1">${escapeHtml(job.error_message || 'Fehler')}</small>` : ''}
-            </div>
-        `).join('');
+        // Apply current search filter
+        const searchInput = document.getElementById('jobSearchInput');
+        const filterText = searchInput ? searchInput.value.trim().toLowerCase() : '';
+        renderJobList(filterText);
     } catch (err) {
         console.error('Failed to load jobs:', err);
     }
 }
+
+function renderJobList(filterText) {
+    const container = document.getElementById('jobList');
+    if (!container) return;
+
+    let jobs = _currentJobs;
+    if (filterText) {
+        jobs = jobs.filter(job =>
+            (job.title || '').toLowerCase().includes(filterText) ||
+            (job.created_at || '').includes(filterText)
+        );
+    }
+
+    if (!jobs.length) {
+        container.innerHTML = `
+            <div class="text-center text-muted py-4">
+                <i class="bi bi-${filterText ? 'search' : 'inbox'} display-6"></i>
+                <p class="mt-2">${filterText ? 'Keine Treffer' : 'Noch keine Einträge'}</p>
+            </div>`;
+        return;
+    }
+
+    const dBase = _currentDetailBase || '/job';
+    const listUrl = _currentListUrl;
+    const deleteUrlBase = _currentDeleteBase;
+    container.innerHTML = jobs.map(job => `
+        <div class="job-item ${job.id === (typeof currentJobId !== 'undefined' ? currentJobId : null) ? 'active' : ''}" onclick="selectJob('${job.id}', '${dBase}')">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="flex-grow-1">
+                    <div class="fw-medium text-truncate" style="max-width: 250px;">${escapeHtml(job.title || 'Job')}</div>
+                    <small class="text-muted">${job.created_at}</small>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    ${statusBadge(job.status)}
+                    <button class="btn btn-sm btn-link text-danger p-0" onclick="event.stopPropagation(); deleteItem('${job.id}', '${listUrl}', '${deleteUrlBase}')" title="Löschen">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+            ${job.status === 'processing' ? '<div class="mt-2"><div class="progress" style="height:3px"><div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:100%"></div></div></div>' : ''}
+            ${job.status === 'failed' ? `<small class="text-danger d-block mt-1">${escapeHtml(job.error_message || 'Fehler')}</small>` : ''}
+        </div>
+    `).join('');
+}
+
+// Initialize job search input
+function initJobSearch() {
+    const input = document.getElementById('jobSearchInput');
+    if (!input) return;
+    input.addEventListener('input', () => {
+        renderJobList(input.value.trim().toLowerCase());
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initJobSearch();
+});
 
 function selectJob(jobId, detailBase) {
     window.location.href = (detailBase || '/job') + '/' + jobId;

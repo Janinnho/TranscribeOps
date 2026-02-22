@@ -437,6 +437,29 @@ def delete_job(public_id):
     return jsonify({'status': 'deleted'})
 
 
+def _update_segment_text(record, segment_index, new_text, has_speakers):
+    """Update a single segment's text and regenerate result_text."""
+    if not record.diarized_segments:
+        return {'error': 'Keine Segmente vorhanden'}, 400
+    segments = json.loads(record.diarized_segments)
+    if not isinstance(segment_index, int) or segment_index < 0 or segment_index >= len(segments):
+        return {'error': 'Ungültiger Segmentindex'}, 400
+    if not new_text or not new_text.strip():
+        return {'error': 'Text darf nicht leer sein'}, 400
+    segments[segment_index]['text'] = ' ' + new_text.strip()
+    record.diarized_segments = json.dumps(segments, ensure_ascii=False)
+    # Regenerate result_text from segments
+    lines = []
+    for seg in segments:
+        if has_speakers and 'speaker' in seg:
+            lines.append(f"[{seg['speaker']}]: {seg['text'].strip()}")
+        else:
+            lines.append(seg['text'].strip())
+    record.result_text = '\n'.join(lines)
+    db.session.commit()
+    return None, None
+
+
 @api_bp.route('/job/<string:public_id>/title', methods=['PATCH'])
 @login_required
 def update_job_title(public_id):
@@ -450,6 +473,24 @@ def update_job_title(public_id):
     job.title = title[:255]
     db.session.commit()
     return jsonify({'status': 'ok', 'title': job.title})
+
+
+@api_bp.route('/job/<string:public_id>/segment', methods=['PATCH'])
+@login_required
+def update_job_segment(public_id):
+    job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not job:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    data = request.get_json() or {}
+    try:
+        segment_index = int(data.get('segment_index'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Ungültiger Segmentindex'}), 400
+    new_text = (data.get('text') or '').strip()
+    err, code = _update_segment_text(job, segment_index, new_text, job.multi_speaker)
+    if err:
+        return jsonify(err), code
+    return jsonify(_job_to_dict(job))
 
 
 # --- Meetings ---
@@ -517,6 +558,24 @@ def update_meeting_title(public_id):
     m.title = title[:255]
     db.session.commit()
     return jsonify({'status': 'ok', 'title': m.title})
+
+
+@api_bp.route('/meeting/<string:public_id>/segment', methods=['PATCH'])
+@login_required
+def update_meeting_segment(public_id):
+    m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not m:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    data = request.get_json() or {}
+    try:
+        segment_index = int(data.get('segment_index'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Ungültiger Segmentindex'}), 400
+    new_text = (data.get('text') or '').strip()
+    err, code = _update_segment_text(m, segment_index, new_text, True)
+    if err:
+        return jsonify(err), code
+    return jsonify(_meeting_to_dict(m))
 
 
 @api_bp.route('/meeting/<string:public_id>/speakers', methods=['POST'])
@@ -634,6 +693,24 @@ def update_dictation_title(public_id):
     d.title = title[:255]
     db.session.commit()
     return jsonify({'status': 'ok', 'title': d.title})
+
+
+@api_bp.route('/dictation/<string:public_id>/segment', methods=['PATCH'])
+@login_required
+def update_dictation_segment(public_id):
+    d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not d:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    data = request.get_json() or {}
+    try:
+        segment_index = int(data.get('segment_index'))
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Ungültiger Segmentindex'}), 400
+    new_text = (data.get('text') or '').strip()
+    err, code = _update_segment_text(d, segment_index, new_text, False)
+    if err:
+        return jsonify(err), code
+    return jsonify(_dictation_to_dict(d))
 
 
 @api_bp.route('/dictation/<string:public_id>/download')
