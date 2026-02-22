@@ -485,3 +485,111 @@ def _azure_text(model, prompt):
     resp.raise_for_status()
     result = resp.json()
     return result['choices'][0]['message']['content']
+
+
+# ── Multi-turn chat API (full messages array) ────────────────────────
+
+def _call_chat_api(model, messages):
+    """Send a full messages array (multi-turn) to the text model."""
+    if model.provider == 'ollama':
+        return _ollama_chat(model, messages)
+    elif model.provider == 'openai':
+        return _openai_chat(model, messages)
+    elif model.provider == 'azure':
+        return _azure_chat(model, messages)
+    else:
+        raise Exception(f'Unbekannter Provider: {model.provider}')
+
+
+def _ollama_chat(model, messages):
+    url = f"{model.endpoint_url}/api/chat"
+    payload = {'model': model.model_id, 'messages': messages, 'stream': False}
+    resp = requests.post(url, json=payload, timeout=300)
+    resp.raise_for_status()
+    result = resp.json()
+    return result.get('message', {}).get('content', json.dumps(result))
+
+
+def _openai_chat(model, messages):
+    url = 'https://api.openai.com/v1/chat/completions'
+    payload = {'model': model.model_id, 'messages': messages}
+    headers = {'Authorization': f'Bearer {model.api_key}', 'Content-Type': 'application/json'}
+    resp = requests.post(url, json=payload, headers=headers, timeout=300)
+    resp.raise_for_status()
+    return resp.json()['choices'][0]['message']['content']
+
+
+def _azure_chat(model, messages):
+    api_version = model.azure_api_version or '2024-06-01'
+    deployment = model.azure_deployment or model.model_id
+    url = f"{model.endpoint_url}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
+    payload = {'messages': messages}
+    headers = {'api-key': model.api_key, 'Content-Type': 'application/json'}
+    resp = requests.post(url, json=payload, headers=headers, timeout=300)
+    resp.raise_for_status()
+    return resp.json()['choices'][0]['message']['content']
+
+
+# ── Chat message Celery task ─────────────────────────────────────────
+
+@celery.task(bind=True)
+def process_chat_message(self, chat_message_id, text_model_id):
+    app = get_app()
+    with app.app_context():
+        from app import db
+        from app.models import ChatMessage, TextModel, Job, Meeting
+
+        msg = db.session.get(ChatMessage, chat_message_id)
+        text_model = db.session.get(TextModel, text_model_id)
+        if not msg or not text_model:
+            return {'error': 'Message or model not found'}
+
+        msg.status = 'processing'
+        db.session.commit()
+
+        try:
+            # Load transcript text from parent record
+            model_map = {'job': Job, 'meeting': Meeting}
+            record_cls = model_map.get(msg.record_type)
+            record = db.session.get(record_cls, msg.record_id) if record_cls else None
+            if not record or not record.result_text:
+                raise Exception('Kein Transkriptionstext gefunden')
+
+            transcript_text = record.result_text
+            if len(transcript_text) > 8000:
+                transcript_text = transcript_text[:8000] + '\n\n[... Text gekürzt ...]'
+
+            system_msg = {
+                'role': 'system',
+                'content': (
+                    'Du bist ein hilfreicher Assistent. Der Benutzer hat eine Transkription erstellt '
+                    'und möchte Fragen dazu stellen. Hier ist der Transkriptionstext:\n\n'
+                    f'{transcript_text}\n\n'
+                    'Beantworte die Fragen des Benutzers basierend auf diesem Text. '
+                    'Antworte auf Deutsch, es sei denn, der Benutzer fragt in einer anderen Sprache.'
+                )
+            }
+
+            # Load conversation history (completed messages before this one)
+            history = ChatMessage.query.filter_by(
+                record_type=msg.record_type,
+                record_id=msg.record_id,
+                user_id=msg.user_id
+            ).filter(
+                ChatMessage.id <= msg.id,
+                ChatMessage.status == 'completed'
+            ).order_by(ChatMessage.created_at).all()
+
+            messages = [system_msg]
+            for h in history:
+                messages.append({'role': h.role, 'content': h.content})
+
+            result = _call_chat_api(text_model, messages)
+            msg.content = result
+            msg.status = 'completed'
+        except Exception as e:
+            msg.content = f'Fehler: {str(e)}'
+            msg.status = 'failed'
+
+        db.session.commit()
+        return {'status': msg.status, 'chat_message_id': chat_message_id}

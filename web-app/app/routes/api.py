@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify, current_app, Response
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from app import db
-from app.models import Job, Meeting, Dictation, TextTask, DictionaryEntry
+from app.models import Job, Meeting, Dictation, TextTask, DictionaryEntry, ChatMessage
 
 api_bp = Blueprint('api', __name__)
 
@@ -432,6 +432,7 @@ def delete_job(public_id):
         return jsonify({'error': 'Nicht gefunden'}), 404
     if job.file_path and os.path.exists(job.file_path):
         os.remove(job.file_path)
+    ChatMessage.query.filter_by(record_type='job', record_id=job.id).delete()
     db.session.delete(job)
     db.session.commit()
     return jsonify({'status': 'deleted'})
@@ -540,6 +541,7 @@ def delete_meeting(public_id):
         return jsonify({'error': 'Nicht gefunden'}), 404
     if m.file_path and os.path.exists(m.file_path):
         os.remove(m.file_path)
+    ChatMessage.query.filter_by(record_type='meeting', record_id=m.id).delete()
     db.session.delete(m)
     db.session.commit()
     return jsonify({'status': 'deleted'})
@@ -720,3 +722,107 @@ def download_dictation(public_id):
     if not d:
         return jsonify({'error': 'Nicht gefunden'}), 404
     return _download_audio_record(d)
+
+
+# ── KI Chat Endpoints ────────────────────────────────────────────────
+
+def _resolve_chat_record(record_type, public_id):
+    """Resolve record_type + public_id to the actual record and its integer ID."""
+    if record_type == 'job':
+        record = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    elif record_type == 'meeting':
+        record = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    else:
+        return None, None
+    return (record, record.id) if record else (None, None)
+
+
+def _chat_msg_to_dict(m):
+    return {
+        'id': m.public_id,
+        'role': m.role,
+        'content': m.content,
+        'status': m.status,
+        'created_at': m.created_at.strftime('%d.%m.%Y %H:%M'),
+    }
+
+
+@api_bp.route('/chat/<string:record_type>/<string:public_id>')
+@login_required
+def get_chat_messages(record_type, public_id):
+    """Return all chat messages for a record."""
+    record, record_id = _resolve_chat_record(record_type, public_id)
+    if not record:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+
+    messages = ChatMessage.query.filter_by(
+        record_type=record_type, record_id=record_id, user_id=current_user.id
+    ).order_by(ChatMessage.created_at).all()
+
+    return jsonify({
+        'messages': [_chat_msg_to_dict(m) for m in messages],
+        'has_pending': any(m.status == 'processing' for m in messages)
+    })
+
+
+@api_bp.route('/chat/<string:record_type>/<string:public_id>', methods=['POST'])
+@login_required
+def send_chat_message(record_type, public_id):
+    """Send a user message and queue an AI response."""
+    record, record_id = _resolve_chat_record(record_type, public_id)
+    if not record:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+
+    data = request.get_json() or {}
+    content = (data.get('content') or '').strip()
+    text_model_id = data.get('text_model_id')
+
+    if not content:
+        return jsonify({'error': 'Nachricht darf nicht leer sein'}), 400
+    try:
+        text_model_id = int(text_model_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Kein Textmodell ausgewählt'}), 400
+
+    # Save user message
+    user_msg = ChatMessage(
+        record_type=record_type, record_id=record_id,
+        user_id=current_user.id, role='user',
+        content=content, status='completed'
+    )
+    db.session.add(user_msg)
+    db.session.flush()
+
+    # Create placeholder assistant message
+    assistant_msg = ChatMessage(
+        record_type=record_type, record_id=record_id,
+        user_id=current_user.id, role='assistant',
+        content='', status='processing',
+        text_model_id=text_model_id
+    )
+    db.session.add(assistant_msg)
+    db.session.commit()
+
+    # Queue Celery task
+    from app.tasks import process_chat_message
+    process_chat_message.delay(assistant_msg.id, text_model_id)
+
+    return jsonify({
+        'user_message': _chat_msg_to_dict(user_msg),
+        'assistant_message': _chat_msg_to_dict(assistant_msg)
+    })
+
+
+@api_bp.route('/chat/<string:record_type>/<string:public_id>', methods=['DELETE'])
+@login_required
+def clear_chat(record_type, public_id):
+    """Delete all chat messages for a record."""
+    record, record_id = _resolve_chat_record(record_type, public_id)
+    if not record:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+
+    ChatMessage.query.filter_by(
+        record_type=record_type, record_id=record_id, user_id=current_user.id
+    ).delete()
+    db.session.commit()
+    return jsonify({'status': 'cleared'})

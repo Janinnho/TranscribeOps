@@ -274,3 +274,19 @@ class DictionaryEntry(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = db.relationship('User', backref=db.backref('dictionary_entries', lazy='dynamic'))
+
+
+class ChatMessage(db.Model):
+    __tablename__ = 'chat_messages'
+    id = db.Column(db.Integer, primary_key=True)
+    public_id = db.Column(db.String(32), unique=True, nullable=False, default=_gen_uid)
+    record_type = db.Column(db.String(20), nullable=False)   # 'job' or 'meeting'
+    record_id = db.Column(db.Integer, nullable=False)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    role = db.Column(db.String(20), nullable=False)           # 'user' or 'assistant'
+    content = db.Column(db.Text, nullable=False, default='')
+    status = db.Column(db.String(20), default='completed')    # 'completed', 'processing', 'failed'
+    text_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    text_model = db.relationship('TextModel')

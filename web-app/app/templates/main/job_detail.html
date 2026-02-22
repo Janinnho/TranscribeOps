@@ -107,6 +107,9 @@
                             {% endfor %}
                         </ul>
                     </div>
+                    <button class="btn btn-outline-primary btn-sm" onclick="openChat()" id="chatBtn" disabled>
+                        <i class="bi bi-chat-dots me-1"></i>KI Chat
+                    </button>
                     {% endif %}
                 </div>
             </div>
@@ -152,6 +155,52 @@
                     <p class="text-muted mb-0 text-center py-2">
                         <i class="bi bi-info-circle me-1"></i>Noch keine Zusammenfassung erstellt.
                     </p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Chat Panel (hidden by default) -->
+        {% if record_type != 'dictation' %}
+        <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column d-none" id="chatPanel" style="min-height: 0;">
+            <div class="card-body p-3 d-flex flex-column flex-grow-1" style="min-height: 0; overflow: hidden;">
+                <!-- Chat header -->
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="card-title mb-0"><i class="bi bi-chat-dots me-2"></i>KI Chat</h6>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-danger" onclick="clearChat()" title="Chat leeren">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="closeChat()" title="Zurück">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Model selector -->
+                <div class="mb-2">
+                    <select class="form-select form-select-sm" id="chatModelSelect">
+                        {% for m in text_models %}
+                        <option value="{{ m.id }}">{{ m.display_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Messages container -->
+                <div id="chatMessages" class="flex-grow-1 overflow-auto mb-2 p-2 bg-body-secondary rounded" style="min-height: 100px;">
+                    <div id="chatEmpty" class="text-center text-muted py-4">
+                        <i class="bi bi-chat-dots" style="font-size: 2rem;"></i>
+                        <p class="mt-2 mb-0">Stellen Sie Fragen zur Transkription</p>
+                    </div>
+                </div>
+
+                <!-- Input area -->
+                <div class="d-flex gap-2">
+                    <textarea class="form-control form-control-sm" id="chatInput" rows="1"
+                              placeholder="Frage eingeben..." style="resize: none; max-height: 100px;"></textarea>
+                    <button class="btn btn-primary btn-sm px-3" onclick="sendChatMessage()" id="chatSendBtn">
+                        <i class="bi bi-send"></i>
+                    </button>
                 </div>
             </div>
         </div>
@@ -339,6 +388,8 @@ function enableActions() {
     document.getElementById('copyBtn').disabled = false;
     const sumBtn = document.getElementById('summarizeBtn');
     if (sumBtn) sumBtn.disabled = false;
+    const chatBtn = document.getElementById('chatBtn');
+    if (chatBtn) chatBtn.disabled = false;
     const dl = document.getElementById('downloadBtn');
     dl.style.pointerEvents = '';
     dl.style.opacity = '';
@@ -348,6 +399,8 @@ function disableActions() {
     document.getElementById('copyBtn').disabled = true;
     const sumBtn = document.getElementById('summarizeBtn');
     if (sumBtn) sumBtn.disabled = true;
+    const chatBtn = document.getElementById('chatBtn');
+    if (chatBtn) chatBtn.disabled = true;
     const dl = document.getElementById('downloadBtn');
     dl.style.pointerEvents = 'none';
     dl.style.opacity = '0.5';
@@ -717,10 +770,184 @@ function startSegmentEdit(el) {
     });
 }
 
+// ── KI Chat ─────────────────────────────────────────────────────────
+let chatOpen = false;
+let chatPollingInterval = null;
+
+function openChat() {
+    chatOpen = true;
+    const summaryCard = document.getElementById('summaryCard');
+    if (summaryCard) summaryCard.classList.add('d-none');
+    document.getElementById('chatPanel').classList.remove('d-none');
+    const chatBtn = document.getElementById('chatBtn');
+    chatBtn.classList.remove('btn-outline-primary');
+    chatBtn.classList.add('btn-primary');
+    loadChatHistory();
+}
+
+function closeChat() {
+    chatOpen = false;
+    document.getElementById('chatPanel').classList.add('d-none');
+    const summaryCard = document.getElementById('summaryCard');
+    if (summaryCard) summaryCard.classList.remove('d-none');
+    const chatBtn = document.getElementById('chatBtn');
+    chatBtn.classList.remove('btn-primary');
+    chatBtn.classList.add('btn-outline-primary');
+    if (chatPollingInterval) {
+        clearInterval(chatPollingInterval);
+        chatPollingInterval = null;
+    }
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+async function loadChatHistory() {
+    const chatType = RECORD_TYPE === 'meeting' ? 'meeting' : 'job';
+    try {
+        const resp = await fetch(`/api/chat/${chatType}/${JOB_ID}`);
+        const data = await resp.json();
+        renderChatMessages(data.messages);
+        if (data.has_pending) {
+            startChatPolling();
+        }
+    } catch (err) {
+        console.error('Failed to load chat:', err);
+    }
+}
+
+function renderChatMessages(messages) {
+    const container = document.getElementById('chatMessages');
+    const emptyEl = document.getElementById('chatEmpty');
+
+    // Remove old bubbles
+    container.querySelectorAll('.chat-bubble').forEach(el => el.remove());
+
+    if (!messages.length) {
+        emptyEl.classList.remove('d-none');
+        return;
+    }
+
+    emptyEl.classList.add('d-none');
+
+    messages.forEach(msg => {
+        const bubble = document.createElement('div');
+        bubble.className = `chat-bubble mb-2 d-flex ${msg.role === 'user' ? 'justify-content-end' : 'justify-content-start'}`;
+
+        const inner = document.createElement('div');
+        inner.className = msg.role === 'user' ? 'chat-msg-user' : 'chat-msg-assistant';
+        inner.style.maxWidth = '85%';
+
+        if (msg.status === 'processing') {
+            inner.innerHTML = '<div class="d-flex align-items-center gap-2"><div class="spinner-border spinner-border-sm" role="status"></div><span class="text-muted">Antwort wird generiert...</span></div>';
+        } else if (msg.status === 'failed') {
+            inner.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>${escapeHtml(msg.content)}</span>`;
+        } else if (msg.role === 'assistant' && typeof marked !== 'undefined') {
+            inner.innerHTML = '<div class="markdown-content">' + marked.parse(msg.content) + '</div>';
+        } else {
+            inner.textContent = msg.content;
+        }
+
+        bubble.appendChild(inner);
+        container.appendChild(bubble);
+    });
+
+    // Scroll to bottom
+    container.scrollTop = container.scrollHeight;
+}
+
+async function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    const content = input.value.trim();
+    if (!content) return;
+
+    const textModelId = document.getElementById('chatModelSelect').value;
+    const chatType = RECORD_TYPE === 'meeting' ? 'meeting' : 'job';
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+
+    input.disabled = true;
+    document.getElementById('chatSendBtn').disabled = true;
+
+    try {
+        const resp = await fetch(`/api/chat/${chatType}/${JOB_ID}`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+            body: JSON.stringify({content, text_model_id: textModelId})
+        });
+
+        if (resp.ok) {
+            input.value = '';
+            input.style.height = 'auto';
+            await loadChatHistory();
+            startChatPolling();
+        } else {
+            const err = await resp.json();
+            showToast(err.error || 'Fehler beim Senden');
+        }
+    } catch (err) {
+        console.error('Failed to send chat message:', err);
+        showToast('Fehler beim Senden');
+    }
+
+    input.disabled = false;
+    document.getElementById('chatSendBtn').disabled = false;
+    input.focus();
+}
+
+function startChatPolling() {
+    if (chatPollingInterval) return;
+    chatPollingInterval = setInterval(async () => {
+        const chatType = RECORD_TYPE === 'meeting' ? 'meeting' : 'job';
+        try {
+            const resp = await fetch(`/api/chat/${chatType}/${JOB_ID}`);
+            const data = await resp.json();
+            renderChatMessages(data.messages);
+            if (!data.has_pending) {
+                clearInterval(chatPollingInterval);
+                chatPollingInterval = null;
+            }
+        } catch (err) {
+            console.error('Chat polling failed:', err);
+        }
+    }, 3000);
+}
+
+async function clearChat() {
+    if (!confirm('Chat-Verlauf wirklich löschen?')) return;
+    const chatType = RECORD_TYPE === 'meeting' ? 'meeting' : 'job';
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    await fetch(`/api/chat/${chatType}/${JOB_ID}`, {
+        method: 'DELETE',
+        headers: {'X-CSRFToken': token}
+    });
+    loadChatHistory();
+}
+
+function initChat() {
+    const chatInput = document.getElementById('chatInput');
+    if (!chatInput) return;
+    // Auto-resize textarea
+    chatInput.addEventListener('input', function() {
+        this.style.height = 'auto';
+        this.style.height = Math.min(this.scrollHeight, 100) + 'px';
+    });
+    // Enter to send
+    chatInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendChatMessage();
+        }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     refreshJob();
     initTranscriptSearch();
     initSegmentEditing();
+    initChat();
 });
 </script>
 {% endblock %}

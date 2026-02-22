@@ -289,3 +289,34 @@
 .text-tools-bg .history-item:hover {
     border-color: var(--bs-primary) !important;
 }
+
+/* Chat bubbles */
+.chat-msg-user {
+    background: var(--bs-primary);
+    color: #fff;
+    padding: 0.5rem 0.75rem;
+    border-radius: 1rem 1rem 0.25rem 1rem;
+    font-size: 0.9rem;
+    word-break: break-word;
+}
+
+.chat-msg-assistant {
+    background: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
+    padding: 0.5rem 0.75rem;
+    border-radius: 1rem 1rem 1rem 0.25rem;
+    font-size: 0.9rem;
+    word-break: break-word;
+}
+
+.chat-msg-assistant .markdown-content {
+    font-size: 0.9rem;
+}
+
+.chat-msg-assistant .markdown-content > *:first-child {
+    margin-top: 0;
+}
+
+.chat-msg-assistant .markdown-content > *:last-child {
+    margin-bottom: 0;
+}

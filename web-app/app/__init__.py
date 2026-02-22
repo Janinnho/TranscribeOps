@@ -137,6 +137,11 @@ def _apply_migrations():
             if not _has_column('speech_models', 'supports_diarize'):
                 _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN supports_diarize BOOLEAN DEFAULT 0")
 
+        # Chat messages table
+        if not _has_table('chat_messages'):
+            from app.models import ChatMessage
+            ChatMessage.__table__.create(db.engine)
+
 
 def _seed_defaults(app):
     from app.models import User, Group, SpeechModel, TextModel
