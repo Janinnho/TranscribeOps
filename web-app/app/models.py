@@ -77,6 +77,40 @@ class User(UserMixin, db.Model):
             return True
         return any(g.dictionary_enabled for g in self.groups)
 
+    def has_transcription_access(self):
+        if self.is_admin:
+            return True
+        return any(g.transcription_enabled for g in self.groups)
+
+    def has_meeting_access(self):
+        if self.is_admin:
+            return True
+        return any(g.meeting_enabled for g in self.groups)
+
+    def has_dictation_access(self):
+        if self.is_admin:
+            return True
+        return any(g.dictation_enabled for g in self.groups)
+
+    def has_text_tools_access(self):
+        if self.is_admin:
+            return True
+        return any(g.text_tools_enabled for g in self.groups)
+
+    def get_auto_title_settings(self):
+        """Return (enabled, model_id) from user's groups."""
+        for g in self.groups:
+            if g.auto_title_enabled and g.auto_title_model_id:
+                return True, g.auto_title_model_id
+        return False, None
+
+    def get_auto_summary_settings(self):
+        """Return (enabled, model_id) from user's groups."""
+        for g in self.groups:
+            if g.auto_summary_enabled and g.auto_summary_model_id:
+                return True, g.auto_summary_model_id
+        return False, None
+
 
 class Group(db.Model):
     __tablename__ = 'groups'
@@ -85,12 +119,22 @@ class Group(db.Model):
     description = db.Column(db.String(255))
     is_default = db.Column(db.Boolean, default=False)
     dictionary_enabled = db.Column(db.Boolean, default=True)
+    transcription_enabled = db.Column(db.Boolean, default=True)
+    meeting_enabled = db.Column(db.Boolean, default=True)
+    dictation_enabled = db.Column(db.Boolean, default=True)
+    text_tools_enabled = db.Column(db.Boolean, default=True)
+    auto_title_enabled = db.Column(db.Boolean, default=False)
+    auto_title_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
+    auto_summary_enabled = db.Column(db.Boolean, default=False)
+    auto_summary_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     speech_models = db.relationship('SpeechModel', secondary=group_speech_models,
                                      backref=db.backref('groups', lazy='dynamic'))
     text_models = db.relationship('TextModel', secondary=group_text_models,
                                    backref=db.backref('groups', lazy='dynamic'))
+    auto_title_model = db.relationship('TextModel', foreign_keys=[auto_title_model_id])
+    auto_summary_model = db.relationship('TextModel', foreign_keys=[auto_summary_model_id])
 
 
 class SpeechModel(db.Model):

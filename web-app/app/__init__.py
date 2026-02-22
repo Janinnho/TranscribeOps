@@ -109,6 +109,25 @@ def _apply_migrations():
         if _has_table('groups') and not _has_column('groups', 'dictionary_enabled'):
             _safe_execute(conn, "ALTER TABLE groups ADD COLUMN dictionary_enabled BOOLEAN DEFAULT 1")
 
+        # Groups: feature toggles
+        if _has_table('groups'):
+            if not _has_column('groups', 'transcription_enabled'):
+                _safe_execute(conn, "ALTER TABLE groups ADD COLUMN transcription_enabled BOOLEAN DEFAULT 1")
+            if not _has_column('groups', 'meeting_enabled'):
+                _safe_execute(conn, "ALTER TABLE groups ADD COLUMN meeting_enabled BOOLEAN DEFAULT 1")
+            if not _has_column('groups', 'dictation_enabled'):
+                _safe_execute(conn, "ALTER TABLE groups ADD COLUMN dictation_enabled BOOLEAN DEFAULT 1")
+            if not _has_column('groups', 'text_tools_enabled'):
+                _safe_execute(conn, "ALTER TABLE groups ADD COLUMN text_tools_enabled BOOLEAN DEFAULT 1")
+            if not _has_column('groups', 'auto_title_enabled'):
+                _safe_execute(conn, "ALTER TABLE groups ADD COLUMN auto_title_enabled BOOLEAN DEFAULT 0")
+            if not _has_column('groups', 'auto_title_model_id'):
+                _safe_execute(conn, "ALTER TABLE groups ADD COLUMN auto_title_model_id INTEGER REFERENCES text_models(id)")
+            if not _has_column('groups', 'auto_summary_enabled'):
+                _safe_execute(conn, "ALTER TABLE groups ADD COLUMN auto_summary_enabled BOOLEAN DEFAULT 0")
+            if not _has_column('groups', 'auto_summary_model_id'):
+                _safe_execute(conn, "ALTER TABLE groups ADD COLUMN auto_summary_model_id INTEGER REFERENCES text_models(id)")
+
         # Speech models: capability flags
         if _has_table('speech_models'):
             if not _has_column('speech_models', 'supports_prompt'):

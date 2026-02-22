@@ -59,9 +59,9 @@
     background: var(--bs-tertiary-bg);
 }
 
-/* Job list */
+/* Job list — flex-grow to fill available height */
 .job-list {
-    max-height: 600px;
+    flex-grow: 1;
     overflow-y: auto;
 }
 

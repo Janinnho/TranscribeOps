@@ -29,26 +29,34 @@
             </a>
             <hr class="mt-0 mb-2">
             <ul class="nav nav-pills flex-column mb-auto">
+                {% if current_user.has_transcription_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.transcription') }}" class="nav-link {% if request.endpoint == 'main.transcription' %}active{% endif %}">
                         <i class="bi bi-file-earmark-music me-2"></i>Transkription
                     </a>
                 </li>
+                {% endif %}
+                {% if current_user.has_meeting_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.meeting') }}" class="nav-link {% if request.endpoint == 'main.meeting' %}active{% endif %}">
                         <i class="bi bi-camera-video me-2"></i>Meeting
                     </a>
                 </li>
+                {% endif %}
+                {% if current_user.has_dictation_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.dictation') }}" class="nav-link {% if request.endpoint == 'main.dictation' %}active{% endif %}">
                         <i class="bi bi-mic me-2"></i>Diktieren
                     </a>
                 </li>
+                {% endif %}
+                {% if current_user.has_text_tools_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.text_tools') }}" class="nav-link {% if request.endpoint == 'main.text_tools' %}active{% endif %}">
                         <i class="bi bi-type me-2"></i>Text Tools
                     </a>
                 </li>
+                {% endif %}
                 {% if current_user.has_dictionary_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.dictionary') }}" class="nav-link {% if request.endpoint == 'main.dictionary' %}active{% endif %}">

@@ -2,7 +2,7 @@
 {% block title %}Transkription - TranscribeOps{% endblock %}
 {% block page_title %}Transkription{% endblock %}
 {% block content %}
-<div class="row g-4">
+<div class="row g-4 h-100">
     <!-- Left: Upload area -->
     <div class="col-lg-7">
         <div class="card border-0 shadow-sm">
@@ -75,9 +75,9 @@
     </div>
 
     <!-- Right: Job history -->
-    <div class="col-lg-5">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-4">
+    <div class="col-lg-5 d-flex flex-column">
+        <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
+            <div class="card-body p-4 flex-grow-1 d-flex flex-column overflow-hidden">
                 <h5 class="card-title mb-3"><i class="bi bi-clock-history me-2"></i>Historie & Jobs</h5>
                 <div id="jobList" class="job-list">
                     <div class="text-center text-muted py-4">

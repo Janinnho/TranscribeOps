@@ -2,15 +2,19 @@
 {% block title %}{{ job.title or 'Job' }} - TranscribeOps{% endblock %}
 {% block page_title %}
 <a href="{{ back_url }}" class="text-decoration-none text-muted me-2"><i class="bi bi-arrow-left"></i></a>
-{{ job.title or 'Job' }}
+<span id="titleDisplay">{{ job.title or 'Job' }}</span>
+<button class="btn btn-link btn-sm text-muted p-0 ms-2" onclick="startEditTitle()" title="Titel bearbeiten">
+    <i class="bi bi-pencil"></i>
+</button>
+<input type="text" id="titleInput" class="form-control form-control-sm d-none" style="width:auto; min-width:200px; max-width:500px;" value="{{ job.title or '' }}">
 {% endblock %}
 
 {% block content %}
-<div class="row g-4">
+<div class="row g-4 h-100" style="overflow: hidden;">
     <!-- Left: Transkription -->
-    <div class="col-lg-7">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body p-4">
+    <div class="col-lg-7 d-flex flex-column" style="min-height: 0; max-height: 100%;">
+        <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column" style="min-height: 0; overflow: hidden;">
+            <div class="card-body p-4 d-flex flex-column flex-grow-1" style="min-height: 0; overflow: hidden;">
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="card-title mb-0">
                         <i class="bi bi-file-text me-2"></i>
@@ -57,19 +61,19 @@
                 </div>
 
                 <!-- Diarized view -->
-                <div id="diarizedView" class="d-none p-3 bg-body-secondary rounded" style="max-height: 600px; overflow-y: auto;"></div>
+                <div id="diarizedView" class="d-none p-3 bg-body-secondary rounded flex-grow-1" style="overflow-y: auto; min-height: 200px;"></div>
 
                 <!-- Plain text view -->
-                <div id="resultText" class="d-none p-3 bg-body-secondary rounded" style="white-space: pre-wrap; max-height: 600px; overflow-y: auto;"></div>
+                <div id="resultText" class="d-none p-3 bg-body-secondary rounded flex-grow-1" style="white-space: pre-wrap; overflow-y: auto; min-height: 200px;"></div>
 
                 <!-- Timestamp segment view (non-diarized with timestamps) -->
-                <div id="timestampView" class="d-none p-3 bg-body-secondary rounded" style="max-height: 600px; overflow-y: auto;"></div>
+                <div id="timestampView" class="d-none p-3 bg-body-secondary rounded flex-grow-1" style="overflow-y: auto; min-height: 200px;"></div>
             </div>
         </div>
     </div>
 
     <!-- Right: Tools & Zusammenfassung -->
-    <div class="col-lg-5">
+    <div class="col-lg-5 d-flex flex-column" style="min-height: 0; overflow-y: auto;">
         <!-- Actions -->
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-body p-4">
@@ -83,6 +87,9 @@
                     </a>
                     <button class="btn btn-outline-secondary btn-sm d-none" id="toggleTimestampsBtn" onclick="toggleTimestamps()">
                         <i class="bi bi-clock-history me-1"></i>Zeitstempel
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="toggleDetails()" id="detailsToggleBtn">
+                        <i class="bi bi-info-circle me-1"></i>Details
                     </button>
                     {% if record_type != 'dictation' %}
                     <div class="btn-group" id="summarizeGroup">
@@ -102,8 +109,8 @@
 
         <!-- Zusammenfassung -->
         {% if record_type != 'dictation' %}
-        <div class="card border-0 shadow-sm" id="summaryCard">
-            <div class="card-body p-4">
+        <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column" id="summaryCard">
+            <div class="card-body p-4 d-flex flex-column flex-grow-1">
                 <h6 class="card-title mb-3"><i class="bi bi-lightning me-2"></i>Zusammenfassung</h6>
 
                 <!-- Summary processing -->
@@ -127,7 +134,7 @@
 
                 <!-- Summary content (rendered markdown) -->
                 <div id="summaryContent" class="d-none">
-                    <div id="summaryRendered" class="markdown-content bg-body-secondary rounded p-3" style="max-height: 500px; overflow-y: auto;"></div>
+                    <div id="summaryRendered" class="markdown-content bg-body-secondary rounded p-3 flex-grow-1" style="overflow-y: auto;"></div>
                     <div class="mt-2 text-end">
                         <button class="btn btn-sm btn-outline-secondary" onclick="copySummary()">
                             <i class="bi bi-clipboard me-1"></i>Kopieren
@@ -146,7 +153,7 @@
         {% endif %}
 
         <!-- Job Info -->
-        <div class="card border-0 shadow-sm mt-4">
+        <div class="card border-0 shadow-sm mt-4 d-none" id="detailsCard">
             <div class="card-body p-4">
                 <h6 class="card-title mb-3"><i class="bi bi-info-circle me-2"></i>Details</h6>
                 <table class="table table-sm table-borderless mb-0">
@@ -254,11 +261,16 @@ function renderJob(job) {
             renderDiarized(job.diarized_segments);
             showSpeakerEditor(job.diarized_segments);
         } else if (job.diarized_segments && job.diarized_segments.length > 0 && !job.has_speakers) {
-            // Case 2: Segments without speakers (timestamp-only) — plain text + toggle
-            resultText.classList.remove('d-none');
-            resultText.textContent = job.result_text || '';
+            // Case 2: Segments without speakers (timestamp-only) — show timestamps by default
             tsBtn.classList.remove('d-none');
             renderTimestampSegments(job.diarized_segments);
+            // Default to timestamp view
+            timestampView.classList.remove('d-none');
+            timestampActive = true;
+            tsBtn.classList.remove('btn-outline-secondary');
+            tsBtn.classList.add('btn-secondary');
+            // Keep plain text ready for toggle
+            resultText.textContent = job.result_text || '';
         } else {
             // Case 3: No segments (old jobs or fallback) — plain text only
             resultText.classList.remove('d-none');
@@ -381,11 +393,11 @@ function toggleTimestamps() {
 function renderTimestampSegments(segments) {
     const container = document.getElementById('timestampView');
     container.innerHTML = segments.map(seg => {
-        const ts = fmtTime(seg.start) + ' - ' + fmtTime(seg.end);
+        const ts = fmtTime(seg.start) + ' \u2013 ' + fmtTime(seg.end);
         return `<div class="mb-2 pb-2 border-bottom border-opacity-25">
             <div class="d-flex align-items-start gap-3">
-                <small class="text-muted text-nowrap" style="min-width: 90px; font-family: monospace;">[${ts}]</small>
-                <div>${escapeHtml(seg.text.trim())}</div>
+                <small class="text-muted text-nowrap" style="min-width: 110px; flex-shrink: 0; font-family: monospace; font-size: 0.8rem;">[${ts}]</small>
+                <div style="min-width: 0;">${escapeHtml(seg.text.trim())}</div>
             </div>
         </div>`;
     }).join('');
@@ -468,6 +480,80 @@ async function refreshJob() {
         renderJob(job);
     } catch (err) {
         console.error('Failed to refresh job:', err);
+    }
+}
+
+// --- Title editing ---
+function startEditTitle() {
+    const display = document.getElementById('titleDisplay');
+    const input = document.getElementById('titleInput');
+    const pencil = display.nextElementSibling; // the pencil button
+    display.classList.add('d-none');
+    pencil.classList.add('d-none');
+    input.classList.remove('d-none');
+    input.focus();
+    input.select();
+}
+
+function cancelEditTitle() {
+    const display = document.getElementById('titleDisplay');
+    const input = document.getElementById('titleInput');
+    const pencil = display.nextElementSibling;
+    input.classList.add('d-none');
+    display.classList.remove('d-none');
+    pencil.classList.remove('d-none');
+    input.value = display.textContent.trim();
+}
+
+async function saveTitle() {
+    const display = document.getElementById('titleDisplay');
+    const input = document.getElementById('titleInput');
+    const newTitle = input.value.trim();
+    if (!newTitle || newTitle === display.textContent.trim()) {
+        cancelEditTitle();
+        return;
+    }
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    try {
+        const resp = await fetch(`${API_BASE}/${JOB_ID}/title`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+            body: JSON.stringify({title: newTitle})
+        });
+        const data = await resp.json();
+        if (resp.ok) {
+            display.textContent = data.title;
+            document.title = data.title + ' - TranscribeOps';
+            showToast('Titel gespeichert!');
+        }
+    } catch (err) {
+        console.error('Title save failed:', err);
+    }
+    cancelEditTitle();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const titleInput = document.getElementById('titleInput');
+    if (titleInput) {
+        titleInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); saveTitle(); }
+            if (e.key === 'Escape') cancelEditTitle();
+        });
+        titleInput.addEventListener('blur', () => saveTitle());
+    }
+});
+
+// --- Details toggle ---
+function toggleDetails() {
+    const card = document.getElementById('detailsCard');
+    const btn = document.getElementById('detailsToggleBtn');
+    card.classList.toggle('d-none');
+    if (card.classList.contains('d-none')) {
+        btn.classList.remove('btn-secondary');
+        btn.classList.add('btn-outline-secondary');
+    } else {
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('btn-secondary');
     }
 }
 

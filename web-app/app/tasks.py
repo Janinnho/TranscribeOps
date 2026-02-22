@@ -49,7 +49,7 @@ def process_transcription(self, job_id):
     app = get_app()
     with app.app_context():
         from app import db
-        from app.models import Job
+        from app.models import Job, User
 
         job = db.session.get(Job, job_id)
         if not job:
@@ -59,6 +59,10 @@ def process_transcription(self, job_id):
         job.celery_task_id = self.request.id
         db.session.commit()
         _run_speech_processing(job, multi_speaker=job.multi_speaker)
+
+        if job.status == 'completed':
+            _trigger_auto_tasks(job.user_id, job.id, 'job')
+
         return {'status': job.status, 'job_id': job_id}
 
 
@@ -67,7 +71,7 @@ def process_meeting(self, meeting_id):
     app = get_app()
     with app.app_context():
         from app import db
-        from app.models import Meeting
+        from app.models import Meeting, User
 
         meeting = db.session.get(Meeting, meeting_id)
         if not meeting:
@@ -77,6 +81,10 @@ def process_meeting(self, meeting_id):
         meeting.celery_task_id = self.request.id
         db.session.commit()
         _run_speech_processing(meeting, multi_speaker=True)
+
+        if meeting.status == 'completed':
+            _trigger_auto_tasks(meeting.user_id, meeting.id, 'meeting')
+
         return {'status': meeting.status, 'meeting_id': meeting_id}
 
 
@@ -85,7 +93,7 @@ def process_dictation(self, dictation_id):
     app = get_app()
     with app.app_context():
         from app import db
-        from app.models import Dictation
+        from app.models import Dictation, User
 
         dictation = db.session.get(Dictation, dictation_id)
         if not dictation:
@@ -95,6 +103,11 @@ def process_dictation(self, dictation_id):
         dictation.celery_task_id = self.request.id
         db.session.commit()
         _run_speech_processing(dictation, multi_speaker=False)
+
+        if dictation.status == 'completed':
+            # Only auto-title for dictation (no auto-summary, dictation has no summary fields)
+            _trigger_auto_tasks(dictation.user_id, dictation.id, 'dictation')
+
         return {'status': dictation.status, 'dictation_id': dictation_id}
 
 
@@ -158,6 +171,61 @@ def process_summary(self, record_id, text_model_id, model_type='job'):
             record.summary_status = 'failed'
 
         db.session.commit()
+        return {'status': 'done', 'record_id': record_id}
+
+
+def _trigger_auto_tasks(user_id, record_id, model_type):
+    """Check user's group settings and trigger auto-title/auto-summary tasks."""
+    from app.models import User
+    user = User.query.get(user_id)
+    if not user:
+        return
+
+    title_enabled, title_model_id = user.get_auto_title_settings()
+    if title_enabled and title_model_id:
+        process_auto_title.delay(record_id, title_model_id, model_type)
+
+    # Auto-summary only for job and meeting (dictation has no summary fields)
+    if model_type != 'dictation':
+        summary_enabled, summary_model_id = user.get_auto_summary_settings()
+        if summary_enabled and summary_model_id:
+            process_summary.delay(record_id, summary_model_id, model_type)
+
+
+@celery.task(bind=True)
+def process_auto_title(self, record_id, text_model_id, model_type='job'):
+    app = get_app()
+    with app.app_context():
+        from app import db
+        from app.models import Job, Meeting, Dictation, TextModel
+
+        model_map = {'job': Job, 'meeting': Meeting, 'dictation': Dictation}
+        model_cls = model_map.get(model_type, Job)
+
+        record = db.session.get(model_cls, record_id)
+        text_model = db.session.get(TextModel, text_model_id)
+        if not record or not text_model:
+            return {'error': 'Record or model not found'}
+
+        try:
+            # Use first ~500 chars of result text for title generation
+            snippet = (record.result_text or '')[:500]
+            if not snippet:
+                return {'status': 'skipped', 'reason': 'no text'}
+
+            prompt = (
+                "Generiere einen kurzen, prägnanten Titel (max 5-8 Wörter) "
+                "für folgende Transkription. Antworte NUR mit dem Titel, "
+                "ohne Anführungszeichen oder zusätzlichen Text:\n\n" + snippet
+            )
+            title = _call_text_api(text_model, prompt).strip().strip('"\'')
+            if title:
+                record.title = title[:255]
+                db.session.commit()
+        except Exception as e:
+            # Don't fail the record if title generation fails
+            pass
+
         return {'status': 'done', 'record_id': record_id}
 
 

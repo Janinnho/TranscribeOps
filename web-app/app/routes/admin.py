@@ -123,6 +123,18 @@ def create_group():
     dictionary_enabled = request.form.get('dictionary_enabled') == 'on'
     group = Group(name=name, description=description, is_default=is_default, dictionary_enabled=dictionary_enabled)
 
+    # Feature toggles
+    group.transcription_enabled = request.form.get('transcription_enabled') == 'on'
+    group.meeting_enabled = request.form.get('meeting_enabled') == 'on'
+    group.dictation_enabled = request.form.get('dictation_enabled') == 'on'
+    group.text_tools_enabled = request.form.get('text_tools_enabled') == 'on'
+
+    # Auto-title / auto-summary
+    group.auto_title_enabled = request.form.get('auto_title_enabled') == 'on'
+    group.auto_title_model_id = request.form.get('auto_title_model_id', type=int) or None
+    group.auto_summary_enabled = request.form.get('auto_summary_enabled') == 'on'
+    group.auto_summary_model_id = request.form.get('auto_summary_model_id', type=int) or None
+
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)
     group.speech_models = SpeechModel.query.filter(SpeechModel.id.in_(speech_model_ids)).all() if speech_model_ids else []
@@ -151,6 +163,18 @@ def update_group(group_id):
         Group.query.filter(Group.id != group.id, Group.is_default == True).update({'is_default': False})
     group.is_default = is_default
     group.dictionary_enabled = request.form.get('dictionary_enabled') == 'on'
+
+    # Feature toggles
+    group.transcription_enabled = request.form.get('transcription_enabled') == 'on'
+    group.meeting_enabled = request.form.get('meeting_enabled') == 'on'
+    group.dictation_enabled = request.form.get('dictation_enabled') == 'on'
+    group.text_tools_enabled = request.form.get('text_tools_enabled') == 'on'
+
+    # Auto-title / auto-summary
+    group.auto_title_enabled = request.form.get('auto_title_enabled') == 'on'
+    group.auto_title_model_id = request.form.get('auto_title_model_id', type=int) or None
+    group.auto_summary_enabled = request.form.get('auto_summary_enabled') == 'on'
+    group.auto_summary_model_id = request.form.get('auto_summary_model_id', type=int) or None
 
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)

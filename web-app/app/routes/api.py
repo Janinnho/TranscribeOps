@@ -217,6 +217,9 @@ def summarize(public_id):
 def _job_to_dict(j):
     segments = json.loads(j.diarized_segments) if j.diarized_segments else None
     has_speakers = bool(segments and any('speaker' in seg for seg in segments))
+    # In single-speaker mode, suppress speaker display even if diarize model returned speakers
+    if not j.multi_speaker:
+        has_speakers = False
     return {
         'id': j.public_id,
         'title': j.title,
@@ -434,6 +437,21 @@ def delete_job(public_id):
     return jsonify({'status': 'deleted'})
 
 
+@api_bp.route('/job/<string:public_id>/title', methods=['PATCH'])
+@login_required
+def update_job_title(public_id):
+    job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not job:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip()
+    if not title:
+        return jsonify({'error': 'Titel darf nicht leer sein'}), 400
+    job.title = title[:255]
+    db.session.commit()
+    return jsonify({'status': 'ok', 'title': job.title})
+
+
 # --- Meetings ---
 
 def _meeting_to_dict(m):
@@ -484,6 +502,21 @@ def delete_meeting(public_id):
     db.session.delete(m)
     db.session.commit()
     return jsonify({'status': 'deleted'})
+
+
+@api_bp.route('/meeting/<string:public_id>/title', methods=['PATCH'])
+@login_required
+def update_meeting_title(public_id):
+    m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not m:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip()
+    if not title:
+        return jsonify({'error': 'Titel darf nicht leer sein'}), 400
+    m.title = title[:255]
+    db.session.commit()
+    return jsonify({'status': 'ok', 'title': m.title})
 
 
 @api_bp.route('/meeting/<string:public_id>/speakers', methods=['POST'])
@@ -586,6 +619,21 @@ def delete_dictation(public_id):
     db.session.delete(d)
     db.session.commit()
     return jsonify({'status': 'deleted'})
+
+
+@api_bp.route('/dictation/<string:public_id>/title', methods=['PATCH'])
+@login_required
+def update_dictation_title(public_id):
+    d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not d:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    data = request.get_json() or {}
+    title = (data.get('title') or '').strip()
+    if not title:
+        return jsonify({'error': 'Titel darf nicht leer sein'}), 400
+    d.title = title[:255]
+    db.session.commit()
+    return jsonify({'status': 'ok', 'title': d.title})
 
 
 @api_bp.route('/dictation/<string:public_id>/download')

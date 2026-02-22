@@ -67,7 +67,7 @@
         <div class="card border-0 shadow-sm">
             <div class="table-responsive">
                 <table class="table table-hover mb-0">
-                    <thead><tr><th>Name</th><th>Beschreibung</th><th>Default</th><th>Wörterbuch</th><th>Benutzer</th><th>Sprachmodelle</th><th>Textmodelle</th><th>Aktionen</th></tr></thead>
+                    <thead><tr><th>Name</th><th>Beschreibung</th><th>Default</th><th>Features</th><th>Automatisierung</th><th>Benutzer</th><th>Modelle</th><th>Aktionen</th></tr></thead>
                     <tbody>
                     {% for group in groups %}
                     <tr>
@@ -81,15 +81,22 @@
                             {% endif %}
                         </td>
                         <td>
-                            {% if group.dictionary_enabled %}
-                            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Ja</span>
-                            {% else %}
-                            <span class="badge bg-secondary">Nein</span>
-                            {% endif %}
+                            {% if group.transcription_enabled %}<span class="badge bg-success me-1" title="Transkription">Transkr.</span>{% endif %}
+                            {% if group.meeting_enabled %}<span class="badge bg-success me-1" title="Meeting">Meeting</span>{% endif %}
+                            {% if group.dictation_enabled %}<span class="badge bg-success me-1" title="Diktieren">Diktat</span>{% endif %}
+                            {% if group.text_tools_enabled %}<span class="badge bg-success me-1" title="Text Tools">Text</span>{% endif %}
+                            {% if group.dictionary_enabled %}<span class="badge bg-success me-1" title="Wörterbuch">Wörtb.</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if group.auto_title_enabled %}<span class="badge bg-info me-1">Auto-Titel</span>{% endif %}
+                            {% if group.auto_summary_enabled %}<span class="badge bg-info me-1">Auto-Zusammenf.</span>{% endif %}
+                            {% if not group.auto_title_enabled and not group.auto_summary_enabled %}<span class="text-muted">-</span>{% endif %}
                         </td>
                         <td>{{ group.users.count() }}</td>
-                        <td>{% for m in group.speech_models %}<span class="badge bg-secondary me-1">{{ m.display_name }}</span>{% endfor %}</td>
-                        <td>{% for m in group.text_models %}<span class="badge bg-secondary me-1">{{ m.display_name }}</span>{% endfor %}</td>
+                        <td>
+                            {% for m in group.speech_models %}<span class="badge bg-secondary me-1">{{ m.display_name }}</span>{% endfor %}
+                            {% for m in group.text_models %}<span class="badge bg-secondary me-1">{{ m.display_name }}</span>{% endfor %}
+                        </td>
                         <td>
                             <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editGroup{{ group.id }}"><i class="bi bi-pencil"></i></button>
                             <form method="POST" action="{{ url_for('admin.delete_group', group_id=group.id) }}" class="d-inline" onsubmit="return confirm('Gruppe löschen?')">
@@ -240,7 +247,36 @@
                     <div class="mb-3"><label class="form-label">Name</label><input type="text" class="form-control" name="name" required></div>
                     <div class="mb-3"><label class="form-label">Beschreibung</label><input type="text" class="form-control" name="description"></div>
                     <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_default" id="newGroupDefault"><label class="form-check-label" for="newGroupDefault">Als Default-Gruppe festlegen <small class="text-muted">(neue Benutzer werden automatisch zugewiesen)</small></label></div>
-                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" id="newGroupDict" checked><label class="form-check-label" for="newGroupDict">Wörterbuch aktiviert <small class="text-muted">(Benutzer können eigene Wörterbucheinträge verwalten)</small></label></div>
+                    <hr>
+                    <label class="form-label fw-medium">Verfügbare Features</label>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="transcription_enabled" id="newGroupTranscr" checked><label class="form-check-label" for="newGroupTranscr">Transkription</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="meeting_enabled" id="newGroupMeeting" checked><label class="form-check-label" for="newGroupMeeting">Meeting</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="dictation_enabled" id="newGroupDict2" checked><label class="form-check-label" for="newGroupDict2">Diktieren</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="text_tools_enabled" id="newGroupText" checked><label class="form-check-label" for="newGroupText">Text Tools</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" id="newGroupDict" checked><label class="form-check-label" for="newGroupDict">Wörterbuch</label></div>
+                    <hr>
+                    <label class="form-label fw-medium">Automatisierung</label>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_title_enabled" id="newGroupAutoTitle" onchange="document.getElementById('newGroupAutoTitleModel').disabled = !this.checked">
+                        <label class="form-check-label" for="newGroupAutoTitle">Auto-Titel generieren</label>
+                    </div>
+                    <div class="mb-2 ms-4">
+                        <select class="form-select form-select-sm" name="auto_title_model_id" id="newGroupAutoTitleModel" disabled>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_summary_enabled" id="newGroupAutoSummary" onchange="document.getElementById('newGroupAutoSummaryModel').disabled = !this.checked">
+                        <label class="form-check-label" for="newGroupAutoSummary">Auto-Zusammenfassung generieren</label>
+                    </div>
+                    <div class="mb-3 ms-4">
+                        <select class="form-select form-select-sm" name="auto_summary_model_id" id="newGroupAutoSummaryModel" disabled>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <hr>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
                         {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}"><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
@@ -268,7 +304,36 @@
                     <div class="mb-3"><label class="form-label">Name</label><input type="text" class="form-control" name="name" value="{{ group.name }}" required></div>
                     <div class="mb-3"><label class="form-label">Beschreibung</label><input type="text" class="form-control" name="description" value="{{ group.description or '' }}"></div>
                     <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_default" {{ 'checked' if group.is_default }}><label class="form-check-label">Als Default-Gruppe festlegen <small class="text-muted">(neue Benutzer werden automatisch zugewiesen)</small></label></div>
-                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" {{ 'checked' if group.dictionary_enabled }}><label class="form-check-label">Wörterbuch aktiviert <small class="text-muted">(Benutzer können eigene Wörterbucheinträge verwalten)</small></label></div>
+                    <hr>
+                    <label class="form-label fw-medium">Verfügbare Features</label>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="transcription_enabled" {{ 'checked' if group.transcription_enabled }}><label class="form-check-label">Transkription</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="meeting_enabled" {{ 'checked' if group.meeting_enabled }}><label class="form-check-label">Meeting</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="dictation_enabled" {{ 'checked' if group.dictation_enabled }}><label class="form-check-label">Diktieren</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="text_tools_enabled" {{ 'checked' if group.text_tools_enabled }}><label class="form-check-label">Text Tools</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" {{ 'checked' if group.dictionary_enabled }}><label class="form-check-label">Wörterbuch</label></div>
+                    <hr>
+                    <label class="form-label fw-medium">Automatisierung</label>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_title_enabled" id="editAutoTitle{{ group.id }}" {{ 'checked' if group.auto_title_enabled }} onchange="document.getElementById('editAutoTitleModel{{ group.id }}').disabled = !this.checked">
+                        <label class="form-check-label" for="editAutoTitle{{ group.id }}">Auto-Titel generieren</label>
+                    </div>
+                    <div class="mb-2 ms-4">
+                        <select class="form-select form-select-sm" name="auto_title_model_id" id="editAutoTitleModel{{ group.id }}" {{ 'disabled' if not group.auto_title_enabled }}>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}" {{ 'selected' if group.auto_title_model_id == m.id }}>{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_summary_enabled" id="editAutoSummary{{ group.id }}" {{ 'checked' if group.auto_summary_enabled }} onchange="document.getElementById('editAutoSummaryModel{{ group.id }}').disabled = !this.checked">
+                        <label class="form-check-label" for="editAutoSummary{{ group.id }}">Auto-Zusammenfassung generieren</label>
+                    </div>
+                    <div class="mb-3 ms-4">
+                        <select class="form-select form-select-sm" name="auto_summary_model_id" id="editAutoSummaryModel{{ group.id }}" {{ 'disabled' if not group.auto_summary_enabled }}>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}" {{ 'selected' if group.auto_summary_model_id == m.id }}>{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <hr>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
                         {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}" {{ 'checked' if m in group.speech_models }}><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
