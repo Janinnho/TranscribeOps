@@ -4,12 +4,14 @@ services:
     ports:
       - "8090:8000"
     environment:
-      - WHISPER_API_KEY=${WHISPER_API_KEY:-my-secret-key}
+      # WHISPER_API_KEY must be set in your environment or a .env file before starting.
+      # Leave empty to disable API key authentication (not recommended for production).
+      - WHISPER_API_KEY=${WHISPER_API_KEY}
       - WHISPER_MODEL=${WHISPER_MODEL:-medium}
       - WHISPER_DEVICE=cpu
       - WHISPER_COMPUTE_TYPE=int8
     volumes:
-      - whisper_cache:/root/.cache
+      - whisper_cache:/app/.cache
     networks:
       - transcribeops
     restart: unless-stopped

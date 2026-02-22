@@ -116,7 +116,10 @@ def dictionary():
 def settings():
     if request.method == 'POST':
         theme = request.form.get('theme', 'auto')
-        history_days = request.form.get('history_days', 30, type=int)
+        try:
+            history_days = int(request.form.get('history_days', '30'))
+        except (TypeError, ValueError):
+            history_days = 30
         if theme in ('light', 'dark', 'auto'):
             current_user.theme = theme
         if 1 <= history_days <= 365:

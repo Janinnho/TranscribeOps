@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import logging
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, current_app, Response
 from flask_login import login_required, current_user
@@ -9,12 +10,22 @@ from app import db
 from app.models import Job, Meeting, Dictation, TextTask, DictionaryEntry
 
 api_bp = Blueprint('api', __name__)
+logger = logging.getLogger(__name__)
 
 ALLOWED_AUDIO = {'mp3', 'wav', 'ogg', 'webm', 'flac', 'm4a', 'mp4', 'mpeg', 'mpga'}
+ALLOWED_MIME_PREFIXES = ('audio/', 'video/')
 
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_AUDIO
+
+
+def allowed_mime_type(content_type):
+    if not content_type:
+        logger.debug("File upload missing Content-Type header; skipping MIME check")
+        return True  # Allow if not provided (some clients omit it)
+    mime = content_type.split(';')[0].strip().lower()
+    return mime == 'application/octet-stream' or any(mime.startswith(p) for p in ALLOWED_MIME_PREFIXES)
 
 
 @api_bp.route('/upload', methods=['POST'])
@@ -27,7 +38,7 @@ def upload():
     if file.filename == '':
         return jsonify({'error': 'Keine Datei ausgewählt'}), 400
 
-    if not allowed_file(file.filename):
+    if not allowed_file(file.filename) or not allowed_mime_type(file.content_type):
         return jsonify({'error': 'Dateityp nicht erlaubt'}), 400
 
     job_type = request.form.get('job_type', 'transcription')
@@ -37,7 +48,10 @@ def upload():
 
     filename = secure_filename(file.filename)
     unique_name = f"{uuid.uuid4().hex}_{filename}"
-    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_name)
+    upload_folder = os.path.abspath(current_app.config['UPLOAD_FOLDER'])
+    filepath = os.path.abspath(os.path.join(upload_folder, unique_name))
+    if os.path.commonpath([upload_folder, filepath]) != upload_folder:
+        return jsonify({'error': 'Ungültiger Dateipfad'}), 400
     file.save(filepath)
 
     if job_type == 'meeting':
@@ -427,8 +441,11 @@ def delete_job(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    if job.file_path and os.path.exists(job.file_path):
-        os.remove(job.file_path)
+    if job.file_path:
+        try:
+            os.remove(job.file_path)
+        except FileNotFoundError:
+            pass
     db.session.delete(job)
     db.session.commit()
     return jsonify({'status': 'deleted'})
@@ -479,8 +496,11 @@ def delete_meeting(public_id):
     m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not m:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    if m.file_path and os.path.exists(m.file_path):
-        os.remove(m.file_path)
+    if m.file_path:
+        try:
+            os.remove(m.file_path)
+        except FileNotFoundError:
+            pass
     db.session.delete(m)
     db.session.commit()
     return jsonify({'status': 'deleted'})
@@ -581,8 +601,11 @@ def delete_dictation(public_id):
     d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not d:
         return jsonify({'error': 'Nicht gefunden'}), 404
-    if d.file_path and os.path.exists(d.file_path):
-        os.remove(d.file_path)
+    if d.file_path:
+        try:
+            os.remove(d.file_path)
+        except FileNotFoundError:
+            pass
     db.session.delete(d)
     db.session.commit()
     return jsonify({'status': 'deleted'})

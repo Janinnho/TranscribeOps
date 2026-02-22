@@ -166,7 +166,20 @@ async function pollDictResult(jobId) {
 
 document.addEventListener('DOMContentLoaded', () => {
     loadJobs('/api/dictations', '/api/dictation', '/dictation-job');
-    setInterval(() => loadJobs('/api/dictations', '/api/dictation', '/dictation-job'), 5000);
 });
+
+// Smart polling: stop when no pending/processing jobs remain, restart when loadJobs is called
+let _pollTimer = null;
+const _loadJobsOrig = loadJobs;
+window.loadJobs = async function(listUrl, deleteUrlBase, detailBase) {
+    await _loadJobsOrig(listUrl, deleteUrlBase, detailBase);
+    const jobList = document.getElementById('jobList');
+    if (jobList && jobList.querySelector('.badge.bg-warning, .badge.bg-info') && !_pollTimer) {
+        _pollTimer = setTimeout(async () => {
+            _pollTimer = null;
+            await window.loadJobs(listUrl, deleteUrlBase, detailBase);
+        }, 5000);
+    }
+};
 </script>
 {% endblock %}

@@ -257,7 +257,21 @@ function escapeHtml(text) {
 }
 
 function escapeAttr(text) {
-    return (text || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+    const value = String(text ?? '');
+    return value.replace(/[\0-\x1F\x7F\\"']/g, function(ch) {
+        switch (ch) {
+            case '\\': return '\\\\';
+            case "'":  return "\\'";
+            case '"':  return '\\"';
+            case '\n': return '\\n';
+            case '\r': return '\\r';
+            case '\t': return '\\t';
+            default: {
+                const code = ch.charCodeAt(0).toString(16).padStart(2, '0');
+                return '\\x' + code;
+            }
+        }
+    });
 }
 
 document.addEventListener('DOMContentLoaded', () => {

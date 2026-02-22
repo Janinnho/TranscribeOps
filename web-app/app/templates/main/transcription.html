@@ -110,7 +110,20 @@ document.addEventListener('DOMContentLoaded', () => {
     initUpload('uploadForm', 'fileInput', 'dropZone', 'selectedFile', 'fileName', 'fileSize',
                'removeFile', 'uploadBtn', 'uploadProgress', JOB_TYPE);
     loadJobs('/api/jobs/transcription', '/api/job', '/transcription-job');
-    setInterval(() => loadJobs('/api/jobs/transcription', '/api/job', '/transcription-job'), 5000);
 });
+
+// Smart polling: stop when no pending/processing jobs remain, restart when loadJobs is called
+let _pollTimer = null;
+const _loadJobsOrig = loadJobs;
+window.loadJobs = async function(listUrl, deleteUrlBase, detailBase) {
+    await _loadJobsOrig(listUrl, deleteUrlBase, detailBase);
+    const jobList = document.getElementById('jobList');
+    if (jobList && jobList.querySelector('.badge.bg-warning, .badge.bg-info') && !_pollTimer) {
+        _pollTimer = setTimeout(async () => {
+            _pollTimer = null;
+            await window.loadJobs(listUrl, deleteUrlBase, detailBase);
+        }, 5000);
+    }
+};
 </script>
 {% endblock %}

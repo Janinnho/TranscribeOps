@@ -1,8 +1,12 @@
 import os
 import json
+import logging
+import traceback
 import requests
 from datetime import datetime, timezone
 from app.celery_app import celery
+
+logger = logging.getLogger(__name__)
 
 
 def get_app():
@@ -40,6 +44,8 @@ def _run_speech_processing(record, multi_speaker=False):
     except Exception as e:
         record.status = 'failed'
         record.error_message = str(e)
+        logger.error("Speech processing failed for %s id=%s: %s",
+                     type(record).__name__, record.id, traceback.format_exc())
 
     db.session.commit()
 
@@ -125,6 +131,7 @@ def process_text_tool(self, task_id):
         except Exception as e:
             task.status = 'failed'
             task.error_message = str(e)
+            logger.error("Text task id=%s failed: %s", task_id, traceback.format_exc())
 
         db.session.commit()
         return {'status': task.status, 'task_id': task_id}

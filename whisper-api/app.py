@@ -73,11 +73,11 @@ def transcribe():
 
     # Save uploaded file temporarily
     suffix = os.path.splitext(audio_file.filename)[1] or ".wav"
-    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-        audio_file.save(tmp)
-        tmp_path = tmp.name
-
+    tmp_path = None
     try:
+        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+            tmp_path = tmp.name
+            audio_file.save(tmp)
         model = get_model(model_size)
 
         transcribe_kwargs = {
@@ -128,7 +128,11 @@ def transcribe():
         logger.error(f"Transcription failed: {e}", exc_info=True)
         return jsonify({"error": {"message": str(e), "type": "server_error"}}), 500
     finally:
-        os.unlink(tmp_path)
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
 
 @app.route("/v1/models", methods=["GET"])

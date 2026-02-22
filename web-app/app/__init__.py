@@ -1,10 +1,13 @@
 import uuid
+import logging
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 db = SQLAlchemy()
 login_manager = LoginManager()
@@ -44,7 +47,12 @@ def create_app(config_class=Config):
     with app.app_context():
         import os
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
-        os.makedirs(os.path.dirname(app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')), exist_ok=True)
+        db_uri = app.config.get('SQLALCHEMY_DATABASE_URI', '')
+        if db_uri.startswith('sqlite:///'):
+            db_path = db_uri.replace('sqlite:///', '', 1)
+            db_dir = os.path.dirname(db_path)
+            if db_dir:
+                os.makedirs(db_dir, exist_ok=True)
         try:
             db.create_all()
         except Exception:
@@ -73,6 +81,7 @@ def _apply_migrations():
             conn.execute(text(sql))
             conn.commit()
         except Exception:
+            logger.debug("ALTER TABLE skipped (column may already exist): %s", sql)
             conn.rollback()
 
     with db.engine.connect() as conn:
@@ -95,6 +104,7 @@ def _apply_migrations():
                         job.public_id = uuid.uuid4().hex
                     db.session.commit()
                 except Exception:
+                    logger.exception("Failed to backfill public_ids for existing jobs")
                     db.session.rollback()
 
         # Groups
@@ -126,6 +136,10 @@ def _seed_defaults(app):
         admin.set_password('admin')
         db.session.add(admin)
         db.session.commit()
+        logger.warning(
+            "Default admin account created (admin@transcribeops.local / admin). "
+            "Change this password immediately in a production environment!"
+        )
     if not SpeechModel.query.first():
         default_speech = SpeechModel(
             name='Local Whisper',

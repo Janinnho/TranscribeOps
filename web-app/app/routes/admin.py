@@ -118,7 +118,7 @@ def create_group():
 
     # If setting as default, unset other defaults
     if is_default:
-        Group.query.filter_by(is_default=True).update({'is_default': False})
+        Group.query.filter(Group.is_default.is_(True)).update({'is_default': False})
 
     dictionary_enabled = request.form.get('dictionary_enabled') == 'on'
     group = Group(name=name, description=description, is_default=is_default, dictionary_enabled=dictionary_enabled)
@@ -148,7 +148,7 @@ def update_group(group_id):
 
     # If setting as default, unset other defaults
     if is_default and not group.is_default:
-        Group.query.filter(Group.id != group.id, Group.is_default == True).update({'is_default': False})
+        Group.query.filter(Group.id != group.id, Group.is_default.is_(True)).update({'is_default': False})
     group.is_default = is_default
     group.dictionary_enabled = request.form.get('dictionary_enabled') == 'on'
 

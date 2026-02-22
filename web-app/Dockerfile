@@ -13,8 +13,12 @@ COPY . .
 
 RUN mkdir -p /app/data /app/app/static/uploads
 
+RUN groupadd -r appuser && useradd -r -g appuser appuser && chown -R appuser:appuser /app
+
 ENV FLASK_APP=run.py
 ENV PYTHONUNBUFFERED=1
+
+USER appuser
 
 EXPOSE 5000
 
