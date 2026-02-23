@@ -188,10 +188,6 @@ def process_dictation(self, dictation_id):
         _run_speech_processing(dictation, multi_speaker=False, audio_path=temp_path)
         _cleanup_temp_file(dictation, temp_path)
 
-        if dictation.status == 'completed':
-            # Only auto-title for dictation (no auto-summary, dictation has no summary fields)
-            _trigger_auto_tasks(dictation.user_id, dictation.id, 'dictation')
-
         return {'status': dictation.status, 'dictation_id': dictation_id}
 
 
