@@ -299,6 +299,8 @@ const SUMMARIZE_URL = RECORD_TYPE === 'meeting' ? '/api/summarize-meeting' : '/a
 let jobData = null;
 let pollingInterval = null;
 let timestampActive = false;
+let initialTitle = '{{ job.title|e }}';  // Track the initial title to detect auto-title updates
+let titlePollCount = 0;  // Counter for post-completion polling
 
 // Speaker color palette
 const speakerColors = ['#4a90d9', '#e67e22', '#27ae60', '#e74c3c', '#9b59b6', '#1abc9c', '#f39c12', '#2c3e50'];
@@ -324,6 +326,17 @@ function updateStatusBadge(status) {
 function renderJob(job) {
     jobData = job;
     updateStatusBadge(job.status);
+
+    // Update title if it changed (e.g. auto-title generated after completion)
+    const titleDisplay = document.getElementById('titleDisplay');
+    const titleInput = document.getElementById('titleInput');
+    if (job.title && titleDisplay && titleDisplay.textContent !== job.title) {
+        titleDisplay.textContent = job.title;
+        if (titleInput && titleInput.classList.contains('d-none')) {
+            titleInput.value = job.title;
+        }
+        document.title = job.title + ' - TranscribeOps';
+    }
 
     // Guard: don't re-render transcript if user is currently editing a segment
     const isEditing = document.querySelector('.segment-text textarea');
@@ -408,12 +421,26 @@ function renderJob(job) {
     }
 
     // Decide if polling is needed
-    const needsPolling = (job.status === 'pending' || job.status === 'processing' || job.summary_status === 'processing');
-    if (needsPolling && !pollingInterval) {
+    const isActive = (job.status === 'pending' || job.status === 'processing' || job.summary_status === 'processing');
+    // Keep polling after completion for a while to catch auto-title/auto-summary updates
+    const titleChanged = (job.title && job.title !== initialTitle);
+    const needsPostCompletionPoll = (job.status === 'completed' && !titleChanged && titlePollCount < 10);
+
+    if (isActive && !pollingInterval) {
+        titlePollCount = 0;
         pollingInterval = setInterval(refreshJob, 3000);
-    } else if (!needsPolling && pollingInterval) {
-        clearInterval(pollingInterval);
-        pollingInterval = null;
+    } else if (!isActive && pollingInterval) {
+        if (needsPostCompletionPoll) {
+            // Continue polling to catch auto-title updates
+            titlePollCount++;
+        } else {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+        }
+    } else if (!isActive && !pollingInterval && needsPostCompletionPoll) {
+        // Start post-completion polling (e.g. page loaded with completed job but title not yet updated)
+        titlePollCount++;
+        pollingInterval = setInterval(refreshJob, 3000);
     }
 }
 
