@@ -7,6 +7,7 @@ from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from app import db
 from app.models import Job, Meeting, Dictation, TextTask, DictionaryEntry, ChatMessage
+from app.utils import format_dt, now_local
 
 api_bp = Blueprint('api', __name__)
 
@@ -82,7 +83,7 @@ def upload_audio():
     filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_name)
     file.save(filepath)
 
-    title = f"Aufnahme {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')}"
+    title = f"Aufnahme {now_local().strftime('%d.%m.%Y %H:%M')}"
 
     if job_type == 'meeting':
         record = Meeting(
@@ -191,7 +192,7 @@ def _text_task_to_dict(t):
         'input_text': t.input_text,
         'result_text': t.result_text,
         'error_message': t.error_message,
-        'created_at': t.created_at.strftime('%d.%m.%Y %H:%M'),
+        'created_at': format_dt(t.created_at),
     }
 
 
@@ -229,7 +230,7 @@ def _job_to_dict(j):
         'id': j.public_id,
         'title': j.title,
         'status': j.status,
-        'created_at': j.created_at.strftime('%d.%m.%Y %H:%M'),
+        'created_at': format_dt(j.created_at),
         'result_text': j.result_text,
         'diarized_segments': segments,
         'has_speakers': has_speakers,
@@ -420,7 +421,7 @@ def _dict_entry_to_dict(e):
         'id': e.id,
         'word': e.word,
         'description': e.description or '',
-        'created_at': e.created_at.strftime('%d.%m.%Y %H:%M'),
+        'created_at': format_dt(e.created_at),
     }
 
 
@@ -509,7 +510,7 @@ def _meeting_to_dict(m):
         'id': m.public_id,
         'title': m.title,
         'status': m.status,
-        'created_at': m.created_at.strftime('%d.%m.%Y %H:%M'),
+        'created_at': format_dt(m.created_at),
         'result_text': m.result_text,
         'diarized_segments': segments,
         'has_speakers': has_speakers,
@@ -648,7 +649,7 @@ def _dictation_to_dict(d):
         'id': d.public_id,
         'title': d.title,
         'status': d.status,
-        'created_at': d.created_at.strftime('%d.%m.%Y %H:%M'),
+        'created_at': format_dt(d.created_at),
         'result_text': d.result_text,
         'diarized_segments': segments,
         'has_speakers': False,
@@ -793,7 +794,7 @@ def _chat_msg_to_dict(m):
         'role': m.role,
         'content': m.content,
         'status': m.status,
-        'created_at': m.created_at.strftime('%d.%m.%Y %H:%M'),
+        'created_at': format_dt(m.created_at),
     }
 
 

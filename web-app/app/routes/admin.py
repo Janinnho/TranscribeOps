@@ -1,8 +1,10 @@
 from functools import wraps
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
 from flask_login import login_required, current_user
+import os
+from flask import current_app
 from app import db
-from app.models import User, Group, SpeechModel, TextModel
+from app.models import User, Group, SpeechModel, TextModel, SystemSetting, Job, Meeting, Dictation, TextTask
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -18,6 +20,30 @@ def admin_required(f):
     return decorated
 
 
+def _dir_size(path):
+    """Calculate total size of files in a directory (non-recursive for top level)."""
+    total = 0
+    try:
+        for entry in os.scandir(path):
+            if entry.is_file():
+                total += entry.stat().st_size
+    except (OSError, FileNotFoundError):
+        pass
+    return total
+
+
+def _fmt_size(size_bytes):
+    """Format byte size to human-readable string."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+
 @admin_bp.route('/')
 @admin_required
 def dashboard():
@@ -25,9 +51,35 @@ def dashboard():
     groups = Group.query.all()
     speech_models = SpeechModel.query.all()
     text_models = TextModel.query.all()
+
+    # Global tab data
+    tz_setting = SystemSetting.query.get('timezone')
+    current_timezone = tz_setting.value if tz_setting else 'Europe/Berlin'
+
+    audio_path = current_app.config.get('AUDIO_STORAGE_PATH', '')
+    upload_path = current_app.config.get('UPLOAD_FOLDER', '')
+    db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
+    max_upload_mb = current_app.config.get('MAX_CONTENT_LENGTH', 0) // (1024 * 1024)
+
+    stats = {
+        'users': User.query.count(),
+        'jobs': Job.query.count(),
+        'meetings': Meeting.query.count(),
+        'dictations': Dictation.query.count(),
+        'text_tasks': TextTask.query.count(),
+    }
+
     return render_template('admin/dashboard.html',
                            users=users, groups=groups,
-                           speech_models=speech_models, text_models=text_models)
+                           speech_models=speech_models, text_models=text_models,
+                           current_timezone=current_timezone,
+                           audio_storage_path=audio_path,
+                           upload_folder=upload_path,
+                           database_url=db_url,
+                           max_upload_mb=max_upload_mb,
+                           audio_disk_usage=_fmt_size(_dir_size(audio_path)),
+                           upload_disk_usage=_fmt_size(_dir_size(upload_path)),
+                           stats=stats)
 
 
 # --- User Management ---
@@ -139,6 +191,9 @@ def create_group():
     group.audio_save_enabled = request.form.get('audio_save_enabled') == 'on'
     group.audio_save_default = request.form.get('audio_save_default') == 'on'
 
+    # UI
+    group.hide_single_model = request.form.get('hide_single_model') == 'on'
+
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)
     group.speech_models = SpeechModel.query.filter(SpeechModel.id.in_(speech_model_ids)).all() if speech_model_ids else []
@@ -183,6 +238,9 @@ def update_group(group_id):
     # Audio save
     group.audio_save_enabled = request.form.get('audio_save_enabled') == 'on'
     group.audio_save_default = request.form.get('audio_save_default') == 'on'
+
+    # UI
+    group.hide_single_model = request.form.get('hide_single_model') == 'on'
 
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)
@@ -332,4 +390,20 @@ def delete_text_model(model_id):
     db.session.delete(model)
     db.session.commit()
     flash('Textmodell gelöscht.', 'success')
+    return redirect(url_for('admin.dashboard'))
+
+
+# --- Global Settings ---
+
+@admin_bp.route('/global', methods=['POST'])
+@admin_required
+def update_global():
+    tz = request.form.get('timezone', 'Europe/Berlin').strip()
+    setting = SystemSetting.query.get('timezone')
+    if setting:
+        setting.value = tz
+    else:
+        db.session.add(SystemSetting(key='timezone', value=tz))
+    db.session.commit()
+    flash('Globale Einstellungen gespeichert.', 'success')
     return redirect(url_for('admin.dashboard'))

@@ -7,6 +7,7 @@
 
         <!-- Model + Language (compact inline) -->
         <div class="d-flex align-items-center gap-3 mb-4">
+            {% if not (hide_single_model and speech_models|length <= 1) %}
             <div class="d-flex align-items-center gap-2">
                 <label class="form-label mb-0 text-nowrap fw-medium"><i class="bi bi-cpu me-1"></i>Modell:</label>
                 <select class="form-select form-select-sm" id="speechModel" style="max-width: 260px;">
@@ -15,6 +16,9 @@
                     {% endfor %}
                 </select>
             </div>
+            {% else %}
+            <select class="d-none" id="speechModel">{% for m in speech_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}</select>
+            {% endif %}
             <div class="d-flex align-items-center gap-2">
                 <label class="form-label mb-0 text-nowrap fw-medium"><i class="bi bi-globe me-1"></i>Sprache:</label>
                 <select class="form-select form-select-sm" id="language" style="max-width: 180px;">

@@ -17,7 +17,7 @@
                                 <option value="true">Mehrere Personen</option>
                             </select>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-4" id="speechModelCol">
                             <label class="form-label">Modell</label>
                             <select class="form-select" id="speechModel" name="speech_model_id"></select>
                         </div>
@@ -110,12 +110,20 @@ const JOB_TYPE = 'transcription';
 
 const singleModels = [{% for m in single_models %}{id:{{ m.id }},name:"{{ m.display_name }}"},{% endfor %}];
 const multiModels = [{% for m in multi_models %}{id:{{ m.id }},name:"{{ m.display_name }}"},{% endfor %}];
+const hideSingleModel = {{ 'true' if hide_single_model else 'false' }};
 
 function updateModelList() {
     const isMulti = document.getElementById('multiSpeaker').value === 'true';
     const models = isMulti ? multiModels : singleModels;
     const select = document.getElementById('speechModel');
     select.innerHTML = models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+    // Hide model column if only one model and setting enabled
+    const col = document.getElementById('speechModelCol');
+    if (hideSingleModel && models.length <= 1) {
+        col.classList.add('d-none');
+    } else {
+        col.classList.remove('d-none');
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => {

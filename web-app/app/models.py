@@ -120,6 +120,13 @@ class User(UserMixin, db.Model):
             return True, True
         return False, False
 
+    def get_hide_single_model(self):
+        """Return True if model selectors should be hidden when only one model is available."""
+        for g in self.groups:
+            if g.hide_single_model:
+                return True
+        return False
+
 
 class Group(db.Model):
     __tablename__ = 'groups'
@@ -138,6 +145,7 @@ class Group(db.Model):
     auto_summary_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
     audio_save_enabled = db.Column(db.Boolean, default=False)
     audio_save_default = db.Column(db.Boolean, default=True)
+    hide_single_model = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     speech_models = db.relationship('SpeechModel', secondary=group_speech_models,
@@ -288,6 +296,12 @@ class DictionaryEntry(db.Model):
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     user = db.relationship('User', backref=db.backref('dictionary_entries', lazy='dynamic'))
+
+
+class SystemSetting(db.Model):
+    __tablename__ = 'system_settings'
+    key = db.Column(db.String(100), primary_key=True)
+    value = db.Column(db.String(500))
 
 
 class ChatMessage(db.Model):

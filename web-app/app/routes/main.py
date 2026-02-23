@@ -22,12 +22,14 @@ def transcription():
     multi_models = current_user.get_available_speech_models(mode='multi')
     text_models = current_user.get_available_text_models()
     audio_save_enabled, audio_save_default = current_user.get_audio_save_settings()
+    hide_single_model = current_user.get_hide_single_model()
     return render_template('main/transcription.html',
                            single_models=single_models,
                            multi_models=multi_models,
                            text_models=text_models,
                            audio_save_enabled=audio_save_enabled,
-                           audio_save_default=audio_save_default)
+                           audio_save_default=audio_save_default,
+                           hide_single_model=hide_single_model)
 
 
 @main_bp.route('/meeting')
@@ -39,11 +41,13 @@ def meeting():
     speech_models = current_user.get_available_speech_models(mode='multi')
     text_models = current_user.get_available_text_models()
     audio_save_enabled, audio_save_default = current_user.get_audio_save_settings()
+    hide_single_model = current_user.get_hide_single_model()
     return render_template('main/meeting.html',
                            speech_models=speech_models,
                            text_models=text_models,
                            audio_save_enabled=audio_save_enabled,
-                           audio_save_default=audio_save_default)
+                           audio_save_default=audio_save_default,
+                           hide_single_model=hide_single_model)
 
 
 @main_bp.route('/dictation')
@@ -53,8 +57,10 @@ def dictation():
         flash('Kein Zugriff auf Diktieren.', 'danger')
         return redirect(url_for('main.settings'))
     speech_models = current_user.get_available_speech_models(mode='single')
+    hide_single_model = current_user.get_hide_single_model()
     return render_template('main/dictation.html',
-                           speech_models=speech_models)
+                           speech_models=speech_models,
+                           hide_single_model=hide_single_model)
 
 
 @main_bp.route('/text-tools')
@@ -64,8 +70,10 @@ def text_tools():
         flash('Kein Zugriff auf Text Tools.', 'danger')
         return redirect(url_for('main.settings'))
     text_models = current_user.get_available_text_models()
+    hide_single_model = current_user.get_hide_single_model()
     return render_template('main/text_tools.html',
-                           text_models=text_models)
+                           text_models=text_models,
+                           hide_single_model=hide_single_model)
 
 
 @main_bp.route('/transcription-job/<string:public_id>')
@@ -77,9 +85,11 @@ def transcription_job_detail(public_id):
     if not job:
         abort(404)
     text_models = current_user.get_available_text_models()
+    hide_single_model = current_user.get_hide_single_model()
     return render_template('main/job_detail.html',
                            job=job, record_type='job',
                            text_models=text_models,
+                           hide_single_model=hide_single_model,
                            back_url=url_for('main.transcription'))
 
 
@@ -92,9 +102,11 @@ def meeting_job_detail(public_id):
     if not m:
         abort(404)
     text_models = current_user.get_available_text_models()
+    hide_single_model = current_user.get_hide_single_model()
     return render_template('main/job_detail.html',
                            job=m, record_type='meeting',
                            text_models=text_models,
+                           hide_single_model=hide_single_model,
                            back_url=url_for('main.meeting'))
 
 
@@ -107,9 +119,11 @@ def dictation_job_detail(public_id):
     if not d:
         abort(404)
     text_models = current_user.get_available_text_models()
+    hide_single_model = current_user.get_hide_single_model()
     return render_template('main/job_detail.html',
                            job=d, record_type='dictation',
                            text_models=text_models,
+                           hide_single_model=hide_single_model,
                            back_url=url_for('main.dictation'))
 
 

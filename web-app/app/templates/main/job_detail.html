@@ -97,6 +97,11 @@
                         <i class="bi bi-info-circle me-1"></i>Details
                     </button>
                     {% if record_type != 'dictation' %}
+                    {% if hide_single_model and text_models|length <= 1 %}
+                    <button class="btn btn-outline-primary btn-sm" onclick="summarizeJob({{ text_models[0].id if text_models else 0 }})" disabled id="summarizeBtn">
+                        <i class="bi bi-magic me-1"></i>Zusammenfassen
+                    </button>
+                    {% else %}
                     <div class="btn-group" id="summarizeGroup">
                         <button class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" disabled id="summarizeBtn">
                             <i class="bi bi-magic me-1"></i>Zusammenfassen
@@ -107,6 +112,7 @@
                             {% endfor %}
                         </ul>
                     </div>
+                    {% endif %}
                     <button class="btn btn-outline-primary btn-sm" onclick="openChat()" id="chatBtn" disabled>
                         <i class="bi bi-chat-dots me-1"></i>KI Chat
                     </button>
@@ -191,7 +197,7 @@
                 </div>
 
                 <!-- Model selector -->
-                <div class="mb-2">
+                <div class="mb-2 {{ 'd-none' if hide_single_model and text_models|length <= 1 }}">
                     <select class="form-select form-select-sm" id="chatModelSelect">
                         {% for m in text_models %}
                         <option value="{{ m.id }}">{{ m.display_name }}</option>

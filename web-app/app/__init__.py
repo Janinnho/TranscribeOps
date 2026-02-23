@@ -149,6 +149,13 @@ def _apply_migrations():
                 _safe_execute(conn, "ALTER TABLE groups ADD COLUMN audio_save_enabled BOOLEAN DEFAULT 0")
             if not _has_column('groups', 'audio_save_default'):
                 _safe_execute(conn, "ALTER TABLE groups ADD COLUMN audio_save_default BOOLEAN DEFAULT 1")
+            if not _has_column('groups', 'hide_single_model'):
+                _safe_execute(conn, "ALTER TABLE groups ADD COLUMN hide_single_model BOOLEAN DEFAULT 1")
+
+        # SystemSetting table
+        if not _has_table('system_settings'):
+            from app.models import SystemSetting
+            SystemSetting.__table__.create(db.engine)
 
         # Jobs/Meetings/Dictations: audio_saved flag
         if _has_table('jobs') and not _has_column('jobs', 'audio_saved'):
@@ -160,7 +167,7 @@ def _apply_migrations():
 
 
 def _seed_defaults(app):
-    from app.models import User, Group, SpeechModel, TextModel
+    from app.models import User, Group, SpeechModel, TextModel, SystemSetting
     if not User.query.first():
         admin = User(display_name='Administrator', email='admin@transcribeops.local', is_admin=True)
         admin.set_password('admin')
@@ -197,4 +204,8 @@ def _seed_defaults(app):
             is_default=True
         )
         db.session.add(default_group)
+        db.session.commit()
+    # Seed default timezone
+    if not SystemSetting.query.get('timezone'):
+        db.session.add(SystemSetting(key='timezone', value='Europe/Berlin'))
         db.session.commit()

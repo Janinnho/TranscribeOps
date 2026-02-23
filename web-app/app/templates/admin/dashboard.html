@@ -16,6 +16,9 @@
     <li class="nav-item">
         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#textTab"><i class="bi bi-chat-dots me-1"></i>Textmodelle</button>
     </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#globalTab"><i class="bi bi-globe2 me-1"></i>Global</button>
+    </li>
 </ul>
 
 <div class="tab-content">
@@ -188,6 +191,92 @@
             </div>
         </div>
     </div>
+
+    <!-- Global Tab -->
+    <div class="tab-pane fade" id="globalTab">
+        <h5 class="mb-4">Globale Einstellungen</h5>
+
+        <!-- Timezone -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-clock me-2"></i>Zeitzone</h6>
+                <p class="text-muted small mb-3">Alle Zeitstempel in der Anwendung werden in dieser Zeitzone angezeigt.</p>
+                <form method="POST" action="{{ url_for('admin.update_global') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="d-flex align-items-center gap-3">
+                        <select name="timezone" class="form-select" style="max-width: 350px;">
+                            {% set timezones = [
+                                ('Europe/Berlin', 'Europe/Berlin (MEZ/MESZ)'),
+                                ('Europe/Zurich', 'Europe/Zurich'),
+                                ('Europe/Vienna', 'Europe/Vienna'),
+                                ('Europe/London', 'Europe/London (GMT/BST)'),
+                                ('Europe/Paris', 'Europe/Paris'),
+                                ('Europe/Amsterdam', 'Europe/Amsterdam'),
+                                ('Europe/Brussels', 'Europe/Brussels'),
+                                ('Europe/Rome', 'Europe/Rome'),
+                                ('Europe/Madrid', 'Europe/Madrid'),
+                                ('Europe/Warsaw', 'Europe/Warsaw'),
+                                ('Europe/Prague', 'Europe/Prague'),
+                                ('Europe/Stockholm', 'Europe/Stockholm'),
+                                ('Europe/Helsinki', 'Europe/Helsinki'),
+                                ('Europe/Athens', 'Europe/Athens'),
+                                ('Europe/Istanbul', 'Europe/Istanbul'),
+                                ('Europe/Moscow', 'Europe/Moscow'),
+                                ('US/Eastern', 'US/Eastern (EST/EDT)'),
+                                ('US/Central', 'US/Central (CST/CDT)'),
+                                ('US/Mountain', 'US/Mountain (MST/MDT)'),
+                                ('US/Pacific', 'US/Pacific (PST/PDT)'),
+                                ('Asia/Tokyo', 'Asia/Tokyo (JST)'),
+                                ('Asia/Shanghai', 'Asia/Shanghai (CST)'),
+                                ('Asia/Kolkata', 'Asia/Kolkata (IST)'),
+                                ('Asia/Dubai', 'Asia/Dubai (GST)'),
+                                ('Australia/Sydney', 'Australia/Sydney (AEST)'),
+                                ('Pacific/Auckland', 'Pacific/Auckland (NZST)'),
+                                ('UTC', 'UTC'),
+                            ] %}
+                            {% for tz_val, tz_label in timezones %}
+                            <option value="{{ tz_val }}" {{ 'selected' if current_timezone == tz_val }}>{{ tz_label }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Speichern</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- System Info -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-info-circle me-2"></i>Systeminformationen</h6>
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        <tr><td class="text-muted" style="width: 220px;">Audio-Speicher</td><td><code>{{ audio_storage_path }}</code></td></tr>
+                        <tr><td class="text-muted">Upload-Ordner</td><td><code>{{ upload_folder }}</code></td></tr>
+                        <tr><td class="text-muted">Datenbank</td><td><code>{{ database_url }}</code></td></tr>
+                        <tr><td class="text-muted">Max. Dateigröße</td><td>{{ max_upload_mb }} MB</td></tr>
+                        <tr><td class="text-muted">Audio-Speicher belegt</td><td>{{ audio_disk_usage }}</td></tr>
+                        <tr><td class="text-muted">Upload-Ordner belegt</td><td>{{ upload_disk_usage }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Statistics -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-bar-chart me-2"></i>Statistiken</h6>
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        <tr><td class="text-muted" style="width: 220px;">Benutzer</td><td>{{ stats.users }}</td></tr>
+                        <tr><td class="text-muted">Transkriptionen</td><td>{{ stats.jobs }}</td></tr>
+                        <tr><td class="text-muted">Meetings</td><td>{{ stats.meetings }}</td></tr>
+                        <tr><td class="text-muted">Diktate</td><td>{{ stats.dictations }}</td></tr>
+                        <tr><td class="text-muted">Text-Aufgaben</td><td>{{ stats.text_tasks }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
 
 <!-- Create User Modal -->
@@ -288,6 +377,12 @@
                         <label class="form-check-label" for="newGroupAudioDefault">Standardmässig speichern</label>
                     </div>
                     <hr>
+                    <label class="form-label fw-medium">Oberfläche</label>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="hide_single_model" id="newGroupHideSingleModel" checked>
+                        <label class="form-check-label" for="newGroupHideSingleModel">Modellauswahl ausblenden wenn nur ein Modell verfügbar</label>
+                    </div>
+                    <hr>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
                         {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}"><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
@@ -353,6 +448,12 @@
                     <div class="form-check mb-3 ms-4">
                         <input class="form-check-input" type="checkbox" name="audio_save_default" id="editAudioDefault{{ group.id }}" {{ 'checked' if group.audio_save_default }} {{ 'disabled' if not group.audio_save_enabled }}>
                         <label class="form-check-label" for="editAudioDefault{{ group.id }}">Standardmässig speichern</label>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Oberfläche</label>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="hide_single_model" id="editHideSingleModel{{ group.id }}" {{ 'checked' if group.hide_single_model }}>
+                        <label class="form-check-label" for="editHideSingleModel{{ group.id }}">Modellauswahl ausblenden wenn nur ein Modell verfügbar</label>
                     </div>
                     <hr>
                     <div class="mb-3">
