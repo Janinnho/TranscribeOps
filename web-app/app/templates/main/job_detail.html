@@ -10,7 +10,36 @@
 {% endblock %}
 
 {% block content %}
-<div class="row g-4 h-100" style="overflow: hidden;">
+<!-- Mobile-only quick actions -->
+<div class="d-lg-none mb-3">
+    <button class="btn btn-outline-secondary btn-sm w-100" type="button"
+            data-bs-toggle="collapse" data-bs-target="#mobileActions">
+        <i class="bi bi-tools me-1"></i>Aktionen
+        <i class="bi bi-chevron-down ms-1 small"></i>
+    </button>
+    <div class="collapse mt-2" id="mobileActions">
+        <div class="d-flex flex-wrap gap-2">
+            <button class="btn btn-outline-secondary btn-sm" onclick="copyResult()" id="mobileCopyBtn" disabled>
+                <i class="bi bi-clipboard me-1"></i>Kopieren
+            </button>
+            <a class="btn btn-outline-secondary btn-sm" id="mobileDownloadBtn"
+               href="/api/{% if record_type == 'meeting' %}meeting{% elif record_type == 'dictation' %}dictation{% else %}job{% endif %}/{{ job.public_id }}/download"
+               style="pointer-events: none; opacity: 0.5;">
+                <i class="bi bi-download me-1"></i>Download
+            </a>
+            {% if record_type != 'dictation' %}
+            <button class="btn btn-outline-primary btn-sm" onclick="summarizeJob({{ text_models[0].id if text_models else 0 }})" id="mobileSummarizeBtn" disabled>
+                <i class="bi bi-magic me-1"></i>Zusammenfassen
+            </button>
+            <button class="btn btn-outline-primary btn-sm" onclick="openChat()" id="mobileChatBtn" disabled>
+                <i class="bi bi-chat-dots me-1"></i>KI Chat
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 h-100 job-detail-row" style="overflow: hidden;">
     <!-- Left: Transkription -->
     <div class="col-lg-7 d-flex flex-column" style="min-height: 0; max-height: 100%;">
         <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column" style="min-height: 0; overflow: hidden;">
@@ -426,6 +455,15 @@ function enableActions() {
     const dl = document.getElementById('downloadBtn');
     dl.style.pointerEvents = '';
     dl.style.opacity = '';
+    // Mobile action buttons
+    const mc = document.getElementById('mobileCopyBtn');
+    if (mc) mc.disabled = false;
+    const ms = document.getElementById('mobileSummarizeBtn');
+    if (ms) ms.disabled = false;
+    const mch = document.getElementById('mobileChatBtn');
+    if (mch) mch.disabled = false;
+    const mdl = document.getElementById('mobileDownloadBtn');
+    if (mdl) { mdl.style.pointerEvents = ''; mdl.style.opacity = ''; }
 }
 
 function disableActions() {
@@ -437,6 +475,15 @@ function disableActions() {
     const dl = document.getElementById('downloadBtn');
     dl.style.pointerEvents = 'none';
     dl.style.opacity = '0.5';
+    // Mobile action buttons
+    const mc = document.getElementById('mobileCopyBtn');
+    if (mc) mc.disabled = true;
+    const ms = document.getElementById('mobileSummarizeBtn');
+    if (ms) ms.disabled = true;
+    const mch = document.getElementById('mobileChatBtn');
+    if (mch) mch.disabled = true;
+    const mdl = document.getElementById('mobileDownloadBtn');
+    if (mdl) { mdl.style.pointerEvents = 'none'; mdl.style.opacity = '0.5'; }
 }
 
 function renderDiarized(segments) {

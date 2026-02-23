@@ -2,11 +2,30 @@
 document.addEventListener('DOMContentLoaded', () => {
     const toggle = document.getElementById('sidebarToggle');
     const sidebar = document.getElementById('sidebar');
+    const backdrop = document.getElementById('sidebarBackdrop');
+
     if (toggle && sidebar) {
-        toggle.addEventListener('click', () => sidebar.classList.toggle('show'));
+        function closeSidebar() {
+            sidebar.classList.remove('show');
+            if (backdrop) backdrop.classList.remove('show');
+        }
+
+        toggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            sidebar.classList.toggle('show');
+            if (backdrop) backdrop.classList.toggle('show');
+        });
+
+        if (backdrop) {
+            backdrop.addEventListener('click', closeSidebar);
+        }
+
         document.addEventListener('click', (e) => {
-            if (sidebar.classList.contains('show') && !sidebar.contains(e.target) && e.target !== toggle) {
-                sidebar.classList.remove('show');
+            if (sidebar.classList.contains('show') &&
+                !sidebar.contains(e.target) &&
+                e.target !== toggle &&
+                !toggle.contains(e.target)) {
+                closeSidebar();
             }
         });
     }
