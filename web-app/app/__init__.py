@@ -41,6 +41,9 @@ def create_app(config_class=Config):
     app.register_blueprint(admin_bp, url_prefix='/admin')
     app.register_blueprint(api_bp, url_prefix='/api')
 
+    from app.sso import init_oidc
+    init_oidc(app)
+
     with app.app_context():
         import os
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -156,6 +159,13 @@ def _apply_migrations():
         if not _has_table('system_settings'):
             from app.models import SystemSetting
             SystemSetting.__table__.create(db.engine)
+
+        # Users: auth_source and external_id for SSO
+        if _has_table('users'):
+            if not _has_column('users', 'auth_source'):
+                _safe_execute(conn, "ALTER TABLE users ADD COLUMN auth_source VARCHAR(20) DEFAULT 'local'")
+            if not _has_column('users', 'external_id'):
+                _safe_execute(conn, "ALTER TABLE users ADD COLUMN external_id VARCHAR(255)")
 
         # Jobs/Meetings/Dictations: audio_saved flag
         if _has_table('jobs') and not _has_column('jobs', 'audio_saved'):

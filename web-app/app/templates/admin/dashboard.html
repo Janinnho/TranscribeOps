@@ -19,6 +19,9 @@
     <li class="nav-item">
         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#globalTab"><i class="bi bi-globe2 me-1"></i>Global</button>
     </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ssoTab"><i class="bi bi-shield-lock me-1"></i>Single-Sign-On</button>
+    </li>
 </ul>
 
 <div class="tab-content">
@@ -33,7 +36,7 @@
         <div class="card border-0 shadow-sm">
             <div class="table-responsive">
                 <table class="table table-hover mb-0">
-                    <thead><tr><th>Anzeigename</th><th>E-Mail</th><th>Admin</th><th>Aktiv</th><th>Gruppen</th><th>Aktionen</th></tr></thead>
+                    <thead><tr><th>Anzeigename</th><th>E-Mail</th><th>Admin</th><th>Aktiv</th><th>Quelle</th><th>Gruppen</th><th>Aktionen</th></tr></thead>
                     <tbody>
                     {% for user in users %}
                     <tr>
@@ -41,6 +44,15 @@
                         <td>{{ user.email }}</td>
                         <td><span class="badge {{ 'bg-primary' if user.is_admin else 'bg-secondary' }}">{{ 'Ja' if user.is_admin else 'Nein' }}</span></td>
                         <td><span class="badge {{ 'bg-success' if user.is_active_user else 'bg-danger' }}">{{ 'Ja' if user.is_active_user else 'Nein' }}</span></td>
+                        <td>
+                            {% if user.auth_source == 'header_sso' %}
+                            <span class="badge bg-warning text-dark"><i class="bi bi-shield-check me-1"></i>Header SSO</span>
+                            {% elif user.auth_source == 'oidc' %}
+                            <span class="badge bg-info"><i class="bi bi-key me-1"></i>OIDC</span>
+                            {% else %}
+                            <span class="badge bg-secondary"><i class="bi bi-person me-1"></i>Lokal</span>
+                            {% endif %}
+                        </td>
                         <td>{% for g in user.groups %}<span class="badge bg-info me-1">{{ g.name }}</span>{% endfor %}</td>
                         <td>
                             <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editUser{{ user.id }}"><i class="bi bi-pencil"></i></button>
@@ -277,7 +289,169 @@
             </div>
         </div>
     </div>
+
+    <!-- SSO Tab -->
+    <div class="tab-pane fade" id="ssoTab">
+        <h5 class="mb-4">Single-Sign-On (SSO)</h5>
+        <form method="POST" action="{{ url_for('admin.update_sso') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <!-- SSO Enable/Method Selection -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="bi bi-toggle-on me-2"></i>SSO Aktivierung</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="sso_enabled"
+                               id="ssoEnabled" value="on"
+                               {{ 'checked' if sso_settings.sso_enabled == 'true' }}
+                               onchange="toggleSsoFields()">
+                        <label class="form-check-label" for="ssoEnabled">
+                            Single-Sign-On aktivieren
+                        </label>
+                    </div>
+                    <div id="ssoMethodGroup" class="{{ 'd-none' if sso_settings.sso_enabled != 'true' }}">
+                        <label class="form-label fw-medium mt-3">SSO Methode</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="sso_method"
+                                   value="header" id="ssoMethodHeader"
+                                   {{ 'checked' if sso_settings.sso_method != 'oidc' }}
+                                   onchange="toggleSsoFields()">
+                            <label class="form-check-label" for="ssoMethodHeader">
+                                Header-basiert (z.B. Cloudflare Access, Entra ID Proxy)
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="sso_method"
+                                   value="oidc" id="ssoMethodOidc"
+                                   {{ 'checked' if sso_settings.sso_method == 'oidc' }}
+                                   onchange="toggleSsoFields()">
+                            <label class="form-check-label" for="ssoMethodOidc">
+                                OpenID Connect (OIDC)
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Header SSO Config -->
+            <div class="card border-0 shadow-sm mb-4" id="headerSsoConfig">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="bi bi-envelope me-2"></i>Header-SSO Konfiguration</h6>
+                    <div class="alert alert-warning small mb-3">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>Sicherheitshinweis:</strong> Header-basiertes SSO setzt voraus, dass die Anwendung ausschließlich über den Reverse Proxy erreichbar ist. Direkte Zugriffe müssen durch Firewall-Regeln oder Netzwerk-Isolation verhindert werden.
+                    </div>
+                    <p class="text-muted small">Der Reverse Proxy sendet authentifizierte Benutzerinformationen als HTTP-Header.</p>
+                    <div class="mb-3">
+                        <label class="form-label">E-Mail Header <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="sso_header_email"
+                               value="{{ sso_settings.sso_header_email }}"
+                               placeholder="Cf-Access-Authenticated-User-Email">
+                        <small class="text-muted">Name des HTTP-Headers der die E-Mail-Adresse enthält.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Name Header (optional)</label>
+                        <input type="text" class="form-control" name="sso_header_name"
+                               value="{{ sso_settings.sso_header_name }}"
+                               placeholder="X-Auth-Name">
+                        <small class="text-muted">Name des HTTP-Headers der den Anzeigenamen enthält.</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OIDC Config -->
+            <div class="card border-0 shadow-sm mb-4" id="oidcSsoConfig">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="bi bi-key me-2"></i>OpenID Connect Konfiguration</h6>
+                    <div class="mb-3">
+                        <label class="form-label">Discovery URL <span class="text-danger">*</span></label>
+                        <input type="url" class="form-control" name="oidc_discovery_url"
+                               value="{{ sso_settings.oidc_discovery_url }}"
+                               placeholder="https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Client ID <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="oidc_client_id"
+                               value="{{ sso_settings.oidc_client_id }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Client Secret <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" name="oidc_client_secret"
+                               placeholder="{{ '(gespeichert)' if sso_settings.oidc_client_secret else '' }}">
+                        <small class="text-muted">Leer lassen um den bestehenden Wert beizubehalten.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Scopes</label>
+                        <input type="text" class="form-control" name="oidc_scopes"
+                               value="{{ sso_settings.oidc_scopes or 'openid email profile' }}"
+                               placeholder="openid email profile">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">E-Mail Claim</label>
+                            <input type="text" class="form-control" name="oidc_email_claim"
+                                   value="{{ sso_settings.oidc_email_claim or 'email' }}"
+                                   placeholder="email">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Name Claim</label>
+                            <input type="text" class="form-control" name="oidc_name_claim"
+                                   value="{{ sso_settings.oidc_name_claim or 'name' }}"
+                                   placeholder="name">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- General SSO Settings -->
+            <div class="card border-0 shadow-sm mb-4" id="ssoGeneralConfig">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="bi bi-gear me-2"></i>Allgemeine SSO-Einstellungen</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="sso_auto_create"
+                               id="ssoAutoCreate" value="on"
+                               {{ 'checked' if sso_settings.sso_auto_create == 'true' }}>
+                        <label class="form-check-label" for="ssoAutoCreate">
+                            Benutzer automatisch erstellen beim ersten SSO-Login
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="sso_default_admin"
+                               id="ssoDefaultAdmin" value="on"
+                               {{ 'checked' if sso_settings.sso_default_admin == 'true' }}>
+                        <label class="form-check-label" for="ssoDefaultAdmin">
+                            Automatisch erstellte SSO-Benutzer als Admin anlegen
+                        </label>
+                    </div>
+                    <div class="alert alert-info small mt-3 mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Manuelles Login ist immer unter <code>/manuell-login</code> erreichbar.
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i>SSO-Einstellungen speichern
+            </button>
+        </form>
+    </div>
 </div>
+
+<script>
+function toggleSsoFields() {
+    const enabled = document.getElementById('ssoEnabled').checked;
+    const methodGroup = document.getElementById('ssoMethodGroup');
+    const headerConfig = document.getElementById('headerSsoConfig');
+    const oidcConfig = document.getElementById('oidcSsoConfig');
+    const generalConfig = document.getElementById('ssoGeneralConfig');
+
+    methodGroup.classList.toggle('d-none', !enabled);
+    headerConfig.classList.toggle('d-none', !enabled || !document.getElementById('ssoMethodHeader').checked);
+    oidcConfig.classList.toggle('d-none', !enabled || !document.getElementById('ssoMethodOidc').checked);
+    generalConfig.classList.toggle('d-none', !enabled);
+}
+document.addEventListener('DOMContentLoaded', toggleSsoFields);
+</script>
 
 <!-- Create User Modal -->
 <div class="modal fade" id="createUserModal" tabindex="-1">

@@ -69,6 +69,10 @@ def dashboard():
         'text_tasks': TextTask.query.count(),
     }
 
+    # SSO settings
+    from app.sso import get_all_sso_settings
+    sso_settings = get_all_sso_settings()
+
     return render_template('admin/dashboard.html',
                            users=users, groups=groups,
                            speech_models=speech_models, text_models=text_models,
@@ -79,7 +83,8 @@ def dashboard():
                            max_upload_mb=max_upload_mb,
                            audio_disk_usage=_fmt_size(_dir_size(audio_path)),
                            upload_disk_usage=_fmt_size(_dir_size(upload_path)),
-                           stats=stats)
+                           stats=stats,
+                           sso_settings=sso_settings)
 
 
 # --- User Management ---
@@ -406,4 +411,15 @@ def update_global():
         db.session.add(SystemSetting(key='timezone', value=tz))
     db.session.commit()
     flash('Globale Einstellungen gespeichert.', 'success')
+    return redirect(url_for('admin.dashboard'))
+
+
+# --- SSO Settings ---
+
+@admin_bp.route('/sso', methods=['POST'])
+@admin_required
+def update_sso():
+    from app.sso import save_sso_settings
+    save_sso_settings(request.form)
+    flash('Single-Sign-On Einstellungen gespeichert.', 'success')
     return redirect(url_for('admin.dashboard'))

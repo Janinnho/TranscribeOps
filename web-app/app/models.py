@@ -30,11 +30,13 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     display_name = db.Column(db.String(80), nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(256), nullable=False)
+    password_hash = db.Column(db.String(256), nullable=True)
     is_admin = db.Column(db.Boolean, default=False)
     is_active_user = db.Column(db.Boolean, default=True)
     theme = db.Column(db.String(20), default='auto')  # light, dark, auto
     history_days = db.Column(db.Integer, default=30)
+    auth_source = db.Column(db.String(20), default='local')  # 'local', 'header_sso', 'oidc'
+    external_id = db.Column(db.String(255), nullable=True)     # OIDC 'sub' claim or header identity
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     groups = db.relationship('Group', secondary=user_groups, backref=db.backref('users', lazy='dynamic'))
@@ -44,6 +46,8 @@ class User(UserMixin, db.Model):
         self.password_hash = generate_password_hash(password)
 
     def check_password(self, password):
+        if not self.password_hash:
+            return False
         return check_password_hash(self.password_hash, password)
 
     def get_available_speech_models(self, mode=None):
