@@ -1,4 +1,6 @@
 import os
+import shutil
+import subprocess
 import json
 import requests
 from datetime import datetime, timezone
@@ -14,9 +16,79 @@ def _is_diarize_model(model):
     return model.supports_diarize
 
 
-def _run_speech_processing(record, multi_speaker=False):
-    """Shared audio processing logic for Job, Meeting, and Dictation."""
+def _convert_to_mp3(src_path):
+    """Convert any audio file to MP3 using ffmpeg. Returns the MP3 path."""
+    mp3_path = os.path.splitext(src_path)[0] + '.mp3'
+    if src_path.lower().endswith('.mp3'):
+        return src_path  # already MP3
+    try:
+        subprocess.run(
+            ['ffmpeg', '-i', src_path, '-codec:a', 'libmp3lame', '-q:a', '4', '-y', mp3_path],
+            check=True, capture_output=True, timeout=600
+        )
+        # Remove original file after successful conversion
+        if os.path.exists(mp3_path) and mp3_path != src_path:
+            os.remove(src_path)
+        return mp3_path
+    except Exception:
+        # If conversion fails, keep original
+        return src_path
+
+
+def _persist_audio_file(record, app):
+    """Before transcription: convert to MP3 and copy to permanent storage.
+    The original file in uploads stays untouched for the transcription API."""
     from app import db
+
+    if not record.audio_saved or not record.file_path:
+        return
+
+    src_path = record.file_path
+    storage_path = app.config.get('AUDIO_STORAGE_PATH', app.config['UPLOAD_FOLDER'])
+
+    # Convert to MP3 into storage dir
+    base_name = os.path.splitext(os.path.basename(src_path))[0] + '.mp3'
+    dest_path = os.path.join(storage_path, base_name)
+
+    if src_path.lower().endswith('.mp3'):
+        # Already MP3 — just copy
+        shutil.copy2(src_path, dest_path)
+    else:
+        try:
+            subprocess.run(
+                ['ffmpeg', '-i', src_path, '-codec:a', 'libmp3lame', '-q:a', '4', '-y', dest_path],
+                check=True, capture_output=True, timeout=600
+            )
+        except Exception:
+            # Fallback: copy original
+            shutil.copy2(src_path, dest_path)
+
+    record.file_path = dest_path
+    db.session.commit()
+
+
+def _cleanup_temp_file(record, temp_path):
+    """After transcription: delete the original upload file.
+    If audio was not saved, also clear file_path on the record."""
+    from app import db
+
+    if temp_path and os.path.exists(temp_path):
+        try:
+            os.remove(temp_path)
+        except OSError:
+            pass
+
+    if not record.audio_saved:
+        record.file_path = None
+        db.session.commit()
+
+
+def _run_speech_processing(record, multi_speaker=False, audio_path=None):
+    """Shared audio processing logic for Job, Meeting, and Dictation.
+    audio_path overrides record.file_path (used when original temp file differs from stored path)."""
+    from app import db
+
+    file_path = audio_path or record.file_path
 
     try:
         speech_model = record.speech_model
@@ -25,7 +97,7 @@ def _run_speech_processing(record, multi_speaker=False):
 
         dictionary_prompt = _get_dictionary_prompt(record.user_id)
 
-        result = _call_speech_api(speech_model, record.file_path, record.language,
+        result = _call_speech_api(speech_model, file_path, record.language,
                                   multi_speaker, original_filename=record.original_filename,
                                   dictionary_prompt=dictionary_prompt)
 
@@ -58,7 +130,11 @@ def process_transcription(self, job_id):
         job.status = 'processing'
         job.celery_task_id = self.request.id
         db.session.commit()
-        _run_speech_processing(job, multi_speaker=job.multi_speaker)
+
+        temp_path = job.file_path
+        _persist_audio_file(job, app)
+        _run_speech_processing(job, multi_speaker=job.multi_speaker, audio_path=temp_path)
+        _cleanup_temp_file(job, temp_path)
 
         if job.status == 'completed':
             _trigger_auto_tasks(job.user_id, job.id, 'job')
@@ -80,7 +156,11 @@ def process_meeting(self, meeting_id):
         meeting.status = 'processing'
         meeting.celery_task_id = self.request.id
         db.session.commit()
-        _run_speech_processing(meeting, multi_speaker=True)
+
+        temp_path = meeting.file_path
+        _persist_audio_file(meeting, app)
+        _run_speech_processing(meeting, multi_speaker=True, audio_path=temp_path)
+        _cleanup_temp_file(meeting, temp_path)
 
         if meeting.status == 'completed':
             _trigger_auto_tasks(meeting.user_id, meeting.id, 'meeting')
@@ -102,7 +182,11 @@ def process_dictation(self, dictation_id):
         dictation.status = 'processing'
         dictation.celery_task_id = self.request.id
         db.session.commit()
-        _run_speech_processing(dictation, multi_speaker=False)
+
+        temp_path = dictation.file_path
+        _persist_audio_file(dictation, app)
+        _run_speech_processing(dictation, multi_speaker=False, audio_path=temp_path)
+        _cleanup_temp_file(dictation, temp_path)
 
         if dictation.status == 'completed':
             # Only auto-title for dictation (no auto-summary, dictation has no summary fields)

@@ -115,6 +115,19 @@
             </div>
         </div>
 
+        <!-- Audio Player -->
+        <div class="card border-0 shadow-sm mb-4 d-none" id="audioPlayerCard">
+            <div class="card-body p-4">
+                <h6 class="card-title mb-3"><i class="bi bi-music-note-beamed me-2"></i>Audio</h6>
+                <audio id="audioPlayer" class="w-100" controls preload="metadata"></audio>
+                <div class="mt-2 text-end">
+                    <a id="audioDownloadBtn" class="btn btn-sm btn-outline-secondary" href="#" target="_blank">
+                        <i class="bi bi-download me-1"></i>Audio herunterladen
+                    </a>
+                </div>
+            </div>
+        </div>
+
         <!-- Zusammenfassung -->
         {% if record_type != 'dictation' %}
         <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column" id="summaryCard">
@@ -340,6 +353,20 @@ function renderJob(job) {
         }
     }
 
+    // Audio player
+    const audioCard = document.getElementById('audioPlayerCard');
+    if (job.audio_available) {
+        audioCard.classList.remove('d-none');
+        const audioPlayer = document.getElementById('audioPlayer');
+        const audioUrl = `${API_BASE}/${JOB_ID}/audio`;
+        if (audioPlayer.getAttribute('src') !== audioUrl) {
+            audioPlayer.src = audioUrl;
+        }
+        document.getElementById('audioDownloadBtn').href = audioUrl + '?download=1';
+    } else {
+        audioCard.classList.add('d-none');
+    }
+
     // Summary section (not for dictation)
     if (RECORD_TYPE !== 'dictation') {
         renderSummary(job);
@@ -413,10 +440,10 @@ function renderDiarized(segments) {
         const idx = speakers.indexOf(seg.speaker);
         const color = getSpeakerColor(idx);
         const ts = fmtTime(seg.start) + ' - ' + fmtTime(seg.end);
-        return `<div class="mb-2 pb-2 border-bottom border-opacity-25">
+        return `<div class="mb-2 pb-2 border-bottom border-opacity-25 audio-segment" data-start="${seg.start}" data-end="${seg.end}">
             <div class="d-flex align-items-center gap-2 mb-1">
                 <span class="badge" style="background:${color}">${escapeHtml(seg.speaker)}</span>
-                <small class="text-muted">${ts}</small>
+                <small class="text-muted timestamp-link" data-start="${seg.start}">${ts}</small>
             </div>
             <div class="ps-1 segment-text" data-seg-index="${segIdx}">${escapeHtml(seg.text.trim())}</div>
         </div>`;
@@ -460,9 +487,9 @@ function renderTimestampSegments(segments) {
     const container = document.getElementById('timestampView');
     container.innerHTML = segments.map((seg, segIdx) => {
         const ts = fmtTime(seg.start) + ' \u2013 ' + fmtTime(seg.end);
-        return `<div class="mb-2 pb-2 border-bottom border-opacity-25">
+        return `<div class="mb-2 pb-2 border-bottom border-opacity-25 audio-segment" data-start="${seg.start}" data-end="${seg.end}">
             <div class="d-flex align-items-start gap-3">
-                <small class="text-muted text-nowrap" style="min-width: 110px; flex-shrink: 0; font-family: monospace; font-size: 0.8rem;">[${ts}]</small>
+                <small class="text-muted text-nowrap timestamp-link" data-start="${seg.start}" style="min-width: 110px; flex-shrink: 0; font-family: monospace; font-size: 0.8rem;">[${ts}]</small>
                 <div class="segment-text" data-seg-index="${segIdx}" style="min-width: 0;">${escapeHtml(seg.text.trim())}</div>
             </div>
         </div>`;
@@ -943,11 +970,71 @@ function initChat() {
     });
 }
 
+// ── Audio player: timestamp seek & segment highlighting ──────────────
+function initAudioSync() {
+    const audioPlayer = document.getElementById('audioPlayer');
+    if (!audioPlayer) return;
+
+    // Click on timestamp → seek audio
+    document.addEventListener('click', (e) => {
+        const tsEl = e.target.closest('.timestamp-link');
+        if (!tsEl) return;
+        const startTime = parseFloat(tsEl.dataset.start);
+        if (isNaN(startTime)) return;
+        audioPlayer.currentTime = startTime;
+        audioPlayer.play();
+    });
+
+    // Highlight active segment during playback
+    let lastActiveEl = null;
+    audioPlayer.addEventListener('timeupdate', () => {
+        const currentTime = audioPlayer.currentTime;
+        const allSegments = document.querySelectorAll('.audio-segment');
+        let activeEl = null;
+
+        for (const seg of allSegments) {
+            const start = parseFloat(seg.dataset.start);
+            const end = parseFloat(seg.dataset.end);
+            if (currentTime >= start && currentTime < end) {
+                activeEl = seg;
+                break;
+            }
+        }
+
+        if (activeEl === lastActiveEl) return;
+
+        // Remove previous highlight
+        if (lastActiveEl) lastActiveEl.classList.remove('segment-active');
+
+        // Apply new highlight
+        if (activeEl) {
+            activeEl.classList.add('segment-active');
+            // Auto-scroll to active segment
+            const container = activeEl.closest('#diarizedView, #timestampView');
+            if (container) {
+                const containerRect = container.getBoundingClientRect();
+                const elRect = activeEl.getBoundingClientRect();
+                if (elRect.top < containerRect.top || elRect.bottom > containerRect.bottom) {
+                    activeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }
+        }
+
+        lastActiveEl = activeEl;
+    });
+
+    // Clear highlight when audio ends or pauses
+    audioPlayer.addEventListener('ended', () => {
+        if (lastActiveEl) { lastActiveEl.classList.remove('segment-active'); lastActiveEl = null; }
+    });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
     refreshJob();
     initTranscriptSearch();
     initSegmentEditing();
     initChat();
+    initAudioSync();
 });
 </script>
 {% endblock %}

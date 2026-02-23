@@ -76,6 +76,8 @@ function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId,
         if (language) formData.append('language', language.value);
         const multiSpeaker = document.getElementById('multiSpeaker');
         if (multiSpeaker) formData.append('multi_speaker', multiSpeaker.value);
+        const saveAudio = document.getElementById('saveAudio');
+        if (saveAudio) formData.append('save_audio', saveAudio.checked ? '1' : '0');
 
         uploadBtn.disabled = true;
         progress.classList.remove('d-none');

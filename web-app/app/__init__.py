@@ -44,6 +44,7 @@ def create_app(config_class=Config):
     with app.app_context():
         import os
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+        os.makedirs(app.config['AUDIO_STORAGE_PATH'], exist_ok=True)
         os.makedirs(os.path.dirname(app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')), exist_ok=True)
         try:
             db.create_all()
@@ -141,6 +142,21 @@ def _apply_migrations():
         if not _has_table('chat_messages'):
             from app.models import ChatMessage
             ChatMessage.__table__.create(db.engine)
+
+        # Groups: audio save feature
+        if _has_table('groups'):
+            if not _has_column('groups', 'audio_save_enabled'):
+                _safe_execute(conn, "ALTER TABLE groups ADD COLUMN audio_save_enabled BOOLEAN DEFAULT 0")
+            if not _has_column('groups', 'audio_save_default'):
+                _safe_execute(conn, "ALTER TABLE groups ADD COLUMN audio_save_default BOOLEAN DEFAULT 1")
+
+        # Jobs/Meetings/Dictations: audio_saved flag
+        if _has_table('jobs') and not _has_column('jobs', 'audio_saved'):
+            _safe_execute(conn, "ALTER TABLE jobs ADD COLUMN audio_saved BOOLEAN DEFAULT 0")
+        if _has_table('meetings') and not _has_column('meetings', 'audio_saved'):
+            _safe_execute(conn, "ALTER TABLE meetings ADD COLUMN audio_saved BOOLEAN DEFAULT 0")
+        if _has_table('dictations') and not _has_column('dictations', 'audio_saved'):
+            _safe_execute(conn, "ALTER TABLE dictations ADD COLUMN audio_saved BOOLEAN DEFAULT 0")
 
 
 def _seed_defaults(app):

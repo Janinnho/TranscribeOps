@@ -111,6 +111,15 @@ class User(UserMixin, db.Model):
                 return True, g.auto_summary_model_id
         return False, None
 
+    def get_audio_save_settings(self):
+        """Return (enabled, default_save) from user's groups."""
+        for g in self.groups:
+            if g.audio_save_enabled:
+                return True, g.audio_save_default
+        if self.is_admin:
+            return True, True
+        return False, False
+
 
 class Group(db.Model):
     __tablename__ = 'groups'
@@ -127,6 +136,8 @@ class Group(db.Model):
     auto_title_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
     auto_summary_enabled = db.Column(db.Boolean, default=False)
     auto_summary_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
+    audio_save_enabled = db.Column(db.Boolean, default=False)
+    audio_save_default = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     speech_models = db.relationship('SpeechModel', secondary=group_speech_models,
@@ -193,6 +204,7 @@ class Job(db.Model):
     tool_action = db.Column(db.String(30))
     target_language = db.Column(db.String(50))
     error_message = db.Column(db.Text)
+    audio_saved = db.Column(db.Boolean, default=False)
     celery_task_id = db.Column(db.String(155))
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = db.Column(db.DateTime)
@@ -218,6 +230,7 @@ class Meeting(db.Model):
     summary_text = db.Column(db.Text)
     summary_status = db.Column(db.String(20))
     error_message = db.Column(db.Text)
+    audio_saved = db.Column(db.Boolean, default=False)
     celery_task_id = db.Column(db.String(155))
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = db.Column(db.DateTime)
@@ -240,6 +253,7 @@ class Dictation(db.Model):
     result_text = db.Column(db.Text)
     diarized_segments = db.Column(db.Text)
     error_message = db.Column(db.Text)
+    audio_saved = db.Column(db.Boolean, default=False)
     celery_task_id = db.Column(db.String(155))
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = db.Column(db.DateTime)

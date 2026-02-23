@@ -2,7 +2,7 @@ import os
 import json
 import uuid
 from datetime import datetime, timezone, timedelta
-from flask import Blueprint, request, jsonify, current_app, Response
+from flask import Blueprint, request, jsonify, current_app, Response, send_file
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from app import db
@@ -34,6 +34,7 @@ def upload():
     speech_model_id = request.form.get('speech_model_id', type=int)
     language = request.form.get('language', '').strip() or None
     multi_speaker = request.form.get('multi_speaker') == 'true'
+    save_audio = request.form.get('save_audio') == '1'
 
     filename = secure_filename(file.filename)
     unique_name = f"{uuid.uuid4().hex}_{filename}"
@@ -43,7 +44,8 @@ def upload():
     if job_type == 'meeting':
         record = Meeting(
             user_id=current_user.id, title=filename, original_filename=filename,
-            file_path=filepath, speech_model_id=speech_model_id, language=language, status='pending'
+            file_path=filepath, speech_model_id=speech_model_id, language=language,
+            audio_saved=save_audio, status='pending'
         )
         db.session.add(record)
         db.session.commit()
@@ -53,7 +55,7 @@ def upload():
         record = Job(
             user_id=current_user.id, job_type='transcription', title=filename,
             original_filename=filename, file_path=filepath, speech_model_id=speech_model_id,
-            language=language, multi_speaker=multi_speaker, status='pending'
+            language=language, multi_speaker=multi_speaker, audio_saved=save_audio, status='pending'
         )
         db.session.add(record)
         db.session.commit()
@@ -73,6 +75,7 @@ def upload_audio():
     job_type = request.form.get('job_type', 'dictation')
     speech_model_id = request.form.get('speech_model_id', type=int)
     language = request.form.get('language', '').strip() or None
+    save_audio = request.form.get('save_audio') == '1'
 
     ext = 'webm'
     unique_name = f"{uuid.uuid4().hex}_recording.{ext}"
@@ -84,7 +87,8 @@ def upload_audio():
     if job_type == 'meeting':
         record = Meeting(
             user_id=current_user.id, title=title, original_filename=f"recording.{ext}",
-            file_path=filepath, speech_model_id=speech_model_id, language=language, status='pending'
+            file_path=filepath, speech_model_id=speech_model_id, language=language,
+            audio_saved=save_audio, status='pending'
         )
         db.session.add(record)
         db.session.commit()
@@ -93,7 +97,8 @@ def upload_audio():
     else:
         record = Dictation(
             user_id=current_user.id, title=title, original_filename=f"recording.{ext}",
-            file_path=filepath, speech_model_id=speech_model_id, language=language, status='pending'
+            file_path=filepath, speech_model_id=speech_model_id, language=language,
+            audio_saved=save_audio, status='pending'
         )
         db.session.add(record)
         db.session.commit()
@@ -233,6 +238,7 @@ def _job_to_dict(j):
         'error_message': j.error_message,
         'tool_action': j.tool_action,
         'multi_speaker': j.multi_speaker,
+        'audio_available': bool(j.file_path and j.audio_saved and os.path.exists(j.file_path)),
     }
 
 
@@ -511,6 +517,7 @@ def _meeting_to_dict(m):
         'summary_status': m.summary_status,
         'error_message': m.error_message,
         'multi_speaker': True,
+        'audio_available': bool(m.file_path and m.audio_saved and os.path.exists(m.file_path)),
     }
 
 
@@ -647,6 +654,7 @@ def _dictation_to_dict(d):
         'has_speakers': False,
         'error_message': d.error_message,
         'multi_speaker': False,
+        'audio_available': bool(d.file_path and d.audio_saved and os.path.exists(d.file_path)),
     }
 
 
@@ -722,6 +730,48 @@ def download_dictation(public_id):
     if not d:
         return jsonify({'error': 'Nicht gefunden'}), 404
     return _download_audio_record(d)
+
+
+# ── Audio Streaming Endpoints ─────────────────────────────────────────
+
+def _serve_audio(record, download=False):
+    """Serve an audio file with HTTP Range support for seeking."""
+    if not record.file_path or not record.audio_saved or not os.path.exists(record.file_path):
+        return jsonify({'error': 'Keine Audiodatei verfügbar'}), 404
+    as_attachment = download or request.args.get('download') == '1'
+    return send_file(
+        record.file_path,
+        conditional=True,
+        as_attachment=as_attachment,
+        download_name=os.path.basename(record.file_path)
+    )
+
+
+@api_bp.route('/job/<string:public_id>/audio')
+@login_required
+def stream_job_audio(public_id):
+    job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not job:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    return _serve_audio(job)
+
+
+@api_bp.route('/meeting/<string:public_id>/audio')
+@login_required
+def stream_meeting_audio(public_id):
+    m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not m:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    return _serve_audio(m)
+
+
+@api_bp.route('/dictation/<string:public_id>/audio')
+@login_required
+def stream_dictation_audio(public_id):
+    d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not d:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    return _serve_audio(d)
 
 
 # ── KI Chat Endpoints ────────────────────────────────────────────────

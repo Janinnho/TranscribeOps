@@ -90,7 +90,8 @@
                         <td>
                             {% if group.auto_title_enabled %}<span class="badge bg-info me-1">Auto-Titel</span>{% endif %}
                             {% if group.auto_summary_enabled %}<span class="badge bg-info me-1">Auto-Zusammenf.</span>{% endif %}
-                            {% if not group.auto_title_enabled and not group.auto_summary_enabled %}<span class="text-muted">-</span>{% endif %}
+                            {% if group.audio_save_enabled %}<span class="badge bg-info me-1">Audio</span>{% endif %}
+                            {% if not group.auto_title_enabled and not group.auto_summary_enabled and not group.audio_save_enabled %}<span class="text-muted">-</span>{% endif %}
                         </td>
                         <td>{{ group.users.count() }}</td>
                         <td>
@@ -277,6 +278,16 @@
                         </select>
                     </div>
                     <hr>
+                    <label class="form-label fw-medium">Audio speichern</label>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="audio_save_enabled" id="newGroupAudioSave" onchange="document.getElementById('newGroupAudioDefault').disabled = !this.checked">
+                        <label class="form-check-label" for="newGroupAudioSave">Audio speichern aktivieren <small class="text-muted">(Checkbox beim Upload anzeigen)</small></label>
+                    </div>
+                    <div class="form-check mb-3 ms-4">
+                        <input class="form-check-input" type="checkbox" name="audio_save_default" id="newGroupAudioDefault" checked disabled>
+                        <label class="form-check-label" for="newGroupAudioDefault">Standardmässig speichern</label>
+                    </div>
+                    <hr>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
                         {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}"><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
@@ -332,6 +343,16 @@
                             <option value="">Textmodell wählen...</option>
                             {% for m in text_models %}<option value="{{ m.id }}" {{ 'selected' if group.auto_summary_model_id == m.id }}>{{ m.display_name }}</option>{% endfor %}
                         </select>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Audio speichern</label>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="audio_save_enabled" id="editAudioSave{{ group.id }}" {{ 'checked' if group.audio_save_enabled }} onchange="document.getElementById('editAudioDefault{{ group.id }}').disabled = !this.checked">
+                        <label class="form-check-label" for="editAudioSave{{ group.id }}">Audio speichern aktivieren <small class="text-muted">(Checkbox beim Upload anzeigen)</small></label>
+                    </div>
+                    <div class="form-check mb-3 ms-4">
+                        <input class="form-check-input" type="checkbox" name="audio_save_default" id="editAudioDefault{{ group.id }}" {{ 'checked' if group.audio_save_default }} {{ 'disabled' if not group.audio_save_enabled }}>
+                        <label class="form-check-label" for="editAudioDefault{{ group.id }}">Standardmässig speichern</label>
                     </div>
                     <hr>
                     <div class="mb-3">

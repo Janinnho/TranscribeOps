@@ -21,10 +21,13 @@ def transcription():
     single_models = current_user.get_available_speech_models(mode='single')
     multi_models = current_user.get_available_speech_models(mode='multi')
     text_models = current_user.get_available_text_models()
+    audio_save_enabled, audio_save_default = current_user.get_audio_save_settings()
     return render_template('main/transcription.html',
                            single_models=single_models,
                            multi_models=multi_models,
-                           text_models=text_models)
+                           text_models=text_models,
+                           audio_save_enabled=audio_save_enabled,
+                           audio_save_default=audio_save_default)
 
 
 @main_bp.route('/meeting')
@@ -35,9 +38,12 @@ def meeting():
         return redirect(url_for('main.settings'))
     speech_models = current_user.get_available_speech_models(mode='multi')
     text_models = current_user.get_available_text_models()
+    audio_save_enabled, audio_save_default = current_user.get_audio_save_settings()
     return render_template('main/meeting.html',
                            speech_models=speech_models,
-                           text_models=text_models)
+                           text_models=text_models,
+                           audio_save_enabled=audio_save_enabled,
+                           audio_save_default=audio_save_default)
 
 
 @main_bp.route('/dictation')

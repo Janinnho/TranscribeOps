@@ -44,6 +44,12 @@
                 <!-- File upload -->
                 <form id="uploadForm" enctype="multipart/form-data">
                     <input type="hidden" id="multiSpeaker" name="multi_speaker" value="true">
+                    {% if audio_save_enabled %}
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="saveAudio" name="save_audio" {{ 'checked' if audio_save_default }}>
+                        <label class="form-check-label" for="saveAudio"><i class="bi bi-hdd me-1"></i>Audiodatei speichern</label>
+                    </div>
+                    {% endif %}
                     <div class="upload-zone border rounded-3 p-4 text-center mb-3" id="dropZone">
                         <i class="bi bi-cloud-arrow-up display-5 text-muted"></i>
                         <p class="mt-2 mb-0">Audiodatei hochladen</p>
@@ -160,6 +166,8 @@ async function uploadRecording(blob) {
     formData.append('speech_model_id', document.getElementById('speechModel').value);
     formData.append('language', document.getElementById('language').value);
     formData.append('multi_speaker', 'true');
+    const saveAudioEl = document.getElementById('saveAudio');
+    if (saveAudioEl) formData.append('save_audio', saveAudioEl.checked ? '1' : '0');
 
     const token = document.querySelector('meta[name="csrf-token"]').content;
     const resp = await fetch('/api/upload-audio', {

@@ -6,10 +6,12 @@ services:
     volumes:
       - db_data:/app/data
       - upload_data:/app/app/static/uploads
+      - ~/Downloads/TranscribeOps-Audio:/app/audio_storage
     environment:
       - SECRET_KEY=change-me-in-production-abc123
       - DATABASE_URL=sqlite:////app/data/transcribeops.db
       - REDIS_URL=redis://redis:6379/0
+      - AUDIO_STORAGE_PATH=/app/audio_storage
     depends_on:
       - redis
     networks:
@@ -23,10 +25,12 @@ services:
     volumes:
       - db_data:/app/data
       - upload_data:/app/app/static/uploads
+      - ~/Downloads/TranscribeOps-Audio:/app/audio_storage
     environment:
       - SECRET_KEY=change-me-in-production-abc123
       - DATABASE_URL=sqlite:////app/data/transcribeops.db
       - REDIS_URL=redis://redis:6379/0
+      - AUDIO_STORAGE_PATH=/app/audio_storage
     depends_on:
       - redis
     networks:
@@ -43,6 +47,7 @@ services:
 volumes:
   db_data:
   upload_data:
+  audio_data:
   redis_data:
 
 networks:

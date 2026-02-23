@@ -135,6 +135,10 @@ def create_group():
     group.auto_summary_enabled = request.form.get('auto_summary_enabled') == 'on'
     group.auto_summary_model_id = request.form.get('auto_summary_model_id', type=int) or None
 
+    # Audio save
+    group.audio_save_enabled = request.form.get('audio_save_enabled') == 'on'
+    group.audio_save_default = request.form.get('audio_save_default') == 'on'
+
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)
     group.speech_models = SpeechModel.query.filter(SpeechModel.id.in_(speech_model_ids)).all() if speech_model_ids else []
@@ -175,6 +179,10 @@ def update_group(group_id):
     group.auto_title_model_id = request.form.get('auto_title_model_id', type=int) or None
     group.auto_summary_enabled = request.form.get('auto_summary_enabled') == 'on'
     group.auto_summary_model_id = request.form.get('auto_summary_model_id', type=int) or None
+
+    # Audio save
+    group.audio_save_enabled = request.form.get('audio_save_enabled') == 'on'
+    group.audio_save_default = request.form.get('audio_save_default') == 'on'
 
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)
