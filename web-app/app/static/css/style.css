@@ -290,6 +290,35 @@
     border-color: var(--bs-primary) !important;
 }
 
+/* Dictation gradient background */
+.dictation-bg {
+    min-height: 100%;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(168, 85, 247, 0.08) 50%, rgba(59, 130, 246, 0.05) 100%);
+    transition: background 0.5s ease;
+}
+
+[data-bs-theme="dark"] .dictation-bg {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.08) 50%, rgba(59, 130, 246, 0.06) 100%);
+}
+
+/* Dictation recording — red glow */
+.dictation-bg.recording {
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.08) 0%, rgba(255, 80, 80, 0.12) 50%, rgba(220, 53, 69, 0.06) 100%);
+}
+
+[data-bs-theme="dark"] .dictation-bg.recording {
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.15) 0%, rgba(255, 80, 80, 0.18) 50%, rgba(220, 53, 69, 0.1) 100%);
+}
+
+.dictation-bg .job-item {
+    background: var(--bs-body-bg);
+    transition: all 0.15s;
+}
+
+.dictation-bg .job-item:hover {
+    border-color: var(--bs-primary) !important;
+}
+
 /* Chat bubbles */
 .chat-msg-user {
     background: var(--bs-primary);
