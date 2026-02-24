@@ -1,0 +1,60 @@
+services:
+  web:
+    build: ./web-app
+    container_name: transcribeops-web
+    ports:
+      - "5050:5000"
+    volumes:
+      - transcribeops-db:/app/data
+      - transcribeops-uploads:/app/app/static/uploads
+      - /mnt/storagebox/TranscribeOps-Audio:/app/audio_storage
+    environment:
+      - SECRET_KEY=55abe0cb3876f9db9f4025aa4fa77ca5983d447562ee41dc33970bcbdeac826d
+      - DATABASE_URL=sqlite:////app/data/transcribeops.db
+      - REDIS_URL=redis://redis:6379/0
+      - AUDIO_STORAGE_PATH=/app/audio_storage
+    depends_on:
+      - redis
+    restart: always
+
+  worker:
+    build: ./web-app
+    container_name: transcribeops-worker
+    command: celery -A celery_worker.celery worker --loglevel=info --concurrency=2
+    volumes:
+      - transcribeops-db:/app/data
+      - transcribeops-uploads:/app/app/static/uploads
+      - /mnt/storagebox/TranscribeOps-Audio:/app/audio_storage
+    environment:
+      - SECRET_KEY=55abe0cb3876f9db9f4025aa4fa77ca5983d447562ee41dc33970bcbdeac826d
+      - DATABASE_URL=sqlite:////app/data/transcribeops.db
+      - REDIS_URL=redis://redis:6379/0
+      - AUDIO_STORAGE_PATH=/app/audio_storage
+    depends_on:
+      - redis
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: transcribeops-redis
+    volumes:
+      - transcribeops-redis:/data
+    restart: always
+
+  whisper:
+    build: ./whisper-api
+    container_name: transcribeops-whisper
+    environment:
+      - WHISPER_API_KEY=
+      - WHISPER_MODEL=medium
+      - WHISPER_DEVICE=cpu
+      - WHISPER_COMPUTE_TYPE=int8
+    volumes:
+      - transcribeops-whisper-cache:/root/.cache
+    restart: always
+
+volumes:
+  transcribeops-db:
+  transcribeops-uploads:
+  transcribeops-redis:
+  transcribeops-whisper-cache:

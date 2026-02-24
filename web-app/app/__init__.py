@@ -188,7 +188,7 @@ def _seed_defaults(app):
             name='Local Whisper',
             display_name='Local Whisper',
             provider='whisper_local',
-            endpoint_url='http://whisper:8080/v1/audio/transcriptions',
+            endpoint_url='http://whisper:8000/v1/audio/transcriptions',
             model_id='whisper-1',
             speaker_mode='both',
             is_active=True
@@ -200,8 +200,8 @@ def _seed_defaults(app):
             name='Local Ollama',
             display_name='Local Ollama',
             provider='ollama',
-            endpoint_url='http://ollama:11434',
-            model_id='llama3',
+            endpoint_url='http://host.containers.internal:11434',
+            model_id='llama3.2',
             is_active=True
         )
         db.session.add(default_text)
