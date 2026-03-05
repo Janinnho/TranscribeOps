@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(docker compose exec worker python:*)",
-      "Bash(docker compose up:*)"
+      "Bash(docker compose up:*)",
+      "Bash(sudo podman:*)",
+      "Bash(sudo podman-compose:*)",
+      "Bash(sudo:*)"
     ]
   }
 }
