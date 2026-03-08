@@ -160,6 +160,16 @@ def _apply_migrations():
             from app.models import SystemSetting
             SystemSetting.__table__.create(db.engine)
 
+        # Speech models: max_file_size_mb and max_duration_secs
+        if _has_table('speech_models') and not _has_column('speech_models', 'max_file_size_mb'):
+            _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN max_file_size_mb INTEGER DEFAULT 0")
+        if _has_table('speech_models') and not _has_column('speech_models', 'max_duration_secs'):
+            _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN max_duration_secs INTEGER DEFAULT 0")
+
+        # Groups: max_upload_size_mb
+        if _has_table('groups') and not _has_column('groups', 'max_upload_size_mb'):
+            _safe_execute(conn, "ALTER TABLE groups ADD COLUMN max_upload_size_mb INTEGER DEFAULT 0")
+
         # Users: auth_source and external_id for SSO
         if _has_table('users'):
             if not _has_column('users', 'auth_source'):

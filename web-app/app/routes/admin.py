@@ -199,6 +199,9 @@ def create_group():
     # UI
     group.hide_single_model = request.form.get('hide_single_model') == 'on'
 
+    # Upload limit
+    group.max_upload_size_mb = request.form.get('max_upload_size_mb', 0, type=int)
+
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)
     group.speech_models = SpeechModel.query.filter(SpeechModel.id.in_(speech_model_ids)).all() if speech_model_ids else []
@@ -247,6 +250,9 @@ def update_group(group_id):
     # UI
     group.hide_single_model = request.form.get('hide_single_model') == 'on'
 
+    # Upload limit
+    group.max_upload_size_mb = request.form.get('max_upload_size_mb', 0, type=int)
+
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)
     group.speech_models = SpeechModel.query.filter(SpeechModel.id.in_(speech_model_ids)).all() if speech_model_ids else []
@@ -288,6 +294,8 @@ def create_speech_model():
         supports_prompt=request.form.get('supports_prompt') == 'on',
         supports_timestamps=request.form.get('supports_timestamps') == 'on',
         supports_diarize=request.form.get('supports_diarize') == 'on',
+        max_file_size_mb=request.form.get('max_file_size_mb', 0, type=int),
+        max_duration_secs=request.form.get('max_duration_secs', 0, type=int),
         is_active=request.form.get('is_active') == 'on'
     )
     db.session.add(model)
@@ -315,6 +323,8 @@ def update_speech_model(model_id):
     model.supports_prompt = request.form.get('supports_prompt') == 'on'
     model.supports_timestamps = request.form.get('supports_timestamps') == 'on'
     model.supports_diarize = request.form.get('supports_diarize') == 'on'
+    model.max_file_size_mb = request.form.get('max_file_size_mb', 0, type=int)
+    model.max_duration_secs = request.form.get('max_duration_secs', 0, type=int)
     model.is_active = request.form.get('is_active') == 'on'
     new_key = request.form.get('api_key', '').strip()
     if new_key:

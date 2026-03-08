@@ -131,6 +131,14 @@ class User(UserMixin, db.Model):
                 return True
         return False
 
+    def get_max_upload_size_mb(self):
+        """Return the max upload size in MB from user's groups (0 = no group limit)."""
+        max_size = 0
+        for g in self.groups:
+            if g.max_upload_size_mb and g.max_upload_size_mb > max_size:
+                max_size = g.max_upload_size_mb
+        return max_size
+
 
 class Group(db.Model):
     __tablename__ = 'groups'
@@ -150,6 +158,7 @@ class Group(db.Model):
     audio_save_enabled = db.Column(db.Boolean, default=False)
     audio_save_default = db.Column(db.Boolean, default=True)
     hide_single_model = db.Column(db.Boolean, default=True)
+    max_upload_size_mb = db.Column(db.Integer, default=0)  # 0 = use global MAX_CONTENT_LENGTH
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     speech_models = db.relationship('SpeechModel', secondary=group_speech_models,
@@ -175,6 +184,8 @@ class SpeechModel(db.Model):
     supports_prompt = db.Column(db.Boolean, default=True)
     supports_timestamps = db.Column(db.Boolean, default=True)
     supports_diarize = db.Column(db.Boolean, default=False)
+    max_file_size_mb = db.Column(db.Integer, default=0)  # 0 = no limit; split audio if exceeded
+    max_duration_secs = db.Column(db.Integer, default=0)  # 0 = no limit; split audio if exceeded
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 

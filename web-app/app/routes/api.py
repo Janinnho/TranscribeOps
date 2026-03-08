@@ -31,6 +31,15 @@ def upload():
     if not allowed_file(file.filename):
         return jsonify({'error': 'Dateityp nicht erlaubt'}), 400
 
+    # Check group upload size limit
+    max_upload_mb = current_user.get_max_upload_size_mb()
+    if max_upload_mb > 0:
+        file.seek(0, 2)
+        file_size = file.tell()
+        file.seek(0)
+        if file_size > max_upload_mb * 1024 * 1024:
+            return jsonify({'error': f'Datei zu groß. Maximale Upload-Größe: {max_upload_mb} MB'}), 413
+
     job_type = request.form.get('job_type', 'transcription')
     speech_model_id = request.form.get('speech_model_id', type=int)
     language = request.form.get('language', '').strip() or None
@@ -73,6 +82,16 @@ def upload_audio():
         return jsonify({'error': 'Keine Audiodaten'}), 400
 
     file = request.files['audio']
+
+    # Check group upload size limit
+    max_upload_mb = current_user.get_max_upload_size_mb()
+    if max_upload_mb > 0:
+        file.seek(0, 2)
+        file_size = file.tell()
+        file.seek(0)
+        if file_size > max_upload_mb * 1024 * 1024:
+            return jsonify({'error': f'Datei zu groß. Maximale Upload-Größe: {max_upload_mb} MB'}), 413
+
     job_type = request.form.get('job_type', 'dictation')
     speech_model_id = request.form.get('speech_model_id', type=int)
     language = request.form.get('language', '').strip() or None

@@ -323,7 +323,118 @@ def _get_dictionary_prompt(user_id):
     return ', '.join(words)
 
 
+def _split_audio_file(file_path, max_size_mb, max_duration_secs=0):
+    """Split an audio file into chunks smaller than max_size_mb and/or shorter than max_duration_secs.
+    Returns a list of chunk file paths (sorted). Original file is not deleted."""
+    import math
+
+    file_size = os.path.getsize(file_path)
+    max_size_bytes = max_size_mb * 1024 * 1024
+
+    # Get duration using ffprobe
+    try:
+        result = subprocess.run(
+            ['ffprobe', '-v', 'quiet', '-show_entries', 'format=duration',
+             '-of', 'default=noprint_wrappers=1:nokey=1', file_path],
+            capture_output=True, text=True, timeout=60
+        )
+        duration = float(result.stdout.strip())
+    except Exception as e:
+        raise Exception(f'Kann Audio-Dauer nicht ermitteln: {e}')
+
+    needs_size_split = max_size_mb > 0 and file_size > max_size_bytes
+    needs_duration_split = max_duration_secs > 0 and duration > max_duration_secs
+
+    if not needs_size_split and not needs_duration_split:
+        return [file_path]
+
+    # Calculate number of chunks needed from both constraints, take the larger
+    chunks_by_size = math.ceil(file_size / (max_size_bytes * 0.9)) if needs_size_split else 1
+    chunks_by_duration = math.ceil(duration / (max_duration_secs * 0.9)) if needs_duration_split else 1
+    num_chunks = max(chunks_by_size, chunks_by_duration)
+    chunk_duration = duration / num_chunks
+
+    base_path = os.path.splitext(file_path)[0]
+    chunks = []
+
+    for i in range(num_chunks):
+        start = i * chunk_duration
+        chunk_path = f"{base_path}_chunk{i:03d}.mp3"
+        try:
+            subprocess.run(
+                ['ffmpeg', '-i', file_path, '-ss', str(start), '-t', str(chunk_duration),
+                 '-codec:a', 'libmp3lame', '-q:a', '4', '-y', chunk_path],
+                check=True, capture_output=True, timeout=600
+            )
+            if os.path.exists(chunk_path) and os.path.getsize(chunk_path) > 0:
+                chunks.append(chunk_path)
+        except Exception as e:
+            # Clean up any created chunks on error
+            for c in chunks:
+                if os.path.exists(c):
+                    os.remove(c)
+            raise Exception(f'Fehler beim Aufteilen der Audiodatei: {e}')
+
+    return chunks
+
+
+def _merge_speech_results(results):
+    """Merge multiple speech API results into one combined result."""
+    all_text_parts = []
+    all_segments = []
+    time_offset = 0.0
+
+    for result in results:
+        if isinstance(result, dict) and 'segments' in result:
+            all_text_parts.append(result.get('text', ''))
+            for seg in result['segments']:
+                adjusted_seg = dict(seg)
+                adjusted_seg['start'] = seg.get('start', 0) + time_offset
+                adjusted_seg['end'] = seg.get('end', 0) + time_offset
+                all_segments.append(adjusted_seg)
+            # Update time offset from the last segment's end time
+            if result['segments']:
+                time_offset = all_segments[-1]['end']
+        else:
+            text = result if isinstance(result, str) else result.get('text', str(result))
+            all_text_parts.append(text)
+
+    combined_text = ' '.join(all_text_parts).strip()
+
+    if all_segments:
+        return {'text': combined_text, 'segments': all_segments}
+    return combined_text
+
+
 def _call_speech_api(model, file_path, language=None, multi_speaker=False, original_filename=None, dictionary_prompt=None):
+    import logging
+    logger = logging.getLogger('transcribeops.tasks')
+
+    max_size_mb = model.max_file_size_mb or 0
+    max_duration = model.max_duration_secs or 0
+    file_size = os.path.getsize(file_path)
+    needs_split = (max_size_mb > 0 and file_size > max_size_mb * 1024 * 1024) or max_duration > 0
+
+    if needs_split:
+        chunks = _split_audio_file(file_path, max_size_mb, max_duration_secs=max_duration)
+        if len(chunks) > 1:
+            logger.info(f'Audio splitting: {file_size/(1024*1024):.1f} MB file split into {len(chunks)} chunks (size limit: {max_size_mb} MB, duration limit: {max_duration}s)')
+            try:
+                results = []
+                for i, chunk_path in enumerate(chunks):
+                    logger.info(f'Processing chunk {i+1}/{len(chunks)}: {os.path.basename(chunk_path)}')
+                    r = _call_speech_api_single(model, chunk_path, language, original_filename, dictionary_prompt)
+                    results.append(r)
+                return _merge_speech_results(results)
+            finally:
+                for chunk_path in chunks:
+                    if chunk_path != file_path and os.path.exists(chunk_path):
+                        os.remove(chunk_path)
+
+    return _call_speech_api_single(model, file_path, language, original_filename, dictionary_prompt)
+
+
+def _call_speech_api_single(model, file_path, language=None, original_filename=None, dictionary_prompt=None):
     if model.provider == 'whisper_local':
         return _whisper_local(model, file_path, language, original_filename, dictionary_prompt)
     elif model.provider == 'openai':
@@ -394,7 +505,12 @@ def _openai_speech(model, file_path, language=None, original_filename=None, dict
             data['response_format'] = 'verbose_json'
         headers = {'Authorization': f'Bearer {model.api_key}'}
         resp = requests.post(url, files=files, data=data, headers=headers, timeout=600)
-    resp.raise_for_status()
+    if not resp.ok:
+        try:
+            err_detail = resp.json()
+        except Exception:
+            err_detail = resp.text[:500]
+        raise Exception(f"OpenAI API Fehler ({resp.status_code}): {err_detail}")
 
     if model.supports_diarize:
         return _parse_diarized_response(resp)

@@ -557,6 +557,13 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                         <label class="form-check-label" for="newGroupHideSingleModel">Modellauswahl ausblenden wenn nur ein Modell verfügbar</label>
                     </div>
                     <hr>
+                    <label class="form-label fw-medium">Upload-Limit</label>
+                    <div class="mb-3">
+                        <label class="form-label">Max. Upload-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_upload_size_mb" value="0" min="0">
+                        <small class="text-muted">0 = kein Limit (globales Server-Limit gilt). Begrenzt die max. Dateigröße, die Benutzer dieser Gruppe hochladen können.</small>
+                    </div>
+                    <hr>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
                         {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}"><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
@@ -630,6 +637,13 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                         <label class="form-check-label" for="editHideSingleModel{{ group.id }}">Modellauswahl ausblenden wenn nur ein Modell verfügbar</label>
                     </div>
                     <hr>
+                    <label class="form-label fw-medium">Upload-Limit</label>
+                    <div class="mb-3">
+                        <label class="form-label">Max. Upload-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_upload_size_mb" value="{{ group.max_upload_size_mb or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Limit (globales Server-Limit gilt). Begrenzt die max. Dateigröße, die Benutzer dieser Gruppe hochladen können.</small>
+                    </div>
+                    <hr>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
                         {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}" {{ 'checked' if m in group.speech_models }}><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
@@ -683,6 +697,18 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" id="newSpeechPrompt" checked><label class="form-check-label" for="newSpeechPrompt">Wörterbuch / Prompt <small class="text-muted">(Whisper-Modelle)</small></label></div>
                     <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" id="newSpeechTimestamps" checked><label class="form-check-label" for="newSpeechTimestamps">Zeitstempel / verbose_json <small class="text-muted">(Whisper-Modelle)</small></label></div>
                     <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" id="newSpeechDiarize"><label class="form-check-label" for="newSpeechDiarize">Diarisierung / diarized_json <small class="text-muted">(gpt-4o-transcribe-diarize)</small></label></div>
+                    <hr>
+                    <label class="form-label fw-medium">Audio-Splitting</label>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Dateigröße (MB)</label>
+                        <input type="number" class="form-control" name="max_file_size_mb" value="0" min="0">
+                        <small class="text-muted">0 = kein Limit. Größere Dateien werden automatisch gesplittet.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max. Audio-Dauer (Sekunden)</label>
+                        <input type="number" class="form-control" name="max_duration_secs" value="0" min="0">
+                        <small class="text-muted">0 = kein Limit. OpenAI gpt-4o-transcribe: max. 1400s. Empfohlen: 1200.</small>
+                    </div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
@@ -728,6 +754,18 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" {{ 'checked' if m.supports_prompt }}><label class="form-check-label">Wörterbuch / Prompt <small class="text-muted">(Whisper-Modelle)</small></label></div>
                     <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" {{ 'checked' if m.supports_timestamps }}><label class="form-check-label">Zeitstempel / verbose_json <small class="text-muted">(Whisper-Modelle)</small></label></div>
                     <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" {{ 'checked' if m.supports_diarize }}><label class="form-check-label">Diarisierung / diarized_json <small class="text-muted">(gpt-4o-transcribe-diarize)</small></label></div>
+                    <hr>
+                    <label class="form-label fw-medium">Audio-Splitting</label>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Dateigröße (MB)</label>
+                        <input type="number" class="form-control" name="max_file_size_mb" value="{{ m.max_file_size_mb or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Limit. Größere Dateien werden automatisch gesplittet.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max. Audio-Dauer (Sekunden)</label>
+                        <input type="number" class="form-control" name="max_duration_secs" value="{{ m.max_duration_secs or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Limit. OpenAI gpt-4o-transcribe: max. 1400s. Empfohlen: 1200.</small>
+                    </div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>
