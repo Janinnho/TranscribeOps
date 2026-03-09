@@ -694,9 +694,9 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     </div>
                     <hr>
                     <label class="form-label fw-medium">Modell-Fähigkeiten</label>
-                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" id="newSpeechPrompt" checked><label class="form-check-label" for="newSpeechPrompt">Wörterbuch / Prompt <small class="text-muted">(Whisper-Modelle)</small></label></div>
-                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" id="newSpeechTimestamps" checked><label class="form-check-label" for="newSpeechTimestamps">Zeitstempel / verbose_json <small class="text-muted">(Whisper-Modelle)</small></label></div>
-                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" id="newSpeechDiarize"><label class="form-check-label" for="newSpeechDiarize">Diarisierung / diarized_json <small class="text-muted">(gpt-4o-transcribe-diarize)</small></label></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" id="newSpeechPrompt" checked><label class="form-check-label" for="newSpeechPrompt">Wörterbuch / Prompt</label></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" id="newSpeechTimestamps" checked><label class="form-check-label" for="newSpeechTimestamps">Zeitstempel</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" id="newSpeechDiarize"><label class="form-check-label" for="newSpeechDiarize">Sprecher-Erkennung (Diarisierung)</label></div>
                     <hr>
                     <label class="form-label fw-medium">Audio-Splitting</label>
                     <div class="mb-2">
@@ -751,9 +751,9 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     </div>
                     <hr>
                     <label class="form-label fw-medium">Modell-Fähigkeiten</label>
-                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" {{ 'checked' if m.supports_prompt }}><label class="form-check-label">Wörterbuch / Prompt <small class="text-muted">(Whisper-Modelle)</small></label></div>
-                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" {{ 'checked' if m.supports_timestamps }}><label class="form-check-label">Zeitstempel / verbose_json <small class="text-muted">(Whisper-Modelle)</small></label></div>
-                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" {{ 'checked' if m.supports_diarize }}><label class="form-check-label">Diarisierung / diarized_json <small class="text-muted">(gpt-4o-transcribe-diarize)</small></label></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" {{ 'checked' if m.supports_prompt }}><label class="form-check-label">Wörterbuch / Prompt</label></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" {{ 'checked' if m.supports_timestamps }}><label class="form-check-label">Zeitstempel</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" {{ 'checked' if m.supports_diarize }}><label class="form-check-label">Sprecher-Erkennung (Diarisierung)</label></div>
                     <hr>
                     <label class="form-label fw-medium">Audio-Splitting</label>
                     <div class="mb-2">

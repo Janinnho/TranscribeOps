@@ -465,7 +465,10 @@ def _whisper_local(model, file_path, language=None, original_filename=None, dict
     with open(file_path, 'rb') as f:
         files = {'file': (filename, f, mime)}
         data = {'model': model.model_id or 'whisper-1'}
-        if model.supports_timestamps:
+        if model.supports_diarize:
+            data['response_format'] = 'verbose_json'
+            data['diarize'] = 'true'
+        elif model.supports_timestamps:
             data['response_format'] = 'verbose_json'
         if language:
             data['language'] = language
@@ -482,6 +485,8 @@ def _whisper_local(model, file_path, language=None, original_filename=None, dict
             err_detail = resp.text[:500]
         raise Exception(f"Whisper API Fehler ({resp.status_code}): {err_detail}")
     result = resp.json()
+    if model.supports_diarize and result.get('segments'):
+        return _parse_diarized_local(result)
     if model.supports_timestamps:
         return _parse_verbose_json(result)
     return result.get('text', str(result))
@@ -596,6 +601,22 @@ def _parse_diarized_response(resp):
     if segments:
         return {'text': full_text, 'segments': segments}
     return full_text or resp.text
+
+
+def _parse_diarized_local(result):
+    """Parse diarized response from local WhisperX API."""
+    segments = []
+    for seg in result.get('segments', []):
+        segments.append({
+            'speaker': seg.get('speaker', '?'),
+            'text': seg.get('text', ''),
+            'start': seg.get('start', 0),
+            'end': seg.get('end', 0),
+        })
+    full_text = result.get('text', '')
+    if not full_text and segments:
+        full_text = ' '.join(s['text'].strip() for s in segments)
+    return {'text': full_text, 'segments': segments}
 
 
 def _parse_verbose_json(result):

@@ -2,8 +2,9 @@ import os
 import tempfile
 import time
 import logging
+import torch
 from flask import Flask, request, jsonify
-from faster_whisper import WhisperModel
+import whisperx
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("whisper-api")
@@ -15,18 +16,52 @@ API_KEY = os.environ.get("WHISPER_API_KEY", "")
 DEFAULT_MODEL_SIZE = os.environ.get("WHISPER_MODEL", "medium")
 DEVICE = os.environ.get("WHISPER_DEVICE", "cpu")
 COMPUTE_TYPE = os.environ.get("WHISPER_COMPUTE_TYPE", "int8")
+BATCH_SIZE = int(os.environ.get("WHISPER_BATCH_SIZE", "16"))
+HF_TOKEN = os.environ.get("HF_TOKEN", "")
 
-# Model cache
+# Model caches
 _models = {}
+_align_models = {}
+_diarize_pipeline = None
 
 
 def get_model(model_size):
-    """Load and cache a Whisper model."""
+    """Load and cache a WhisperX model."""
     if model_size not in _models:
-        logger.info(f"Loading Whisper model '{model_size}' on {DEVICE} ({COMPUTE_TYPE})...")
-        _models[model_size] = WhisperModel(model_size, device=DEVICE, compute_type=COMPUTE_TYPE)
+        logger.info(f"Loading WhisperX model '{model_size}' on {DEVICE} ({COMPUTE_TYPE})...")
+        _models[model_size] = whisperx.load_model(
+            model_size, DEVICE, compute_type=COMPUTE_TYPE
+        )
         logger.info(f"Model '{model_size}' loaded successfully.")
     return _models[model_size]
+
+
+def get_align_model(language_code):
+    """Load and cache alignment model for a language."""
+    if language_code not in _align_models:
+        logger.info(f"Loading alignment model for language '{language_code}'...")
+        model_a, metadata = whisperx.load_align_model(
+            language_code=language_code, device=DEVICE
+        )
+        _align_models[language_code] = (model_a, metadata)
+        logger.info(f"Alignment model for '{language_code}' loaded.")
+    return _align_models[language_code]
+
+
+def get_diarize_pipeline():
+    """Load and cache diarization pipeline (requires HF_TOKEN)."""
+    global _diarize_pipeline
+    if _diarize_pipeline is None:
+        if not HF_TOKEN:
+            return None
+        logger.info("Loading diarization pipeline...")
+        from whisperx.diarize import DiarizationPipeline
+        _diarize_pipeline = DiarizationPipeline(
+            model_name="pyannote/speaker-diarization-3.1",
+            token=HF_TOKEN, device=DEVICE
+        )
+        logger.info("Diarization pipeline loaded.")
+    return _diarize_pipeline
 
 
 def check_auth():
@@ -43,7 +78,7 @@ def check_auth():
 # Preload default model at startup
 logger.info(f"Preloading default model '{DEFAULT_MODEL_SIZE}'...")
 _default_model = get_model(DEFAULT_MODEL_SIZE)
-logger.info("Whisper API ready.")
+logger.info("WhisperX API ready.")
 
 
 @app.route("/v1/audio/transcriptions", methods=["POST"])
@@ -64,8 +99,10 @@ def transcribe():
     model_param = request.form.get("model", "whisper-1")
     language = request.form.get("language", None)
     response_format = request.form.get("response_format", "json")
+    prompt = request.form.get("prompt", None)
+    enable_diarize = request.form.get("diarize", "false").lower() == "true"
 
-    # Map model parameter: "whisper-1" uses the default model, otherwise use as model size
+    # Map model parameter
     if model_param in ("whisper-1", "whisper-large-v3"):
         model_size = DEFAULT_MODEL_SIZE
     else:
@@ -80,38 +117,78 @@ def transcribe():
     try:
         model = get_model(model_size)
 
-        transcribe_kwargs = {
-            "beam_size": 5,
-            "vad_filter": True,
-        }
+        transcribe_kwargs = {"batch_size": BATCH_SIZE}
         if language:
             transcribe_kwargs["language"] = language
 
         logger.info(f"Transcribing '{audio_file.filename}' with model '{model_size}', language={language}")
         start_time = time.time()
 
-        segments, info = model.transcribe(tmp_path, **transcribe_kwargs)
-        text_parts = []
+        # Step 1: Transcribe
+        result = model.transcribe(tmp_path, **transcribe_kwargs)
+        detected_language = result.get("language", language or "unknown")
+
+        # Step 2: Align (word-level timestamps)
+        try:
+            model_a, metadata = get_align_model(detected_language)
+            audio = whisperx.load_audio(tmp_path)
+            result = whisperx.align(
+                result["segments"], model_a, metadata, audio, DEVICE,
+                return_char_alignments=False
+            )
+        except Exception as e:
+            logger.warning(f"Alignment failed (continuing without): {e}")
+
+        # Step 3: Diarize (optional)
+        if enable_diarize and HF_TOKEN:
+            try:
+                diarize_pipeline = get_diarize_pipeline()
+                if diarize_pipeline is not None:
+                    audio = whisperx.load_audio(tmp_path)
+                    diarize_segments = diarize_pipeline(audio)
+                    result = whisperx.assign_word_speakers(diarize_segments, result)
+                    logger.info("Speaker diarization applied.")
+            except Exception as e:
+                logger.warning(f"Diarization failed (continuing without): {e}")
+
+        # Build segments list
         all_segments = []
-        for segment in segments:
-            text_parts.append(segment.text)
-            all_segments.append({
-                "id": segment.id,
-                "start": round(segment.start, 2),
-                "end": round(segment.end, 2),
-                "text": segment.text,
-            })
+        text_parts = []
+        for i, seg in enumerate(result.get("segments", [])):
+            seg_data = {
+                "id": i,
+                "start": round(seg.get("start", 0), 2),
+                "end": round(seg.get("end", 0), 2),
+                "text": seg.get("text", ""),
+            }
+            if "speaker" in seg:
+                seg_data["speaker"] = seg["speaker"]
+            if "words" in seg:
+                seg_data["words"] = [
+                    {
+                        "word": w.get("word", ""),
+                        "start": round(w.get("start", 0), 2),
+                        "end": round(w.get("end", 0), 2),
+                    }
+                    for w in seg["words"]
+                    if "start" in w and "end" in w
+                ]
+            all_segments.append(seg_data)
+            text_parts.append(seg.get("text", ""))
 
         full_text = "".join(text_parts).strip()
         duration = round(time.time() - start_time, 2)
-        logger.info(f"Transcription complete in {duration}s, detected language: {info.language}")
+        logger.info(f"Transcription complete in {duration}s, detected language: {detected_language}")
+
+        # Calculate audio duration from segments
+        audio_duration = round(all_segments[-1]["end"], 2) if all_segments else 0
 
         # Response format
         if response_format == "verbose_json":
             return jsonify({
                 "text": full_text,
-                "language": info.language,
-                "duration": round(info.duration, 2),
+                "language": detected_language,
+                "duration": audio_duration,
                 "segments": all_segments,
             })
         elif response_format == "text":
@@ -150,10 +227,14 @@ def list_models():
 def health():
     return jsonify({
         "status": "ok",
+        "engine": "whisperx",
         "default_model": DEFAULT_MODEL_SIZE,
         "device": DEVICE,
         "compute_type": COMPUTE_TYPE,
+        "batch_size": BATCH_SIZE,
+        "diarization_available": bool(HF_TOKEN),
         "models_loaded": list(_models.keys()),
+        "align_models_loaded": list(_align_models.keys()),
     })
 
 

@@ -1,0 +1,80 @@
+# TranscribeOps — Podman/Docker Compose Konfiguration
+#
+# Kopiere diese Datei als podman-compose.yml und passe die Werte an:
+#   cp podman-compose.example.yml podman-compose.yml
+#
+# Mindestens SECRET_KEY muss gesetzt werden!
+#
+# Alle Services nutzen network_mode: host — die Ports sind direkt auf dem Host erreichbar.
+# Gunicorn (web) lauscht auf Port 5000, Redis auf 6379, Whisper API auf 8000.
+
+services:
+  web:
+    build: ./web-app
+    container_name: transcribeops-web
+    network_mode: host
+    volumes:
+      - transcribeops-db:/app/data
+      - transcribeops-uploads:/app/app/static/uploads
+      # Optional: Externer Audio-Speicher (z.B. NFS-Mount, Netzwerkspeicher)
+      # - /pfad/zum/audio-speicher:/app/audio_storage
+      - transcribeops-audio:/app/audio_storage
+    environment:
+      - SECRET_KEY=CHANGE_ME_TO_A_RANDOM_64_CHAR_HEX_STRING
+      - DATABASE_URL=sqlite:////app/data/transcribeops.db
+      - REDIS_URL=redis://localhost:6379/0
+      - AUDIO_STORAGE_PATH=/app/audio_storage
+    depends_on:
+      - redis
+    restart: always
+
+  worker:
+    build: ./web-app
+    container_name: transcribeops-worker
+    network_mode: host
+    command: celery -A celery_worker.celery worker --loglevel=info --concurrency=2
+    volumes:
+      - transcribeops-db:/app/data
+      - transcribeops-uploads:/app/app/static/uploads
+      # Muss mit web-Service übereinstimmen
+      # - /pfad/zum/audio-speicher:/app/audio_storage
+      - transcribeops-audio:/app/audio_storage
+    environment:
+      - SECRET_KEY=CHANGE_ME_TO_A_RANDOM_64_CHAR_HEX_STRING
+      - DATABASE_URL=sqlite:////app/data/transcribeops.db
+      - REDIS_URL=redis://localhost:6379/0
+      - AUDIO_STORAGE_PATH=/app/audio_storage
+    depends_on:
+      - redis
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    container_name: transcribeops-redis
+    network_mode: host
+    volumes:
+      - transcribeops-redis:/data
+    restart: always
+
+  whisper:
+    build: ./whisper-api
+    container_name: transcribeops-whisper
+    network_mode: host
+    environment:
+      - WHISPER_API_KEY=
+      - WHISPER_MODEL=medium
+      - WHISPER_DEVICE=cpu
+      - WHISPER_COMPUTE_TYPE=int8
+      - WHISPER_BATCH_SIZE=16
+      # Hugging Face Token (benötigt für bestimmte Modelle, z.B. Speaker Diarization)
+      - HF_TOKEN=
+    volumes:
+      - transcribeops-whisper-cache:/root/.cache
+    restart: always
+
+volumes:
+  transcribeops-db:
+  transcribeops-uploads:
+  transcribeops-redis:
+  transcribeops-whisper-cache:
+  transcribeops-audio:

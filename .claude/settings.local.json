@@ -5,7 +5,8 @@
       "Bash(docker compose up:*)",
       "Bash(sudo podman:*)",
       "Bash(sudo podman-compose:*)",
-      "Bash(sudo:*)"
+      "Bash(sudo:*)",
+      "Bash(curl:*)"
     ]
   }
 }
