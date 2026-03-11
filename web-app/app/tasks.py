@@ -477,7 +477,8 @@ def _whisper_local(model, file_path, language=None, original_filename=None, dict
         headers = {}
         if model.api_key:
             headers['Authorization'] = f'Bearer {model.api_key}'
-        resp = requests.post(url, files=files, data=data, headers=headers, timeout=600)
+        timeout = getattr(model, 'request_timeout_secs', 0) or 600
+        resp = requests.post(url, files=files, data=data, headers=headers, timeout=timeout)
     if not resp.ok:
         try:
             err_detail = resp.json()
@@ -509,7 +510,8 @@ def _openai_speech(model, file_path, language=None, original_filename=None, dict
         elif model.supports_timestamps:
             data['response_format'] = 'verbose_json'
         headers = {'Authorization': f'Bearer {model.api_key}'}
-        resp = requests.post(url, files=files, data=data, headers=headers, timeout=600)
+        timeout = getattr(model, 'request_timeout_secs', 0) or 600
+        resp = requests.post(url, files=files, data=data, headers=headers, timeout=timeout)
     if not resp.ok:
         try:
             err_detail = resp.json()
@@ -544,7 +546,8 @@ def _azure_speech(model, file_path, language=None, original_filename=None, dicti
         elif model.supports_timestamps:
             data['response_format'] = 'verbose_json'
         headers = {'api-key': model.api_key}
-        resp = requests.post(url, files=files, data=data, headers=headers, timeout=600)
+        timeout = getattr(model, 'request_timeout_secs', 0) or 600
+        resp = requests.post(url, files=files, data=data, headers=headers, timeout=timeout)
     resp.raise_for_status()
 
     if model.supports_diarize:

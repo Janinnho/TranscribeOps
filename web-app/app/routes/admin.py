@@ -296,6 +296,7 @@ def create_speech_model():
         supports_diarize=request.form.get('supports_diarize') == 'on',
         max_file_size_mb=request.form.get('max_file_size_mb', 0, type=int),
         max_duration_secs=request.form.get('max_duration_secs', 0, type=int),
+        request_timeout_secs=request.form.get('request_timeout_secs', 600, type=int),
         is_active=request.form.get('is_active') == 'on'
     )
     db.session.add(model)
@@ -325,6 +326,7 @@ def update_speech_model(model_id):
     model.supports_diarize = request.form.get('supports_diarize') == 'on'
     model.max_file_size_mb = request.form.get('max_file_size_mb', 0, type=int)
     model.max_duration_secs = request.form.get('max_duration_secs', 0, type=int)
+    model.request_timeout_secs = request.form.get('request_timeout_secs', 600, type=int)
     model.is_active = request.form.get('is_active') == 'on'
     new_key = request.form.get('api_key', '').strip()
     if new_key:

@@ -697,6 +697,7 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" id="newSpeechPrompt" checked><label class="form-check-label" for="newSpeechPrompt">Wörterbuch / Prompt</label></div>
                     <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" id="newSpeechTimestamps" checked><label class="form-check-label" for="newSpeechTimestamps">Zeitstempel</label></div>
                     <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" id="newSpeechDiarize"><label class="form-check-label" for="newSpeechDiarize">Sprecher-Erkennung (Diarisierung)</label></div>
+                    <div class="api-params-preview small bg-light rounded p-2 mb-3" style="font-family: monospace;"></div>
                     <hr>
                     <label class="form-label fw-medium">Audio-Splitting</label>
                     <div class="mb-2">
@@ -708,6 +709,11 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                         <label class="form-label">Max. Audio-Dauer (Sekunden)</label>
                         <input type="number" class="form-control" name="max_duration_secs" value="0" min="0">
                         <small class="text-muted">0 = kein Limit. OpenAI gpt-4o-transcribe: max. 1400s. Empfohlen: 1200.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Request-Timeout (Sekunden)</label>
+                        <input type="number" class="form-control" name="request_timeout_secs" value="600" min="30">
+                        <small class="text-muted">Timeout pro API-Anfrage/Chunk. Standard: 600s. Für Diarisierung ggf. erhöhen (z.B. 1200).</small>
                     </div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
                 </div>
@@ -754,6 +760,7 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" {{ 'checked' if m.supports_prompt }}><label class="form-check-label">Wörterbuch / Prompt</label></div>
                     <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" {{ 'checked' if m.supports_timestamps }}><label class="form-check-label">Zeitstempel</label></div>
                     <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" {{ 'checked' if m.supports_diarize }}><label class="form-check-label">Sprecher-Erkennung (Diarisierung)</label></div>
+                    <div class="api-params-preview small bg-light rounded p-2 mb-3" style="font-family: monospace;"></div>
                     <hr>
                     <label class="form-label fw-medium">Audio-Splitting</label>
                     <div class="mb-2">
@@ -765,6 +772,11 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                         <label class="form-label">Max. Audio-Dauer (Sekunden)</label>
                         <input type="number" class="form-control" name="max_duration_secs" value="{{ m.max_duration_secs or 0 }}" min="0">
                         <small class="text-muted">0 = kein Limit. OpenAI gpt-4o-transcribe: max. 1400s. Empfohlen: 1200.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Request-Timeout (Sekunden)</label>
+                        <input type="number" class="form-control" name="request_timeout_secs" value="{{ m.request_timeout_secs or 600 }}" min="30">
+                        <small class="text-muted">Timeout pro API-Anfrage/Chunk. Standard: 600s. Für Diarisierung ggf. erhöhen (z.B. 1200).</small>
                     </div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
                 </div>
@@ -838,4 +850,67 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
     </div>
 </div>
 {% endfor %}
+
+<script>
+function updateApiParamsPreview(form) {
+    const preview = form.querySelector('.api-params-preview');
+    if (!preview) return;
+    const provider = form.querySelector('[name="provider"]').value;
+    const diarize = form.querySelector('[name="supports_diarize"]').checked;
+    const timestamps = form.querySelector('[name="supports_timestamps"]').checked;
+    const prompt = form.querySelector('[name="supports_prompt"]').checked;
+    const modelId = form.querySelector('[name="model_id"]').value || 'whisper-1';
+    const timeoutEl = form.querySelector('[name="request_timeout_secs"]');
+    const timeout = timeoutEl ? timeoutEl.value : '600';
+
+    let params = [];
+    let info = '';
+
+    if (provider === 'whisper_local') {
+        params.push(`model=${modelId}`);
+        if (diarize) {
+            params.push('response_format=verbose_json');
+            params.push('diarize=true');
+        } else if (timestamps) {
+            params.push('response_format=verbose_json');
+        }
+        if (prompt) params.push('prompt=&lt;Wörterbuch&gt;');
+        info = 'Lokaler WhisperX-Server';
+    } else if (provider === 'openai') {
+        params.push(`model=${modelId}`);
+        if (diarize) {
+            params.push('response_format=diarized_json');
+            params.push('chunking_strategy=auto');
+        } else if (timestamps) {
+            params.push('response_format=verbose_json');
+        }
+        if (prompt) params.push('prompt=&lt;Wörterbuch&gt;');
+        info = 'OpenAI API';
+    } else if (provider === 'azure') {
+        if (diarize) {
+            params.push('response_format=diarized_json');
+            params.push('chunking_strategy=auto');
+        } else if (timestamps) {
+            params.push('response_format=verbose_json');
+        }
+        if (prompt) params.push('prompt=&lt;Wörterbuch&gt;');
+        info = 'Azure OpenAI';
+    }
+
+    params.push('timeout=' + timeout + 's');
+
+    preview.innerHTML = '<div class="text-muted mb-1"><i class="bi bi-send me-1"></i>API-Parameter (' + info + '):</div>' +
+        params.map(p => '<span class="badge bg-secondary me-1 mb-1">' + p + '</span>').join('');
+}
+
+document.querySelectorAll('form').forEach(form => {
+    if (!form.querySelector('.api-params-preview')) return;
+    ['provider', 'supports_diarize', 'supports_timestamps', 'supports_prompt', 'model_id', 'request_timeout_secs'].forEach(name => {
+        const el = form.querySelector('[name="' + name + '"]');
+        if (el) el.addEventListener('change', () => updateApiParamsPreview(form));
+        if (el && el.type === 'text') el.addEventListener('input', () => updateApiParamsPreview(form));
+    });
+    updateApiParamsPreview(form);
+});
+</script>
 {% endblock %}

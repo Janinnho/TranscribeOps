@@ -186,6 +186,7 @@ class SpeechModel(db.Model):
     supports_diarize = db.Column(db.Boolean, default=False)
     max_file_size_mb = db.Column(db.Integer, default=0)  # 0 = no limit; split audio if exceeded
     max_duration_secs = db.Column(db.Integer, default=0)  # 0 = no limit; split audio if exceeded
+    request_timeout_secs = db.Column(db.Integer, default=600)  # timeout per API request/chunk
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
