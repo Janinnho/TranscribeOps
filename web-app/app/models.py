@@ -115,6 +115,13 @@ class User(UserMixin, db.Model):
                 return True, g.auto_summary_model_id
         return False, None
 
+    def get_auto_speaker_settings(self):
+        """Return (enabled, model_id) from user's groups."""
+        for g in self.groups:
+            if g.auto_speaker_enabled and g.auto_speaker_model_id:
+                return True, g.auto_speaker_model_id
+        return False, None
+
     def get_audio_save_settings(self):
         """Return (enabled, default_save) from user's groups."""
         for g in self.groups:
@@ -155,6 +162,8 @@ class Group(db.Model):
     auto_title_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
     auto_summary_enabled = db.Column(db.Boolean, default=False)
     auto_summary_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
+    auto_speaker_enabled = db.Column(db.Boolean, default=False)
+    auto_speaker_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
     audio_save_enabled = db.Column(db.Boolean, default=False)
     audio_save_default = db.Column(db.Boolean, default=True)
     hide_single_model = db.Column(db.Boolean, default=True)
@@ -167,6 +176,7 @@ class Group(db.Model):
                                    backref=db.backref('groups', lazy='dynamic'))
     auto_title_model = db.relationship('TextModel', foreign_keys=[auto_title_model_id])
     auto_summary_model = db.relationship('TextModel', foreign_keys=[auto_summary_model_id])
+    auto_speaker_model = db.relationship('TextModel', foreign_keys=[auto_speaker_model_id])
 
 
 class SpeechModel(db.Model):
@@ -186,7 +196,10 @@ class SpeechModel(db.Model):
     supports_diarize = db.Column(db.Boolean, default=False)
     max_file_size_mb = db.Column(db.Integer, default=0)  # 0 = no limit; split audio if exceeded
     max_duration_secs = db.Column(db.Integer, default=0)  # 0 = no limit; split audio if exceeded
+    max_upload_size_mb = db.Column(db.Integer, default=0)  # 0 = no limit; reject uploads exceeding this
+    max_upload_duration_secs = db.Column(db.Integer, default=0)  # 0 = no limit; reject uploads exceeding this
     request_timeout_secs = db.Column(db.Integer, default=600)  # timeout per API request/chunk
+    use_speaker_references = db.Column(db.Boolean, default=False)  # extract speaker samples from chunk 1, pass to subsequent chunks
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -202,6 +215,7 @@ class TextModel(db.Model):
     model_id = db.Column(db.String(100))
     azure_deployment = db.Column(db.String(100))
     azure_api_version = db.Column(db.String(50))
+    request_timeout_secs = db.Column(db.Integer, default=300)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -213,6 +227,7 @@ class Job(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     job_type = db.Column(db.String(30), nullable=False)
     status = db.Column(db.String(20), default='pending')
+    progress = db.Column(db.Integer, default=0)
     title = db.Column(db.String(255))
     original_filename = db.Column(db.String(255))
     file_path = db.Column(db.String(500))
@@ -225,6 +240,8 @@ class Job(db.Model):
     diarized_segments = db.Column(db.Text)
     summary_text = db.Column(db.Text)
     summary_status = db.Column(db.String(20))
+    title_status = db.Column(db.String(20))
+    speaker_identify_status = db.Column(db.String(20))
     tool_action = db.Column(db.String(30))
     target_language = db.Column(db.String(50))
     error_message = db.Column(db.Text)
@@ -243,6 +260,7 @@ class Meeting(db.Model):
     public_id = db.Column(db.String(32), unique=True, nullable=False, default=_gen_uid)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     status = db.Column(db.String(20), default='pending')
+    progress = db.Column(db.Integer, default=0)
     title = db.Column(db.String(255))
     original_filename = db.Column(db.String(255))
     file_path = db.Column(db.String(500))
@@ -253,6 +271,8 @@ class Meeting(db.Model):
     diarized_segments = db.Column(db.Text)
     summary_text = db.Column(db.Text)
     summary_status = db.Column(db.String(20))
+    title_status = db.Column(db.String(20))
+    speaker_identify_status = db.Column(db.String(20))
     error_message = db.Column(db.Text)
     audio_saved = db.Column(db.Boolean, default=False)
     celery_task_id = db.Column(db.String(155))
@@ -269,6 +289,7 @@ class Dictation(db.Model):
     public_id = db.Column(db.String(32), unique=True, nullable=False, default=_gen_uid)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     status = db.Column(db.String(20), default='pending')
+    progress = db.Column(db.Integer, default=0)
     title = db.Column(db.String(255))
     original_filename = db.Column(db.String(255))
     file_path = db.Column(db.String(500))

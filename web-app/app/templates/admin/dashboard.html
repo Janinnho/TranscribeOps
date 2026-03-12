@@ -105,8 +105,9 @@
                         <td>
                             {% if group.auto_title_enabled %}<span class="badge bg-info me-1">Auto-Titel</span>{% endif %}
                             {% if group.auto_summary_enabled %}<span class="badge bg-info me-1">Auto-Zusammenf.</span>{% endif %}
+                            {% if group.auto_speaker_enabled %}<span class="badge bg-info me-1">Auto-Sprecher</span>{% endif %}
                             {% if group.audio_save_enabled %}<span class="badge bg-info me-1">Audio</span>{% endif %}
-                            {% if not group.auto_title_enabled and not group.auto_summary_enabled and not group.audio_save_enabled %}<span class="text-muted">-</span>{% endif %}
+                            {% if not group.auto_title_enabled and not group.auto_summary_enabled and not group.auto_speaker_enabled and not group.audio_save_enabled %}<span class="text-muted">-</span>{% endif %}
                         </td>
                         <td>{{ group.users.count() }}</td>
                         <td>
@@ -534,8 +535,18 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                         <input class="form-check-input" type="checkbox" name="auto_summary_enabled" id="newGroupAutoSummary" onchange="document.getElementById('newGroupAutoSummaryModel').disabled = !this.checked">
                         <label class="form-check-label" for="newGroupAutoSummary">Auto-Zusammenfassung generieren</label>
                     </div>
-                    <div class="mb-3 ms-4">
+                    <div class="mb-2 ms-4">
                         <select class="form-select form-select-sm" name="auto_summary_model_id" id="newGroupAutoSummaryModel" disabled>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_speaker_enabled" id="newGroupAutoSpeaker" onchange="document.getElementById('newGroupAutoSpeakerModel').disabled = !this.checked">
+                        <label class="form-check-label" for="newGroupAutoSpeaker">Auto-Sprechererkennung <small class="text-muted">(Namen aus Transkription erkennen)</small></label>
+                    </div>
+                    <div class="mb-3 ms-4">
+                        <select class="form-select form-select-sm" name="auto_speaker_model_id" id="newGroupAutoSpeakerModel" disabled>
                             <option value="">Textmodell wählen...</option>
                             {% for m in text_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}
                         </select>
@@ -614,10 +625,20 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                         <input class="form-check-input" type="checkbox" name="auto_summary_enabled" id="editAutoSummary{{ group.id }}" {{ 'checked' if group.auto_summary_enabled }} onchange="document.getElementById('editAutoSummaryModel{{ group.id }}').disabled = !this.checked">
                         <label class="form-check-label" for="editAutoSummary{{ group.id }}">Auto-Zusammenfassung generieren</label>
                     </div>
-                    <div class="mb-3 ms-4">
+                    <div class="mb-2 ms-4">
                         <select class="form-select form-select-sm" name="auto_summary_model_id" id="editAutoSummaryModel{{ group.id }}" {{ 'disabled' if not group.auto_summary_enabled }}>
                             <option value="">Textmodell wählen...</option>
                             {% for m in text_models %}<option value="{{ m.id }}" {{ 'selected' if group.auto_summary_model_id == m.id }}>{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_speaker_enabled" id="editAutoSpeaker{{ group.id }}" {{ 'checked' if group.auto_speaker_enabled }} onchange="document.getElementById('editAutoSpeakerModel{{ group.id }}').disabled = !this.checked">
+                        <label class="form-check-label" for="editAutoSpeaker{{ group.id }}">Auto-Sprechererkennung <small class="text-muted">(Namen aus Transkription erkennen)</small></label>
+                    </div>
+                    <div class="mb-3 ms-4">
+                        <select class="form-select form-select-sm" name="auto_speaker_model_id" id="editAutoSpeakerModel{{ group.id }}" {{ 'disabled' if not group.auto_speaker_enabled }}>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}" {{ 'selected' if group.auto_speaker_model_id == m.id }}>{{ m.display_name }}</option>{% endfor %}
                         </select>
                     </div>
                     <hr>
@@ -699,17 +720,38 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" id="newSpeechDiarize"><label class="form-check-label" for="newSpeechDiarize">Sprecher-Erkennung (Diarisierung)</label></div>
                     <div class="api-params-preview small bg-light rounded p-2 mb-3" style="font-family: monospace;"></div>
                     <hr>
-                    <label class="form-label fw-medium">Audio-Splitting</label>
+                    <label class="form-label fw-medium">Upload-Limits</label>
+                    <small class="text-muted d-block mb-2">Dateien, die diese Limits überschreiten, werden beim Upload abgelehnt.</small>
                     <div class="mb-2">
-                        <label class="form-label">Max. Dateigröße (MB)</label>
-                        <input type="number" class="form-control" name="max_file_size_mb" value="0" min="0">
-                        <small class="text-muted">0 = kein Limit. Größere Dateien werden automatisch gesplittet.</small>
+                        <label class="form-label">Max. Upload-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_upload_size_mb" value="0" min="0">
+                        <small class="text-muted">0 = kein Limit.</small>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Max. Audio-Dauer (Sekunden)</label>
-                        <input type="number" class="form-control" name="max_duration_secs" value="0" min="0">
-                        <small class="text-muted">0 = kein Limit. OpenAI gpt-4o-transcribe: max. 1400s. Empfohlen: 1200.</small>
+                        <label class="form-label">Max. Upload-Dauer (Sekunden)</label>
+                        <input type="number" class="form-control" name="max_upload_duration_secs" value="0" min="0">
+                        <small class="text-muted">0 = kein Limit.</small>
                     </div>
+                    <hr>
+                    <label class="form-label fw-medium">Audio-Splitting</label>
+                    <small class="text-muted d-block mb-2">Große Dateien werden vor dem API-Aufruf in Chunks aufgeteilt.</small>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Chunk-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_file_size_mb" value="0" min="0">
+                        <small class="text-muted">0 = kein Splitting nach Größe.</small>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Chunk-Dauer (Sekunden)</label>
+                        <input type="number" class="form-control" name="max_duration_secs" value="0" min="0">
+                        <small class="text-muted">0 = kein Splitting nach Dauer.</small>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="use_speaker_references" id="newSpeechSpeakerRefs">
+                        <label class="form-check-label" for="newSpeechSpeakerRefs">Speaker-Referenzen über Chunks weitergeben</label>
+                        <small class="text-muted d-block">Extrahiert nach dem ersten Chunk Audio-Samples pro Sprecher und schickt diese als <code>known_speaker_references</code> an folgende Chunks mit. Nur für OpenAI/Azure mit Diarisierung.</small>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Anfrage</label>
                     <div class="mb-3">
                         <label class="form-label">Request-Timeout (Sekunden)</label>
                         <input type="number" class="form-control" name="request_timeout_secs" value="600" min="30">
@@ -762,17 +804,38 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" {{ 'checked' if m.supports_diarize }}><label class="form-check-label">Sprecher-Erkennung (Diarisierung)</label></div>
                     <div class="api-params-preview small bg-light rounded p-2 mb-3" style="font-family: monospace;"></div>
                     <hr>
-                    <label class="form-label fw-medium">Audio-Splitting</label>
+                    <label class="form-label fw-medium">Upload-Limits</label>
+                    <small class="text-muted d-block mb-2">Dateien, die diese Limits überschreiten, werden beim Upload abgelehnt.</small>
                     <div class="mb-2">
-                        <label class="form-label">Max. Dateigröße (MB)</label>
-                        <input type="number" class="form-control" name="max_file_size_mb" value="{{ m.max_file_size_mb or 0 }}" min="0">
-                        <small class="text-muted">0 = kein Limit. Größere Dateien werden automatisch gesplittet.</small>
+                        <label class="form-label">Max. Upload-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_upload_size_mb" value="{{ m.max_upload_size_mb or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Limit.</small>
                     </div>
                     <div class="mb-3">
-                        <label class="form-label">Max. Audio-Dauer (Sekunden)</label>
-                        <input type="number" class="form-control" name="max_duration_secs" value="{{ m.max_duration_secs or 0 }}" min="0">
-                        <small class="text-muted">0 = kein Limit. OpenAI gpt-4o-transcribe: max. 1400s. Empfohlen: 1200.</small>
+                        <label class="form-label">Max. Upload-Dauer (Sekunden)</label>
+                        <input type="number" class="form-control" name="max_upload_duration_secs" value="{{ m.max_upload_duration_secs or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Limit.</small>
                     </div>
+                    <hr>
+                    <label class="form-label fw-medium">Audio-Splitting</label>
+                    <small class="text-muted d-block mb-2">Große Dateien werden vor dem API-Aufruf in Chunks aufgeteilt.</small>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Chunk-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_file_size_mb" value="{{ m.max_file_size_mb or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Splitting nach Größe.</small>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Chunk-Dauer (Sekunden)</label>
+                        <input type="number" class="form-control" name="max_duration_secs" value="{{ m.max_duration_secs or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Splitting nach Dauer.</small>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="use_speaker_references" {{ 'checked' if m.use_speaker_references }}>
+                        <label class="form-check-label">Speaker-Referenzen über Chunks weitergeben</label>
+                        <small class="text-muted d-block">Extrahiert nach dem ersten Chunk Audio-Samples pro Sprecher und schickt diese als <code>known_speaker_references</code> an folgende Chunks mit. Nur für OpenAI/Azure mit Diarisierung.</small>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Anfrage</label>
                     <div class="mb-3">
                         <label class="form-label">Request-Timeout (Sekunden)</label>
                         <input type="number" class="form-control" name="request_timeout_secs" value="{{ m.request_timeout_secs or 600 }}" min="30">
@@ -810,6 +873,7 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="llama3"></div>
                     <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment"></div>
                     <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" placeholder="2024-06-01"></div>
+                    <div class="mb-3"><label class="form-label">Request Timeout (Sekunden)</label><input type="number" class="form-control" name="request_timeout_secs" value="300" min="10"><small class="text-muted">Maximale Wartezeit pro API-Anfrage (Standard: 300s)</small></div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
@@ -842,6 +906,7 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="{{ m.model_id or '' }}"></div>
                     <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment" value="{{ m.azure_deployment or '' }}"></div>
                     <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" value="{{ m.azure_api_version or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Request Timeout (Sekunden)</label><input type="number" class="form-control" name="request_timeout_secs" value="{{ m.request_timeout_secs or 300 }}" min="10"><small class="text-muted">Maximale Wartezeit pro API-Anfrage (Standard: 300s)</small></div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>
@@ -855,11 +920,14 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
 function updateApiParamsPreview(form) {
     const preview = form.querySelector('.api-params-preview');
     if (!preview) return;
-    const provider = form.querySelector('[name="provider"]').value;
-    const diarize = form.querySelector('[name="supports_diarize"]').checked;
-    const timestamps = form.querySelector('[name="supports_timestamps"]').checked;
-    const prompt = form.querySelector('[name="supports_prompt"]').checked;
-    const modelId = form.querySelector('[name="model_id"]').value || 'whisper-1';
+    const providerEl = form.querySelector('[name="provider"]');
+    const diarizeEl = form.querySelector('[name="supports_diarize"]');
+    if (!providerEl || !diarizeEl) return;
+    const provider = providerEl.value;
+    const diarize = diarizeEl.checked;
+    const timestamps = form.querySelector('[name="supports_timestamps"]')?.checked || false;
+    const prompt = form.querySelector('[name="supports_prompt"]')?.checked || false;
+    const modelId = form.querySelector('[name="model_id"]')?.value || 'whisper-1';
     const timeoutEl = form.querySelector('[name="request_timeout_secs"]');
     const timeout = timeoutEl ? timeoutEl.value : '600';
 

@@ -2,6 +2,8 @@ import os
 import tempfile
 import time
 import logging
+import uuid
+import threading
 import torch
 from flask import Flask, request, jsonify
 import whisperx
@@ -23,6 +25,12 @@ HF_TOKEN = os.environ.get("HF_TOKEN", "")
 _models = {}
 _align_models = {}
 _diarize_pipeline = None
+
+# Async task tracking
+_tasks = {}
+
+# Lock to ensure only one transcription runs at a time (models are not thread-safe)
+_transcription_lock = threading.Lock()
 
 
 def get_model(model_size):
@@ -81,6 +89,124 @@ _default_model = get_model(DEFAULT_MODEL_SIZE)
 logger.info("WhisperX API ready.")
 
 
+def _process_transcription(tmp_path, model_size, language, response_format, enable_diarize, filename, task_id=None):
+    """Core transcription logic. If task_id is provided, updates _tasks with progress."""
+    def _update(progress=None, step=None):
+        if task_id and task_id in _tasks:
+            if progress is not None:
+                _tasks[task_id]["progress"] = progress
+            if step is not None:
+                _tasks[task_id]["progress_step"] = step
+
+    model = get_model(model_size)
+
+    transcribe_kwargs = {"batch_size": BATCH_SIZE}
+    if language:
+        transcribe_kwargs["language"] = language
+
+    logger.info(f"Transcribing '{filename}' with model '{model_size}', language={language}")
+    start_time = time.time()
+
+    # Step 1: Transcribe
+    _update(progress=5, step="transcribe")
+    result = model.transcribe(tmp_path, **transcribe_kwargs)
+    detected_language = result.get("language", language or "unknown")
+    _update(progress=70)
+
+    # Step 2: Align (word-level timestamps)
+    _update(progress=70, step="align")
+    try:
+        model_a, metadata = get_align_model(detected_language)
+        audio = whisperx.load_audio(tmp_path)
+        result = whisperx.align(
+            result["segments"], model_a, metadata, audio, DEVICE,
+            return_char_alignments=False
+        )
+    except Exception as e:
+        logger.warning(f"Alignment failed (continuing without): {e}")
+    _update(progress=90)
+
+    # Step 3: Diarize (optional)
+    if enable_diarize and HF_TOKEN:
+        _update(progress=90, step="diarize")
+        try:
+            diarize_pipeline = get_diarize_pipeline()
+            if diarize_pipeline is not None:
+                audio = whisperx.load_audio(tmp_path)
+                diarize_segments = diarize_pipeline(audio)
+                result = whisperx.assign_word_speakers(diarize_segments, result)
+                logger.info("Speaker diarization applied.")
+        except Exception as e:
+            logger.warning(f"Diarization failed (continuing without): {e}")
+    _update(progress=100)
+
+    # Build segments list
+    all_segments = []
+    text_parts = []
+    for i, seg in enumerate(result.get("segments", [])):
+        seg_data = {
+            "id": i,
+            "start": round(seg.get("start", 0), 2),
+            "end": round(seg.get("end", 0), 2),
+            "text": seg.get("text", ""),
+        }
+        if "speaker" in seg:
+            seg_data["speaker"] = seg["speaker"]
+        if "words" in seg:
+            seg_data["words"] = [
+                {
+                    "word": w.get("word", ""),
+                    "start": round(w.get("start", 0), 2),
+                    "end": round(w.get("end", 0), 2),
+                }
+                for w in seg["words"]
+                if "start" in w and "end" in w
+            ]
+        all_segments.append(seg_data)
+        text_parts.append(seg.get("text", ""))
+
+    full_text = "".join(text_parts).strip()
+    duration = round(time.time() - start_time, 2)
+    logger.info(f"Transcription complete in {duration}s, detected language: {detected_language}")
+
+    # Calculate audio duration from segments
+    audio_duration = round(all_segments[-1]["end"], 2) if all_segments else 0
+
+    # Build response based on format
+    if response_format == "verbose_json":
+        return {
+            "text": full_text,
+            "language": detected_language,
+            "duration": audio_duration,
+            "segments": all_segments,
+        }
+    elif response_format == "text":
+        return {"_raw_text": full_text}
+    elif response_format == "srt":
+        return {"_raw_text": _to_srt(all_segments)}
+    elif response_format == "vtt":
+        return {"_raw_text": _to_vtt(all_segments)}
+    else:
+        return {"text": full_text}
+
+
+def _run_async_task(task_id, tmp_path, model_size, language, response_format, enable_diarize, filename):
+    """Background thread wrapper for async transcription."""
+    try:
+        with _transcription_lock:
+            result = _process_transcription(tmp_path, model_size, language, response_format, enable_diarize, filename, task_id=task_id)
+        _tasks[task_id]["status"] = "completed"
+        _tasks[task_id]["progress"] = 100
+        _tasks[task_id]["result"] = result
+    except Exception as e:
+        logger.error(f"Async transcription failed: {e}", exc_info=True)
+        _tasks[task_id]["status"] = "failed"
+        _tasks[task_id]["error"] = str(e)
+    finally:
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+
 @app.route("/v1/audio/transcriptions", methods=["POST"])
 def transcribe():
     # Auth check
@@ -101,6 +227,7 @@ def transcribe():
     response_format = request.form.get("response_format", "json")
     prompt = request.form.get("prompt", None)
     enable_diarize = request.form.get("diarize", "false").lower() == "true"
+    async_mode = request.form.get("async", "false").lower() == "true"
 
     # Map model parameter
     if model_param in ("whisper-1", "whisper-large-v3"):
@@ -114,98 +241,63 @@ def transcribe():
         audio_file.save(tmp)
         tmp_path = tmp.name
 
+    # Async mode: start background thread and return task_id
+    if async_mode:
+        task_id = uuid.uuid4().hex
+        _tasks[task_id] = {
+            "status": "processing",
+            "progress": 0,
+            "progress_step": "",
+            "result": None,
+            "error": None,
+        }
+        thread = threading.Thread(
+            target=_run_async_task,
+            args=(task_id, tmp_path, model_size, language, response_format, enable_diarize, audio_file.filename),
+            daemon=True,
+        )
+        thread.start()
+        return jsonify({"task_id": task_id}), 202
+
+    # Synchronous mode (original behavior)
     try:
-        model = get_model(model_size)
+        with _transcription_lock:
+            result = _process_transcription(tmp_path, model_size, language, response_format, enable_diarize, audio_file.filename)
 
-        transcribe_kwargs = {"batch_size": BATCH_SIZE}
-        if language:
-            transcribe_kwargs["language"] = language
-
-        logger.info(f"Transcribing '{audio_file.filename}' with model '{model_size}', language={language}")
-        start_time = time.time()
-
-        # Step 1: Transcribe
-        result = model.transcribe(tmp_path, **transcribe_kwargs)
-        detected_language = result.get("language", language or "unknown")
-
-        # Step 2: Align (word-level timestamps)
-        try:
-            model_a, metadata = get_align_model(detected_language)
-            audio = whisperx.load_audio(tmp_path)
-            result = whisperx.align(
-                result["segments"], model_a, metadata, audio, DEVICE,
-                return_char_alignments=False
-            )
-        except Exception as e:
-            logger.warning(f"Alignment failed (continuing without): {e}")
-
-        # Step 3: Diarize (optional)
-        if enable_diarize and HF_TOKEN:
-            try:
-                diarize_pipeline = get_diarize_pipeline()
-                if diarize_pipeline is not None:
-                    audio = whisperx.load_audio(tmp_path)
-                    diarize_segments = diarize_pipeline(audio)
-                    result = whisperx.assign_word_speakers(diarize_segments, result)
-                    logger.info("Speaker diarization applied.")
-            except Exception as e:
-                logger.warning(f"Diarization failed (continuing without): {e}")
-
-        # Build segments list
-        all_segments = []
-        text_parts = []
-        for i, seg in enumerate(result.get("segments", [])):
-            seg_data = {
-                "id": i,
-                "start": round(seg.get("start", 0), 2),
-                "end": round(seg.get("end", 0), 2),
-                "text": seg.get("text", ""),
-            }
-            if "speaker" in seg:
-                seg_data["speaker"] = seg["speaker"]
-            if "words" in seg:
-                seg_data["words"] = [
-                    {
-                        "word": w.get("word", ""),
-                        "start": round(w.get("start", 0), 2),
-                        "end": round(w.get("end", 0), 2),
-                    }
-                    for w in seg["words"]
-                    if "start" in w and "end" in w
-                ]
-            all_segments.append(seg_data)
-            text_parts.append(seg.get("text", ""))
-
-        full_text = "".join(text_parts).strip()
-        duration = round(time.time() - start_time, 2)
-        logger.info(f"Transcription complete in {duration}s, detected language: {detected_language}")
-
-        # Calculate audio duration from segments
-        audio_duration = round(all_segments[-1]["end"], 2) if all_segments else 0
-
-        # Response format
-        if response_format == "verbose_json":
-            return jsonify({
-                "text": full_text,
-                "language": detected_language,
-                "duration": audio_duration,
-                "segments": all_segments,
-            })
-        elif response_format == "text":
-            return full_text, 200, {"Content-Type": "text/plain; charset=utf-8"}
-        elif response_format == "srt":
-            return _to_srt(all_segments), 200, {"Content-Type": "text/plain; charset=utf-8"}
-        elif response_format == "vtt":
-            return _to_vtt(all_segments), 200, {"Content-Type": "text/plain; charset=utf-8"}
-        else:
-            # Default: json
-            return jsonify({"text": full_text})
+        # Handle raw text responses (text/srt/vtt)
+        if "_raw_text" in result:
+            return result["_raw_text"], 200, {"Content-Type": "text/plain; charset=utf-8"}
+        return jsonify(result)
 
     except Exception as e:
         logger.error(f"Transcription failed: {e}", exc_info=True)
         return jsonify({"error": {"message": str(e), "type": "server_error"}}), 500
     finally:
         os.unlink(tmp_path)
+
+
+@app.route("/v1/audio/transcriptions/<task_id>", methods=["GET"])
+def get_task_status(task_id):
+    """Poll endpoint for async transcription progress."""
+    if not check_auth():
+        return jsonify({"error": {"message": "Invalid API key.", "type": "auth_error"}}), 401
+
+    task = _tasks.get(task_id)
+    if not task:
+        return jsonify({"error": "Task not found"}), 404
+
+    response = {
+        "status": task["status"],
+        "progress": task["progress"],
+        "progress_step": task["progress_step"],
+    }
+    if task["status"] == "completed":
+        response["result"] = task["result"]
+        del _tasks[task_id]
+    elif task["status"] == "failed":
+        response["error"] = task["error"]
+        del _tasks[task_id]
+    return jsonify(response)
 
 
 @app.route("/v1/models", methods=["GET"])

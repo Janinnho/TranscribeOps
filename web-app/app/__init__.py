@@ -167,6 +167,12 @@ def _apply_migrations():
             _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN max_duration_secs INTEGER DEFAULT 0")
         if _has_table('speech_models') and not _has_column('speech_models', 'request_timeout_secs'):
             _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN request_timeout_secs INTEGER DEFAULT 600")
+        if _has_table('speech_models') and not _has_column('speech_models', 'max_upload_size_mb'):
+            _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN max_upload_size_mb INTEGER DEFAULT 0")
+        if _has_table('speech_models') and not _has_column('speech_models', 'max_upload_duration_secs'):
+            _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN max_upload_duration_secs INTEGER DEFAULT 0")
+        if _has_table('speech_models') and not _has_column('speech_models', 'use_speaker_references'):
+            _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN use_speaker_references BOOLEAN DEFAULT 0")
 
         # Groups: max_upload_size_mb
         if _has_table('groups') and not _has_column('groups', 'max_upload_size_mb'):
@@ -186,6 +192,31 @@ def _apply_migrations():
             _safe_execute(conn, "ALTER TABLE meetings ADD COLUMN audio_saved BOOLEAN DEFAULT 0")
         if _has_table('dictations') and not _has_column('dictations', 'audio_saved'):
             _safe_execute(conn, "ALTER TABLE dictations ADD COLUMN audio_saved BOOLEAN DEFAULT 0")
+
+        # Text models: request_timeout_secs
+        if _has_table('text_models') and not _has_column('text_models', 'request_timeout_secs'):
+            _safe_execute(conn, "ALTER TABLE text_models ADD COLUMN request_timeout_secs INTEGER DEFAULT 300")
+
+        # Groups: auto_speaker
+        if _has_table('groups') and not _has_column('groups', 'auto_speaker_enabled'):
+            _safe_execute(conn, "ALTER TABLE groups ADD COLUMN auto_speaker_enabled BOOLEAN DEFAULT 0")
+        if _has_table('groups') and not _has_column('groups', 'auto_speaker_model_id'):
+            _safe_execute(conn, "ALTER TABLE groups ADD COLUMN auto_speaker_model_id INTEGER REFERENCES text_models(id)")
+
+        # Jobs/Meetings: title_status, speaker_identify_status
+        for tbl in ['jobs', 'meetings']:
+            if _has_table(tbl) and not _has_column(tbl, 'title_status'):
+                _safe_execute(conn, f"ALTER TABLE {tbl} ADD COLUMN title_status VARCHAR(20)")
+            if _has_table(tbl) and not _has_column(tbl, 'speaker_identify_status'):
+                _safe_execute(conn, f"ALTER TABLE {tbl} ADD COLUMN speaker_identify_status VARCHAR(20)")
+
+        # Jobs/Meetings/Dictations: progress tracking
+        if _has_table('jobs') and not _has_column('jobs', 'progress'):
+            _safe_execute(conn, "ALTER TABLE jobs ADD COLUMN progress INTEGER DEFAULT 0")
+        if _has_table('meetings') and not _has_column('meetings', 'progress'):
+            _safe_execute(conn, "ALTER TABLE meetings ADD COLUMN progress INTEGER DEFAULT 0")
+        if _has_table('dictations') and not _has_column('dictations', 'progress'):
+            _safe_execute(conn, "ALTER TABLE dictations ADD COLUMN progress INTEGER DEFAULT 0")
 
 
 def _seed_defaults(app):

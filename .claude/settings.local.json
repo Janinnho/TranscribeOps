@@ -6,7 +6,8 @@
       "Bash(sudo podman:*)",
       "Bash(sudo podman-compose:*)",
       "Bash(sudo:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(python3:*)"
     ]
   }
 }

@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify, current_app, Response, send_file
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from app import db
-from app.models import Job, Meeting, Dictation, TextTask, DictionaryEntry, ChatMessage
+from app.models import Job, Meeting, Dictation, TextTask, DictionaryEntry, ChatMessage, SpeechModel
 from app.utils import format_dt, now_local
 
 api_bp = Blueprint('api', __name__)
@@ -46,10 +46,48 @@ def upload():
     multi_speaker = request.form.get('multi_speaker') == 'true'
     save_audio = request.form.get('save_audio') == '1'
 
-    filename = secure_filename(file.filename)
-    unique_name = f"{uuid.uuid4().hex}_{filename}"
-    filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_name)
-    file.save(filepath)
+    # Check speech model upload limits
+    if speech_model_id:
+        speech_model = db.session.get(SpeechModel, speech_model_id)
+        if speech_model:
+            # File size limit
+            if speech_model.max_upload_size_mb and speech_model.max_upload_size_mb > 0:
+                file.seek(0, 2)
+                file_size = file.tell()
+                file.seek(0)
+                if file_size > speech_model.max_upload_size_mb * 1024 * 1024:
+                    return jsonify({'error': f'Datei zu groß für dieses Modell. Maximum: {speech_model.max_upload_size_mb} MB'}), 413
+            # Duration limit
+            if speech_model.max_upload_duration_secs and speech_model.max_upload_duration_secs > 0:
+                import subprocess
+                filename_tmp = secure_filename(file.filename)
+                tmp_name = f"{uuid.uuid4().hex}_{filename_tmp}"
+                tmp_path = os.path.join(current_app.config['UPLOAD_FOLDER'], tmp_name)
+                file.save(tmp_path)
+                try:
+                    result = subprocess.run(
+                        ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+                         '-of', 'default=noprint_wrappers=1:nokey=1', tmp_path],
+                        capture_output=True, text=True, timeout=30
+                    )
+                    duration = float(result.stdout.strip()) if result.stdout.strip() else 0
+                    if duration > speech_model.max_upload_duration_secs:
+                        os.remove(tmp_path)
+                        mins = int(speech_model.max_upload_duration_secs // 60)
+                        return jsonify({'error': f'Audio zu lang für dieses Modell. Maximum: {mins} Minuten ({speech_model.max_upload_duration_secs}s), Datei: {int(duration)}s'}), 413
+                except Exception:
+                    pass
+                # File already saved, reuse it
+                filepath = tmp_path
+                filename = filename_tmp
+                unique_name = tmp_name
+                file_already_saved = True
+
+    if not locals().get('file_already_saved'):
+        filename = secure_filename(file.filename)
+        unique_name = f"{uuid.uuid4().hex}_{filename}"
+        filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_name)
+        file.save(filepath)
 
     if job_type == 'meeting':
         record = Meeting(
@@ -249,12 +287,15 @@ def _job_to_dict(j):
         'id': j.public_id,
         'title': j.title,
         'status': j.status,
+        'progress': j.progress or 0,
         'created_at': format_dt(j.created_at),
         'result_text': j.result_text,
         'diarized_segments': segments,
         'has_speakers': has_speakers,
         'summary_text': j.summary_text,
         'summary_status': j.summary_status,
+        'title_status': j.title_status,
+        'speaker_identify_status': j.speaker_identify_status,
         'error_message': j.error_message,
         'tool_action': j.tool_action,
         'multi_speaker': j.multi_speaker,
@@ -312,6 +353,10 @@ def update_speakers(public_id):
     for seg in segments:
         lines.append(f"[{seg['speaker']}]: {seg['text'].strip()}")
     job.result_text = '\n'.join(lines)
+
+    # Cancel auto-speaker identification if running
+    if job.speaker_identify_status == 'processing':
+        job.speaker_identify_status = 'cancelled'
 
     db.session.commit()
     return jsonify(_job_to_dict(job))
@@ -498,6 +543,9 @@ def update_job_title(public_id):
     if not title:
         return jsonify({'error': 'Titel darf nicht leer sein'}), 400
     job.title = title[:255]
+    # Cancel auto-title if running
+    if job.title_status == 'processing':
+        job.title_status = 'cancelled'
     db.session.commit()
     return jsonify({'status': 'ok', 'title': job.title})
 
@@ -529,12 +577,15 @@ def _meeting_to_dict(m):
         'id': m.public_id,
         'title': m.title,
         'status': m.status,
+        'progress': m.progress or 0,
         'created_at': format_dt(m.created_at),
         'result_text': m.result_text,
         'diarized_segments': segments,
         'has_speakers': has_speakers,
         'summary_text': m.summary_text,
         'summary_status': m.summary_status,
+        'title_status': m.title_status,
+        'speaker_identify_status': m.speaker_identify_status,
         'error_message': m.error_message,
         'multi_speaker': True,
         'audio_available': bool(m.file_path and m.audio_saved and os.path.exists(m.file_path)),
@@ -585,6 +636,9 @@ def update_meeting_title(public_id):
     if not title:
         return jsonify({'error': 'Titel darf nicht leer sein'}), 400
     m.title = title[:255]
+    # Cancel auto-title if running
+    if m.title_status == 'processing':
+        m.title_status = 'cancelled'
     db.session.commit()
     return jsonify({'status': 'ok', 'title': m.title})
 
@@ -627,6 +681,11 @@ def update_meeting_speakers(public_id):
     m.diarized_segments = json.dumps(segments, ensure_ascii=False)
     lines = [f"[{seg['speaker']}]: {seg['text'].strip()}" for seg in segments]
     m.result_text = '\n'.join(lines)
+
+    # Cancel auto-speaker identification if running
+    if m.speaker_identify_status == 'processing':
+        m.speaker_identify_status = 'cancelled'
+
     db.session.commit()
     return jsonify(_meeting_to_dict(m))
 
@@ -668,6 +727,7 @@ def _dictation_to_dict(d):
         'id': d.public_id,
         'title': d.title,
         'status': d.status,
+        'progress': d.progress or 0,
         'created_at': format_dt(d.created_at),
         'result_text': d.result_text,
         'diarized_segments': segments,

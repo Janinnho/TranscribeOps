@@ -191,6 +191,8 @@ def create_group():
     group.auto_title_model_id = request.form.get('auto_title_model_id', type=int) or None
     group.auto_summary_enabled = request.form.get('auto_summary_enabled') == 'on'
     group.auto_summary_model_id = request.form.get('auto_summary_model_id', type=int) or None
+    group.auto_speaker_enabled = request.form.get('auto_speaker_enabled') == 'on'
+    group.auto_speaker_model_id = request.form.get('auto_speaker_model_id', type=int) or None
 
     # Audio save
     group.audio_save_enabled = request.form.get('audio_save_enabled') == 'on'
@@ -242,6 +244,8 @@ def update_group(group_id):
     group.auto_title_model_id = request.form.get('auto_title_model_id', type=int) or None
     group.auto_summary_enabled = request.form.get('auto_summary_enabled') == 'on'
     group.auto_summary_model_id = request.form.get('auto_summary_model_id', type=int) or None
+    group.auto_speaker_enabled = request.form.get('auto_speaker_enabled') == 'on'
+    group.auto_speaker_model_id = request.form.get('auto_speaker_model_id', type=int) or None
 
     # Audio save
     group.audio_save_enabled = request.form.get('audio_save_enabled') == 'on'
@@ -296,7 +300,10 @@ def create_speech_model():
         supports_diarize=request.form.get('supports_diarize') == 'on',
         max_file_size_mb=request.form.get('max_file_size_mb', 0, type=int),
         max_duration_secs=request.form.get('max_duration_secs', 0, type=int),
+        max_upload_size_mb=request.form.get('max_upload_size_mb', 0, type=int),
+        max_upload_duration_secs=request.form.get('max_upload_duration_secs', 0, type=int),
         request_timeout_secs=request.form.get('request_timeout_secs', 600, type=int),
+        use_speaker_references=request.form.get('use_speaker_references') == 'on',
         is_active=request.form.get('is_active') == 'on'
     )
     db.session.add(model)
@@ -326,7 +333,10 @@ def update_speech_model(model_id):
     model.supports_diarize = request.form.get('supports_diarize') == 'on'
     model.max_file_size_mb = request.form.get('max_file_size_mb', 0, type=int)
     model.max_duration_secs = request.form.get('max_duration_secs', 0, type=int)
+    model.max_upload_size_mb = request.form.get('max_upload_size_mb', 0, type=int)
+    model.max_upload_duration_secs = request.form.get('max_upload_duration_secs', 0, type=int)
     model.request_timeout_secs = request.form.get('request_timeout_secs', 600, type=int)
+    model.use_speaker_references = request.form.get('use_speaker_references') == 'on'
     model.is_active = request.form.get('is_active') == 'on'
     new_key = request.form.get('api_key', '').strip()
     if new_key:
@@ -364,6 +374,7 @@ def create_text_model():
         model_id=request.form.get('model_id', '').strip(),
         azure_deployment=request.form.get('azure_deployment', '').strip(),
         azure_api_version=request.form.get('azure_api_version', '').strip(),
+        request_timeout_secs=request.form.get('request_timeout_secs', 300, type=int),
         is_active=request.form.get('is_active') == 'on'
     )
     db.session.add(model)
@@ -387,6 +398,7 @@ def update_text_model(model_id):
     model.model_id = request.form.get('model_id', '').strip()
     model.azure_deployment = request.form.get('azure_deployment', '').strip()
     model.azure_api_version = request.form.get('azure_api_version', '').strip()
+    model.request_timeout_secs = request.form.get('request_timeout_secs', 300, type=int)
     model.is_active = request.form.get('is_active') == 'on'
     new_key = request.form.get('api_key', '').strip()
     if new_key:

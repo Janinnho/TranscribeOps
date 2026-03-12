@@ -6,6 +6,10 @@
 <button class="btn btn-link btn-sm text-muted p-0 ms-2" onclick="startEditTitle()" title="Titel bearbeiten">
     <i class="bi bi-pencil"></i>
 </button>
+<span id="titleSpinner" class="d-none ms-2">
+    <span class="spinner-border spinner-border-sm text-muted"></span>
+    <small class="text-muted ms-1">Titel wird generiert...</small>
+</span>
 <input type="text" id="titleInput" class="form-control form-control-sm d-none" style="width:auto; min-width:200px; max-width:500px;" value="{{ job.title or '' }}">
 {% endblock %}
 
@@ -70,8 +74,10 @@
                         </div>
                         <p class="text-muted mb-3" id="processingLabel">Transkription wird verarbeitet...</p>
                         <div class="progress mx-auto" style="max-width: 300px; height: 4px;">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width: 100%"></div>
+                            <div class="progress-bar progress-bar-striped progress-bar-animated bg-info"
+                                 id="processingProgressBar" style="width: 100%; transition: width 0.5s ease;"></div>
                         </div>
+                        <small class="text-muted mt-2 d-block" id="processingPercent"></small>
                     </div>
                 </div>
 
@@ -91,6 +97,10 @@
                         <button class="btn btn-sm btn-outline-success" onclick="saveSpeakerNames()">
                             <i class="bi bi-check-lg me-1"></i>Anwenden
                         </button>
+                        <span id="speakerSpinner" class="d-none">
+                            <span class="spinner-border spinner-border-sm text-muted"></span>
+                            <small class="text-muted ms-1">Sprecher werden erkannt...</small>
+                        </span>
                     </div>
                 </div>
 
@@ -338,6 +348,16 @@ function renderJob(job) {
         document.title = job.title + ' - TranscribeOps';
     }
 
+    // Title spinner
+    const titleSpinner = document.getElementById('titleSpinner');
+    if (titleSpinner) {
+        if (job.title_status === 'processing') {
+            titleSpinner.classList.remove('d-none');
+        } else {
+            titleSpinner.classList.add('d-none');
+        }
+    }
+
     // Guard: don't re-render transcript if user is currently editing a segment
     const isEditing = document.querySelector('.segment-text textarea');
     if (isEditing) {
@@ -370,6 +390,18 @@ function renderJob(job) {
         processing.classList.remove('d-none');
         document.getElementById('processingLabel').textContent =
             job.status === 'pending' ? 'Job wartet auf Verarbeitung...' : 'Transkription wird verarbeitet...';
+        const progressBar = document.getElementById('processingProgressBar');
+        const progressPercent = document.getElementById('processingPercent');
+        const progress = job.progress || 0;
+        if (progress > 0 && progress < 100) {
+            progressBar.style.width = progress + '%';
+            progressBar.classList.remove('progress-bar-animated');
+            progressPercent.textContent = progress + '%';
+        } else {
+            progressBar.style.width = '100%';
+            progressBar.classList.add('progress-bar-animated');
+            progressPercent.textContent = '';
+        }
         disableActions();
     } else if (job.status === 'failed') {
         error.classList.remove('d-none');
@@ -383,6 +415,15 @@ function renderJob(job) {
             diarized.classList.remove('d-none');
             renderDiarized(job.diarized_segments);
             showSpeakerEditor(job.diarized_segments);
+            // Speaker identification spinner
+            const speakerSpinner = document.getElementById('speakerSpinner');
+            if (speakerSpinner) {
+                if (job.speaker_identify_status === 'processing') {
+                    speakerSpinner.classList.remove('d-none');
+                } else {
+                    speakerSpinner.classList.add('d-none');
+                }
+            }
         } else if (job.diarized_segments && job.diarized_segments.length > 0 && !job.has_speakers) {
             // Case 2: Segments without speakers (timestamp-only) — show timestamps by default
             tsBtn.classList.remove('d-none');
@@ -421,7 +462,7 @@ function renderJob(job) {
     }
 
     // Decide if polling is needed
-    const isActive = (job.status === 'pending' || job.status === 'processing' || job.summary_status === 'processing');
+    const isActive = (job.status === 'pending' || job.status === 'processing' || job.summary_status === 'processing' || job.title_status === 'processing' || job.speaker_identify_status === 'processing');
     // Keep polling after completion for a while to catch auto-title/auto-summary updates
     const titleChanged = (job.title && job.title !== initialTitle);
     const needsPostCompletionPoll = (job.status === 'completed' && !titleChanged && titlePollCount < 10);
