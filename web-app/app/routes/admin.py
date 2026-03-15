@@ -73,6 +73,52 @@ def dashboard():
     from app.sso import get_all_sso_settings
     sso_settings = get_all_sso_settings()
 
+    # Global job list: recent jobs/meetings/dictations across all users
+    from sqlalchemy import union_all, literal, text
+    from app.utils import format_dt
+    all_records = []
+    for record in Job.query.order_by(Job.created_at.desc()).limit(100).all():
+        user = db.session.get(User, record.user_id)
+        all_records.append({
+            'type': 'Transkription',
+            'title': record.title,
+            'status': record.status,
+            'user_name': user.display_name if user else '?',
+            'user_email': user.email if user else '',
+            'error_message': record.error_message,
+            'created_at': format_dt(record.created_at),
+            'created_at_raw': record.created_at,
+            'speech_model': record.speech_model.display_name if record.speech_model else '-',
+        })
+    for record in Meeting.query.order_by(Meeting.created_at.desc()).limit(100).all():
+        user = db.session.get(User, record.user_id)
+        all_records.append({
+            'type': 'Meeting',
+            'title': record.title,
+            'status': record.status,
+            'user_name': user.display_name if user else '?',
+            'user_email': user.email if user else '',
+            'error_message': record.error_message,
+            'created_at': format_dt(record.created_at),
+            'created_at_raw': record.created_at,
+            'speech_model': record.speech_model.display_name if record.speech_model else '-',
+        })
+    for record in Dictation.query.order_by(Dictation.created_at.desc()).limit(100).all():
+        user = db.session.get(User, record.user_id)
+        all_records.append({
+            'type': 'Diktat',
+            'title': record.title,
+            'status': record.status,
+            'user_name': user.display_name if user else '?',
+            'user_email': user.email if user else '',
+            'error_message': record.error_message,
+            'created_at': format_dt(record.created_at),
+            'created_at_raw': record.created_at,
+            'speech_model': record.speech_model.display_name if record.speech_model else '-',
+        })
+    all_records.sort(key=lambda r: r['created_at_raw'] or '', reverse=True)
+    all_records = all_records[:100]
+
     return render_template('admin/dashboard.html',
                            users=users, groups=groups,
                            speech_models=speech_models, text_models=text_models,
@@ -84,7 +130,8 @@ def dashboard():
                            audio_disk_usage=_fmt_size(_dir_size(audio_path)),
                            upload_disk_usage=_fmt_size(_dir_size(upload_path)),
                            stats=stats,
-                           sso_settings=sso_settings)
+                           sso_settings=sso_settings,
+                           all_records=all_records)
 
 
 # --- User Management ---

@@ -17,6 +17,9 @@
         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#textTab"><i class="bi bi-chat-dots me-1"></i>Textmodelle</button>
     </li>
     <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#jobsTab"><i class="bi bi-list-task me-1"></i>Jobs</button>
+    </li>
+    <li class="nav-item">
         <button class="nav-link" data-bs-toggle="tab" data-bs-target="#globalTab"><i class="bi bi-globe2 me-1"></i>Global</button>
     </li>
     <li class="nav-item">
@@ -201,6 +204,98 @@
                     {% endfor %}
                     </tbody>
                 </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Jobs Tab -->
+    <div class="tab-pane fade" id="jobsTab">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Alle Jobs</h5>
+            <div class="d-flex gap-2 align-items-center">
+                <select class="form-select form-select-sm" id="jobStatusFilter" onchange="filterJobs()" style="width:auto">
+                    <option value="">Alle Status</option>
+                    <option value="processing">Verarbeitung</option>
+                    <option value="pending">Wartend</option>
+                    <option value="completed">Fertig</option>
+                    <option value="failed">Fehler</option>
+                </select>
+                <select class="form-select form-select-sm" id="jobTypeFilter" onchange="filterJobs()" style="width:auto">
+                    <option value="">Alle Typen</option>
+                    <option value="Transkription">Transkription</option>
+                    <option value="Meeting">Meeting</option>
+                    <option value="Diktat">Diktat</option>
+                </select>
+                <small class="text-muted">Letzte 100</small>
+            </div>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" id="jobsTable">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Typ</th>
+                            <th>Titel</th>
+                            <th>Benutzer</th>
+                            <th>Modell</th>
+                            <th>Erstellt</th>
+                            <th>Fehler</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for r in all_records %}
+                    <tr class="job-row" data-status="{{ r.status }}" data-type="{{ r.type }}">
+                        <td>
+                            {% if r.status == 'completed' %}
+                            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Fertig</span>
+                            {% elif r.status == 'processing' %}
+                            <span class="badge bg-info"><span class="spinner-grow spinner-grow-sm me-1"></span>Verarbeitung</span>
+                            {% elif r.status == 'pending' %}
+                            <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Wartend</span>
+                            {% elif r.status == 'failed' %}
+                            <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Fehler</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ r.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td><span class="badge bg-secondary">{{ r.type }}</span></td>
+                        <td class="text-truncate" style="max-width: 250px;" title="{{ r.title or '-' }}">{{ r.title or '-' }}</td>
+                        <td title="{{ r.user_email }}">{{ r.user_name }}</td>
+                        <td><small>{{ r.speech_model }}</small></td>
+                        <td><small>{{ r.created_at }}</small></td>
+                        <td>
+                            {% if r.error_message %}
+                            <button class="btn btn-sm btn-outline-danger" onclick="showError(this)" data-error="{{ r.error_message|e }}" title="Fehler anzeigen">
+                                <i class="bi bi-exclamation-triangle"></i>
+                            </button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not all_records %}
+                    <tr><td colspan="7" class="text-center text-muted py-3">Keine Jobs vorhanden</td></tr>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- Error Detail Modal -->
+        <div class="modal fade" id="errorDetailModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Fehlermeldung</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <pre id="errorDetailText" class="mb-0 p-3 bg-body-secondary rounded" style="white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto;"></pre>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('errorDetailText').textContent)"><i class="bi bi-clipboard me-1"></i>Kopieren</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Schließen</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -980,5 +1075,21 @@ document.querySelectorAll('form').forEach(form => {
     });
     updateApiParamsPreview(form);
 });
+
+// Jobs tab: filter and popovers
+function filterJobs() {
+    const status = document.getElementById('jobStatusFilter').value;
+    const type = document.getElementById('jobTypeFilter').value;
+    document.querySelectorAll('#jobsTable .job-row').forEach(row => {
+        const matchStatus = !status || row.dataset.status === status;
+        const matchType = !type || row.dataset.type === type;
+        row.style.display = (matchStatus && matchType) ? '' : 'none';
+    });
+}
+
+function showError(btn) {
+    document.getElementById('errorDetailText').textContent = btn.dataset.error;
+    new bootstrap.Modal(document.getElementById('errorDetailModal')).show();
+}
 </script>
 {% endblock %}

@@ -248,7 +248,7 @@ def _text_task_to_dict(t):
         'status': t.status,
         'input_text': t.input_text,
         'result_text': t.result_text,
-        'error_message': t.error_message,
+        'error_message': _sanitize_error(t.error_message),
         'created_at': format_dt(t.created_at),
     }
 
@@ -277,6 +277,13 @@ def summarize(public_id):
     return jsonify({'status': 'processing'})
 
 
+def _sanitize_error(msg):
+    """Hide technical error details — real errors only visible in admin job list."""
+    if not msg:
+        return msg
+    return 'Ein Fehler ist aufgetreten, bitte kontaktieren Sie den Administrator.'
+
+
 def _job_to_dict(j):
     segments = json.loads(j.diarized_segments) if j.diarized_segments else None
     has_speakers = bool(segments and any('speaker' in seg for seg in segments))
@@ -296,7 +303,7 @@ def _job_to_dict(j):
         'summary_status': j.summary_status,
         'title_status': j.title_status,
         'speaker_identify_status': j.speaker_identify_status,
-        'error_message': j.error_message,
+        'error_message': _sanitize_error(j.error_message),
         'tool_action': j.tool_action,
         'multi_speaker': j.multi_speaker,
         'audio_available': bool(j.file_path and j.audio_saved and os.path.exists(j.file_path)),
@@ -586,7 +593,7 @@ def _meeting_to_dict(m):
         'summary_status': m.summary_status,
         'title_status': m.title_status,
         'speaker_identify_status': m.speaker_identify_status,
-        'error_message': m.error_message,
+        'error_message': _sanitize_error(m.error_message),
         'multi_speaker': True,
         'audio_available': bool(m.file_path and m.audio_saved and os.path.exists(m.file_path)),
     }
@@ -732,7 +739,7 @@ def _dictation_to_dict(d):
         'result_text': d.result_text,
         'diarized_segments': segments,
         'has_speakers': False,
-        'error_message': d.error_message,
+        'error_message': _sanitize_error(d.error_message),
         'multi_speaker': False,
         'audio_available': bool(d.file_path and d.audio_saved and os.path.exists(d.file_path)),
     }
