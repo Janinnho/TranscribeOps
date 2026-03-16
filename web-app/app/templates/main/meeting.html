@@ -13,7 +13,7 @@
                     {% if not (hide_single_model and speech_models|length <= 1) %}
                     <div class="col-md-6">
                         <label class="form-label">Modell</label>
-                        <select class="form-select" id="speechModel">
+                        <select class="form-select" id="speechModel" onchange="updateUploadLimits()">
                             {% for m in speech_models %}
                             <option value="{{ m.id }}">{{ m.display_name }}</option>
                             {% endfor %}
@@ -56,7 +56,8 @@
                     {% endif %}
                     <div class="upload-zone border rounded-3 p-4 text-center mb-3" id="dropZone">
                         <i class="bi bi-cloud-arrow-up display-5 text-muted"></i>
-                        <p class="mt-2 mb-0">Audiodatei hochladen</p>
+                        <p class="mt-2 mb-1">Audiodatei hochladen</p>
+                        <small class="text-muted" id="uploadLimits">MP3, WAV, OGG, FLAC, M4A, WebM</small>
                         <input type="file" class="d-none" id="fileInput" accept=".mp3,.wav,.ogg,.webm,.flac,.m4a,.mp4">
                     </div>
                     <div id="selectedFile" class="d-none mb-3">
@@ -108,6 +109,26 @@
 {% block scripts %}
 <script>
 const JOB_TYPE = 'meeting';
+const speechModelData = [{% for m in speech_models %}{id:{{ m.id }},max_size:{{ m.max_upload_size_mb or 0 }},max_duration:{{ m.max_upload_duration_secs or 0 }}},{% endfor %}];
+
+function updateUploadLimits() {
+    const el = document.getElementById('uploadLimits');
+    if (!el) return;
+    const select = document.getElementById('speechModel');
+    const selId = parseInt(select.value);
+    const model = speechModelData.find(m => m.id === selId);
+    let text = 'MP3, WAV, OGG, FLAC, M4A, WebM';
+    const parts = [];
+    if (model && model.max_size > 0) parts.push('max. ' + model.max_size + ' MB');
+    if (model && model.max_duration > 0) {
+        const mins = Math.floor(model.max_duration / 60);
+        if (mins > 0) parts.push('max. ' + mins + ' Min.');
+        else parts.push('max. ' + model.max_duration + ' Sek.');
+    }
+    if (parts.length) text += ' (' + parts.join(', ') + ')';
+    el.textContent = text;
+}
+
 let mediaRecorder = null;
 let audioChunks = [];
 let recordingTimer = null;
@@ -183,7 +204,14 @@ async function uploadRecording(blob) {
     loadJobs('/api/meetings', '/api/meeting', '/meeting-job');
 }
 
+function getSelectedModelMaxSize() {
+    const selId = parseInt(document.getElementById('speechModel').value);
+    const model = speechModelData.find(m => m.id === selId);
+    return model ? model.max_size : 0;
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+    updateUploadLimits();
     initUpload('uploadForm', 'fileInput', 'dropZone', 'selectedFile', 'fileName', 'fileSize',
                'removeFile', 'uploadBtn', 'uploadProgress', JOB_TYPE);
     loadJobs('/api/meetings', '/api/meeting', '/meeting-job');

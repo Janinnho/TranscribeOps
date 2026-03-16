@@ -64,9 +64,24 @@ function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId,
 
     fileInput.addEventListener('change', showSelectedFile);
 
+    function checkFileSize(file) {
+        if (typeof getSelectedModelMaxSize === 'function') {
+            const maxMb = getSelectedModelMaxSize();
+            if (maxMb > 0 && file.size > maxMb * 1024 * 1024) {
+                alert(`Datei zu groß. Maximale Upload-Größe für dieses Modell: ${maxMb} MB. Ihre Datei: ${(file.size / 1024 / 1024).toFixed(1)} MB`);
+                return false;
+            }
+        }
+        return true;
+    }
+
     function showSelectedFile() {
         if (fileInput.files.length) {
             const f = fileInput.files[0];
+            if (!checkFileSize(f)) {
+                fileInput.value = '';
+                return;
+            }
             fileName.textContent = f.name;
             fileSize.textContent = formatSize(f.size);
             selectedFile.classList.remove('d-none');

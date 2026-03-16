@@ -19,7 +19,7 @@
                         </div>
                         <div class="col-md-4" id="speechModelCol">
                             <label class="form-label">Modell</label>
-                            <select class="form-select" id="speechModel" name="speech_model_id"></select>
+                            <select class="form-select" id="speechModel" name="speech_model_id" onchange="updateUploadLimits()"></select>
                         </div>
                         <div class="col-md-4">
                             <label class="form-label">Sprache (optional)</label>
@@ -49,7 +49,7 @@
                     <div class="upload-zone border rounded-3 p-5 text-center mb-3" id="dropZone">
                         <i class="bi bi-cloud-arrow-up display-4 text-muted"></i>
                         <p class="mt-2 mb-1">Audiodatei hierher ziehen oder klicken</p>
-                        <small class="text-muted">MP3, WAV, OGG, FLAC, M4A, WebM (max. 500MB)</small>
+                        <small class="text-muted" id="uploadLimits">MP3, WAV, OGG, FLAC, M4A, WebM</small>
                         <input type="file" class="d-none" id="fileInput" accept=".mp3,.wav,.ogg,.webm,.flac,.m4a,.mp4,.mpeg,.mpga">
                     </div>
 
@@ -108,8 +108,8 @@
 <script>
 const JOB_TYPE = 'transcription';
 
-const singleModels = [{% for m in single_models %}{id:{{ m.id }},name:"{{ m.display_name }}"},{% endfor %}];
-const multiModels = [{% for m in multi_models %}{id:{{ m.id }},name:"{{ m.display_name }}"},{% endfor %}];
+const singleModels = [{% for m in single_models %}{id:{{ m.id }},name:"{{ m.display_name }}",max_size:{{ m.max_upload_size_mb or 0 }},max_duration:{{ m.max_upload_duration_secs or 0 }}},{% endfor %}];
+const multiModels = [{% for m in multi_models %}{id:{{ m.id }},name:"{{ m.display_name }}",max_size:{{ m.max_upload_size_mb or 0 }},max_duration:{{ m.max_upload_duration_secs or 0 }}},{% endfor %}];
 const hideSingleModel = {{ 'true' if hide_single_model else 'false' }};
 
 function updateModelList() {
@@ -124,6 +124,35 @@ function updateModelList() {
     } else {
         col.classList.remove('d-none');
     }
+    updateUploadLimits();
+}
+
+function updateUploadLimits() {
+    const el = document.getElementById('uploadLimits');
+    if (!el) return;
+    const isMulti = document.getElementById('multiSpeaker').value === 'true';
+    const models = isMulti ? multiModels : singleModels;
+    const select = document.getElementById('speechModel');
+    const selId = parseInt(select.value);
+    const model = models.find(m => m.id === selId);
+    let text = 'MP3, WAV, OGG, FLAC, M4A, WebM';
+    const parts = [];
+    if (model && model.max_size > 0) parts.push('max. ' + model.max_size + ' MB');
+    if (model && model.max_duration > 0) {
+        const mins = Math.floor(model.max_duration / 60);
+        if (mins > 0) parts.push('max. ' + mins + ' Min.');
+        else parts.push('max. ' + model.max_duration + ' Sek.');
+    }
+    if (parts.length) text += ' (' + parts.join(', ') + ')';
+    el.textContent = text;
+}
+
+function getSelectedModelMaxSize() {
+    const isMulti = document.getElementById('multiSpeaker').value === 'true';
+    const models = isMulti ? multiModels : singleModels;
+    const selId = parseInt(document.getElementById('speechModel').value);
+    const model = models.find(m => m.id === selId);
+    return model ? model.max_size : 0;
 }
 
 document.addEventListener('DOMContentLoaded', () => {
