@@ -352,6 +352,37 @@
             </div>
         </div>
 
+        <!-- Parallel Task Limits -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-cpu me-2"></i>Parallele Verarbeitung</h6>
+                <p class="text-muted small mb-3">Maximale Anzahl gleichzeitig laufender Tasks. 0 = kein Limit.</p>
+                <form method="POST" action="{{ url_for('admin.update_global') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="timezone" value="{{ current_timezone }}">
+                    <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                            <label class="form-label">Sprachmodell-Tasks</label>
+                            <input type="number" class="form-control" name="max_parallel_speech_tasks"
+                                   value="{{ max_parallel_speech_tasks }}" min="0" max="20">
+                            <small class="text-muted">Transkription, Meeting, Diktation</small>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Textmodell-Tasks</label>
+                            <input type="number" class="form-control" name="max_parallel_text_tasks"
+                                   value="{{ max_parallel_text_tasks }}" min="0" max="20">
+                            <small class="text-muted">Titel, Zusammenfassung, Sprecher, Chat</small>
+                        </div>
+                        <div class="col-md-4">
+                            <button type="submit" class="btn btn-primary btn-sm">
+                                <i class="bi bi-check-lg me-1"></i>Speichern
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <!-- System Info -->
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-body">

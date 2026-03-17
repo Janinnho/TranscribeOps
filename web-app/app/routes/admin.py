@@ -56,6 +56,11 @@ def dashboard():
     tz_setting = SystemSetting.query.get('timezone')
     current_timezone = tz_setting.value if tz_setting else 'Europe/Berlin'
 
+    max_parallel_speech = SystemSetting.query.get('max_parallel_speech_tasks')
+    max_parallel_text = SystemSetting.query.get('max_parallel_text_tasks')
+    max_parallel_speech_tasks = int(max_parallel_speech.value) if max_parallel_speech and max_parallel_speech.value.isdigit() else 0
+    max_parallel_text_tasks = int(max_parallel_text.value) if max_parallel_text and max_parallel_text.value.isdigit() else 0
+
     audio_path = current_app.config.get('AUDIO_STORAGE_PATH', '')
     upload_path = current_app.config.get('UPLOAD_FOLDER', '')
     db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
@@ -131,7 +136,9 @@ def dashboard():
                            upload_disk_usage=_fmt_size(_dir_size(upload_path)),
                            stats=stats,
                            sso_settings=sso_settings,
-                           all_records=all_records)
+                           all_records=all_records,
+                           max_parallel_speech_tasks=max_parallel_speech_tasks,
+                           max_parallel_text_tasks=max_parallel_text_tasks)
 
 
 # --- User Management ---
@@ -480,6 +487,17 @@ def update_global():
         setting.value = tz
     else:
         db.session.add(SystemSetting(key='timezone', value=tz))
+
+    for key in ['max_parallel_speech_tasks', 'max_parallel_text_tasks']:
+        val = request.form.get(key, '0').strip()
+        if not val.isdigit():
+            val = '0'
+        s = SystemSetting.query.get(key)
+        if s:
+            s.value = val
+        else:
+            db.session.add(SystemSetting(key=key, value=val))
+
     db.session.commit()
     flash('Globale Einstellungen gespeichert.', 'success')
     return redirect(url_for('admin.dashboard'))

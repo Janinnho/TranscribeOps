@@ -4,13 +4,64 @@ import subprocess
 import json
 import time
 import requests
+import redis
 from datetime import datetime, timezone
 from app.celery_app import celery
+
+_redis = None
+
+
+def _get_redis():
+    global _redis
+    if _redis is None:
+        from config import Config
+        _redis = redis.from_url(Config.CELERY_BROKER_URL)
+    return _redis
 
 
 def get_app():
     from app import create_app
     return create_app()
+
+
+def _get_concurrency_limit(slot_type):
+    """Read limit from SystemSetting. slot_type: 'speech' or 'text'."""
+    app = get_app()
+    with app.app_context():
+        from app.models import SystemSetting
+        key = f'max_parallel_{slot_type}_tasks'
+        setting = SystemSetting.query.get(key)
+        if setting and setting.value.isdigit():
+            return int(setting.value)
+    return 0  # 0 = kein Limit
+
+
+def _acquire_slot(slot_type):
+    """Try to acquire a concurrency slot. Returns True if acquired."""
+    limit = _get_concurrency_limit(slot_type)
+    if limit <= 0:
+        return True  # kein Limit
+    r = _get_redis()
+    key = f'transcribeops:slots:{slot_type}'
+    current = r.incr(key)
+    if current <= limit:
+        return True
+    # Kein Slot frei → zurücksetzen
+    r.decr(key)
+    return False
+
+
+def _release_slot(slot_type):
+    """Release a concurrency slot."""
+    limit = _get_concurrency_limit(slot_type)
+    if limit <= 0:
+        return
+    r = _get_redis()
+    key = f'transcribeops:slots:{slot_type}'
+    r.decr(key)
+    # Nicht unter 0 fallen lassen
+    if int(r.get(key) or 0) < 0:
+        r.set(key, 0)
 
 
 def _is_diarize_model(model):
@@ -133,145 +184,170 @@ def _run_speech_processing(record, multi_speaker=False, audio_path=None):
         db.session.rollback()
 
 
-@celery.task(bind=True)
+@celery.task(bind=True, max_retries=None)
 def process_transcription(self, job_id):
-    app = get_app()
-    with app.app_context():
-        from app import db
-        from app.models import Job, User
+    if not _acquire_slot('speech'):
+        raise self.retry(countdown=5)
+    try:
+        app = get_app()
+        with app.app_context():
+            from app import db
+            from app.models import Job, User
 
-        job = db.session.get(Job, job_id)
-        if not job:
-            return {'error': 'Job not found'}
+            job = db.session.get(Job, job_id)
+            if not job:
+                return {'error': 'Job not found'}
 
-        job.status = 'processing'
-        job.celery_task_id = self.request.id
-        db.session.commit()
+            job.status = 'processing'
+            job.celery_task_id = self.request.id
+            db.session.commit()
 
-        temp_path = job.file_path
-        _persist_audio_file(job, app)
-        _run_speech_processing(job, multi_speaker=job.multi_speaker, audio_path=temp_path)
-        _cleanup_temp_file(job, temp_path)
+            temp_path = job.file_path
+            _persist_audio_file(job, app)
+            _run_speech_processing(job, multi_speaker=job.multi_speaker, audio_path=temp_path)
+            _cleanup_temp_file(job, temp_path)
 
-        if job.status == 'completed':
-            _trigger_auto_tasks(job.user_id, job.id, 'job')
+            if job.status == 'completed':
+                _trigger_auto_tasks(job.user_id, job.id, 'job')
 
-        return {'status': job.status, 'job_id': job_id}
+            return {'status': job.status, 'job_id': job_id}
+    finally:
+        _release_slot('speech')
 
 
-@celery.task(bind=True)
+@celery.task(bind=True, max_retries=None)
 def process_meeting(self, meeting_id):
-    app = get_app()
-    with app.app_context():
-        from app import db
-        from app.models import Meeting, User
+    if not _acquire_slot('speech'):
+        raise self.retry(countdown=5)
+    try:
+        app = get_app()
+        with app.app_context():
+            from app import db
+            from app.models import Meeting, User
 
-        meeting = db.session.get(Meeting, meeting_id)
-        if not meeting:
-            return {'error': 'Meeting not found'}
+            meeting = db.session.get(Meeting, meeting_id)
+            if not meeting:
+                return {'error': 'Meeting not found'}
 
-        meeting.status = 'processing'
-        meeting.celery_task_id = self.request.id
-        db.session.commit()
+            meeting.status = 'processing'
+            meeting.celery_task_id = self.request.id
+            db.session.commit()
 
-        temp_path = meeting.file_path
-        _persist_audio_file(meeting, app)
-        _run_speech_processing(meeting, multi_speaker=True, audio_path=temp_path)
-        _cleanup_temp_file(meeting, temp_path)
+            temp_path = meeting.file_path
+            _persist_audio_file(meeting, app)
+            _run_speech_processing(meeting, multi_speaker=True, audio_path=temp_path)
+            _cleanup_temp_file(meeting, temp_path)
 
-        if meeting.status == 'completed':
-            _trigger_auto_tasks(meeting.user_id, meeting.id, 'meeting')
+            if meeting.status == 'completed':
+                _trigger_auto_tasks(meeting.user_id, meeting.id, 'meeting')
 
-        return {'status': meeting.status, 'meeting_id': meeting_id}
+            return {'status': meeting.status, 'meeting_id': meeting_id}
+    finally:
+        _release_slot('speech')
 
 
-@celery.task(bind=True)
+@celery.task(bind=True, max_retries=None)
 def process_dictation(self, dictation_id):
-    app = get_app()
-    with app.app_context():
-        from app import db
-        from app.models import Dictation, User
+    if not _acquire_slot('speech'):
+        raise self.retry(countdown=5)
+    try:
+        app = get_app()
+        with app.app_context():
+            from app import db
+            from app.models import Dictation, User
 
-        dictation = db.session.get(Dictation, dictation_id)
-        if not dictation:
-            return {'error': 'Dictation not found'}
+            dictation = db.session.get(Dictation, dictation_id)
+            if not dictation:
+                return {'error': 'Dictation not found'}
 
-        dictation.status = 'processing'
-        dictation.celery_task_id = self.request.id
-        db.session.commit()
+            dictation.status = 'processing'
+            dictation.celery_task_id = self.request.id
+            db.session.commit()
 
-        temp_path = dictation.file_path
-        _persist_audio_file(dictation, app)
-        _run_speech_processing(dictation, multi_speaker=False, audio_path=temp_path)
-        _cleanup_temp_file(dictation, temp_path)
+            temp_path = dictation.file_path
+            _persist_audio_file(dictation, app)
+            _run_speech_processing(dictation, multi_speaker=False, audio_path=temp_path)
+            _cleanup_temp_file(dictation, temp_path)
 
-        return {'status': dictation.status, 'dictation_id': dictation_id}
+            return {'status': dictation.status, 'dictation_id': dictation_id}
+    finally:
+        _release_slot('speech')
 
 
-@celery.task(bind=True)
+@celery.task(bind=True, max_retries=None)
 def process_text_tool(self, task_id):
-    app = get_app()
-    with app.app_context():
-        from app import db
-        from app.models import TextTask
+    if not _acquire_slot('text'):
+        raise self.retry(countdown=5)
+    try:
+        app = get_app()
+        with app.app_context():
+            from app import db
+            from app.models import TextTask
 
-        task = db.session.get(TextTask, task_id)
-        if not task:
-            return {'error': 'Task not found'}
+            task = db.session.get(TextTask, task_id)
+            if not task:
+                return {'error': 'Task not found'}
 
-        task.status = 'processing'
-        db.session.commit()
+            task.status = 'processing'
+            db.session.commit()
 
-        try:
-            text_model = task.text_model
-            if not text_model:
-                raise Exception('Kein Textmodell konfiguriert')
+            try:
+                text_model = task.text_model
+                if not text_model:
+                    raise Exception('Kein Textmodell konfiguriert')
 
-            prompt = _build_text_prompt(task.action, task.input_text, task.target_language)
-            result = _call_text_api(text_model, prompt)
-            task.result_text = result
-            task.status = 'completed'
-            task.completed_at = datetime.now(timezone.utc)
-        except Exception as e:
-            task.status = 'failed'
-            task.error_message = str(e)
+                prompt = _build_text_prompt(task.action, task.input_text, task.target_language)
+                result = _call_text_api(text_model, prompt)
+                task.result_text = result
+                task.status = 'completed'
+                task.completed_at = datetime.now(timezone.utc)
+            except Exception as e:
+                task.status = 'failed'
+                task.error_message = str(e)
 
-        db.session.commit()
-        return {'status': task.status, 'task_id': task_id}
+            db.session.commit()
+            return {'status': task.status, 'task_id': task_id}
+    finally:
+        _release_slot('text')
 
 
-@celery.task(bind=True)
+@celery.task(bind=True, max_retries=None)
 def process_summary(self, record_id, text_model_id, model_type='job'):
-    app = get_app()
-    with app.app_context():
-        from app import db
-        from app.models import Job, Meeting, TextModel
+    if not _acquire_slot('text'):
+        raise self.retry(countdown=5)
+    try:
+        app = get_app()
+        with app.app_context():
+            from app import db
+            from app.models import Job, Meeting, TextModel
 
-        model_map = {'job': Job, 'meeting': Meeting}
-        model_cls = model_map.get(model_type, Job)
+            model_map = {'job': Job, 'meeting': Meeting}
+            model_cls = model_map.get(model_type, Job)
 
-        record = db.session.get(model_cls, record_id)
-        text_model = db.session.get(TextModel, text_model_id)
-        if not record or not text_model:
-            return {'error': 'Record or model not found'}
+            record = db.session.get(model_cls, record_id)
+            text_model = db.session.get(TextModel, text_model_id)
+            if not record or not text_model:
+                return {'error': 'Record or model not found'}
 
-        record.summary_status = 'processing'
-        db.session.commit()
+            record.summary_status = 'processing'
+            db.session.commit()
 
-        try:
-            summary_messages = [
-                {'role': 'system', 'content': 'Du bist ein Assistent, der Transkriptionen zusammenfasst. Antworte ausschließlich mit der Zusammenfassung. Kommentiere oder bewerte den Text nicht.'},
-                {'role': 'user', 'content': f"Fasse die folgende Transkription strukturiert zusammen. Gib nur die Zusammenfassung aus, keine Einleitung oder Kommentare:\n\n{record.result_text}"}
-            ]
-            result = _call_chat_api(text_model, summary_messages)
-            record.summary_text = result
-            record.summary_status = 'completed'
-        except Exception as e:
-            record.summary_text = f"Fehler: {str(e)}"
-            record.summary_status = 'failed'
+            try:
+                summary_messages = [
+                    {'role': 'system', 'content': 'Du bist ein Assistent, der Transkriptionen zusammenfasst. Antworte ausschließlich mit der Zusammenfassung. Kommentiere oder bewerte den Text nicht.'},
+                    {'role': 'user', 'content': f"Fasse die folgende Transkription strukturiert zusammen. Gib nur die Zusammenfassung aus, keine Einleitung oder Kommentare:\n\n{record.result_text}"}
+                ]
+                result = _call_chat_api(text_model, summary_messages)
+                record.summary_text = result
+                record.summary_status = 'completed'
+            except Exception as e:
+                record.summary_text = f"Fehler: {str(e)}"
+                record.summary_status = 'failed'
 
-        db.session.commit()
-        return {'status': 'done', 'record_id': record_id}
+            db.session.commit()
+            return {'status': 'done', 'record_id': record_id}
+    finally:
+        _release_slot('text')
 
 
 def _trigger_auto_tasks(user_id, record_id, model_type):
@@ -305,146 +381,156 @@ def _trigger_auto_tasks(user_id, record_id, model_type):
                     process_speaker_identification.delay(record_id, speaker_model_id, model_type)
 
 
-@celery.task(bind=True)
+@celery.task(bind=True, max_retries=None)
 def process_auto_title(self, record_id, text_model_id, model_type='job'):
-    app = get_app()
-    with app.app_context():
-        from app import db
-        from app.models import Job, Meeting, Dictation, TextModel
+    if not _acquire_slot('text'):
+        raise self.retry(countdown=5)
+    try:
+        app = get_app()
+        with app.app_context():
+            from app import db
+            from app.models import Job, Meeting, Dictation, TextModel
 
-        model_map = {'job': Job, 'meeting': Meeting, 'dictation': Dictation}
-        model_cls = model_map.get(model_type, Job)
+            model_map = {'job': Job, 'meeting': Meeting, 'dictation': Dictation}
+            model_cls = model_map.get(model_type, Job)
 
-        record = db.session.get(model_cls, record_id)
-        text_model = db.session.get(TextModel, text_model_id)
-        if not record or not text_model:
-            return {'error': 'Record or model not found'}
+            record = db.session.get(model_cls, record_id)
+            text_model = db.session.get(TextModel, text_model_id)
+            if not record or not text_model:
+                return {'error': 'Record or model not found'}
 
-        record.title_status = 'processing'
-        db.session.commit()
-
-        try:
-            # Use first ~500 chars of result text for title generation
-            snippet = (record.result_text or '')[:500]
-            if not snippet:
-                record.title_status = None
-                db.session.commit()
-                return {'status': 'skipped', 'reason': 'no text'}
-
-            # Check if cancelled before LLM call
-            db.session.refresh(record)
-            if record.title_status == 'cancelled':
-                return {'status': 'cancelled', 'record_id': record_id}
-
-            prompt = (
-                "Generiere einen kurzen, prägnanten Titel (max 5-8 Wörter) "
-                "für folgende Transkription. Antworte NUR mit dem Titel als reinen Text, "
-                "ohne Anführungszeichen, ohne Markdown, ohne Sternchen, ohne zusätzlichen Text:\n\n" + snippet
-            )
-            title = _call_text_api(text_model, prompt).strip().strip('"\'*#_ ')
-
-            # Check if cancelled after LLM call
-            db.session.refresh(record)
-            if record.title_status == 'cancelled':
-                return {'status': 'cancelled', 'record_id': record_id}
-
-            if title:
-                record.title = title[:255]
-                record.title_status = 'completed'
-                db.session.commit()
-        except Exception as e:
-            record.title_status = 'failed'
+            record.title_status = 'processing'
             db.session.commit()
 
-        return {'status': 'done', 'record_id': record_id}
+            try:
+                # Use first ~500 chars of result text for title generation
+                snippet = (record.result_text or '')[:500]
+                if not snippet:
+                    record.title_status = None
+                    db.session.commit()
+                    return {'status': 'skipped', 'reason': 'no text'}
 
+                # Check if cancelled before LLM call
+                db.session.refresh(record)
+                if record.title_status == 'cancelled':
+                    return {'status': 'cancelled', 'record_id': record_id}
 
-@celery.task(bind=True)
-def process_speaker_identification(self, record_id, text_model_id, model_type='job'):
-    app = get_app()
-    with app.app_context():
-        from app import db
-        from app.models import Job, Meeting, TextModel
+                prompt = (
+                    "Generiere einen kurzen, prägnanten Titel (max 5-8 Wörter) "
+                    "für folgende Transkription. Antworte NUR mit dem Titel als reinen Text, "
+                    "ohne Anführungszeichen, ohne Markdown, ohne Sternchen, ohne zusätzlichen Text:\n\n" + snippet
+                )
+                title = _call_text_api(text_model, prompt).strip().strip('"\'*#_ ')
 
-        model_map = {'job': Job, 'meeting': Meeting}
-        model_cls = model_map.get(model_type, Job)
+                # Check if cancelled after LLM call
+                db.session.refresh(record)
+                if record.title_status == 'cancelled':
+                    return {'status': 'cancelled', 'record_id': record_id}
 
-        record = db.session.get(model_cls, record_id)
-        text_model = db.session.get(TextModel, text_model_id)
-        if not record or not text_model:
-            return {'error': 'Record or model not found'}
-
-        if not record.diarized_segments:
-            return {'status': 'skipped', 'reason': 'no segments'}
-
-        record.speaker_identify_status = 'processing'
-        db.session.commit()
-
-        try:
-            segments = json.loads(record.diarized_segments)
-            speaker_labels = list(set(seg.get('speaker', '') for seg in segments if seg.get('speaker')))
-            if not speaker_labels:
-                record.speaker_identify_status = None
+                if title:
+                    record.title = title[:255]
+                    record.title_status = 'completed'
+                    db.session.commit()
+            except Exception as e:
+                record.title_status = 'failed'
                 db.session.commit()
-                return {'status': 'skipped', 'reason': 'no speakers'}
 
-            # Build transcript snippet from first ~50 segments
-            snippet_segments = segments[:50]
-            transcript_lines = []
-            for seg in snippet_segments:
-                speaker = seg.get('speaker', '?')
-                text = seg.get('text', '').strip()
-                transcript_lines.append(f"[{speaker}]: {text}")
-            transcript_snippet = '\n'.join(transcript_lines)
+            return {'status': 'done', 'record_id': record_id}
+    finally:
+        _release_slot('text')
 
-            prompt = (
-                "Analysiere die folgende Transkription und versuche die echten Namen der Sprecher "
-                "aus dem Gesprächsinhalt zu erkennen. Die aktuellen Sprecher-Labels sind: "
-                + ', '.join(speaker_labels) + "\n\n"
-                "Antworte NUR mit einem JSON-Objekt im Format:\n"
-                '{"renames": {"ALTER_NAME": "NEUER_NAME"}}\n\n'
-                "Wenn du einen Namen nicht erkennen kannst, lasse den Sprecher weg. "
-                "Antworte ausschließlich mit dem JSON, ohne Markdown, ohne Erklärung.\n\n"
-                "Transkription:\n" + transcript_snippet
-            )
 
-            # Check if cancelled before LLM call
-            db.session.refresh(record)
-            if record.speaker_identify_status == 'cancelled':
-                return {'status': 'cancelled', 'record_id': record_id}
+@celery.task(bind=True, max_retries=None)
+def process_speaker_identification(self, record_id, text_model_id, model_type='job'):
+    if not _acquire_slot('text'):
+        raise self.retry(countdown=5)
+    try:
+        app = get_app()
+        with app.app_context():
+            from app import db
+            from app.models import Job, Meeting, TextModel
 
-            result = _call_text_api(text_model, prompt)
+            model_map = {'job': Job, 'meeting': Meeting}
+            model_cls = model_map.get(model_type, Job)
 
-            # Check if cancelled after LLM call
-            db.session.refresh(record)
-            if record.speaker_identify_status == 'cancelled':
-                return {'status': 'cancelled', 'record_id': record_id}
+            record = db.session.get(model_cls, record_id)
+            text_model = db.session.get(TextModel, text_model_id)
+            if not record or not text_model:
+                return {'error': 'Record or model not found'}
 
-            renames = _parse_speaker_renames(result, speaker_labels)
-            if not renames:
+            if not record.diarized_segments:
+                return {'status': 'skipped', 'reason': 'no segments'}
+
+            record.speaker_identify_status = 'processing'
+            db.session.commit()
+
+            try:
+                segments = json.loads(record.diarized_segments)
+                speaker_labels = list(set(seg.get('speaker', '') for seg in segments if seg.get('speaker')))
+                if not speaker_labels:
+                    record.speaker_identify_status = None
+                    db.session.commit()
+                    return {'status': 'skipped', 'reason': 'no speakers'}
+
+                # Build transcript snippet from first ~50 segments
+                snippet_segments = segments[:50]
+                transcript_lines = []
+                for seg in snippet_segments:
+                    speaker = seg.get('speaker', '?')
+                    text = seg.get('text', '').strip()
+                    transcript_lines.append(f"[{speaker}]: {text}")
+                transcript_snippet = '\n'.join(transcript_lines)
+
+                prompt = (
+                    "Analysiere die folgende Transkription und versuche die echten Namen der Sprecher "
+                    "aus dem Gesprächsinhalt zu erkennen. Die aktuellen Sprecher-Labels sind: "
+                    + ', '.join(speaker_labels) + "\n\n"
+                    "Antworte NUR mit einem JSON-Objekt im Format:\n"
+                    '{"renames": {"ALTER_NAME": "NEUER_NAME"}}\n\n'
+                    "Wenn du einen Namen nicht erkennen kannst, lasse den Sprecher weg. "
+                    "Antworte ausschließlich mit dem JSON, ohne Markdown, ohne Erklärung.\n\n"
+                    "Transkription:\n" + transcript_snippet
+                )
+
+                # Check if cancelled before LLM call
+                db.session.refresh(record)
+                if record.speaker_identify_status == 'cancelled':
+                    return {'status': 'cancelled', 'record_id': record_id}
+
+                result = _call_text_api(text_model, prompt)
+
+                # Check if cancelled after LLM call
+                db.session.refresh(record)
+                if record.speaker_identify_status == 'cancelled':
+                    return {'status': 'cancelled', 'record_id': record_id}
+
+                renames = _parse_speaker_renames(result, speaker_labels)
+                if not renames:
+                    record.speaker_identify_status = 'completed'
+                    db.session.commit()
+                    return {'status': 'done', 'reason': 'no renames found'}
+
+                # Apply renames to segments
+                for seg in segments:
+                    old_name = seg.get('speaker', '')
+                    if old_name in renames:
+                        seg['speaker'] = renames[old_name]
+
+                record.diarized_segments = json.dumps(segments, ensure_ascii=False)
+
+                # Regenerate result_text
+                lines = [f"[{seg['speaker']}]: {seg['text'].strip()}" for seg in segments]
+                record.result_text = '\n'.join(lines)
+
                 record.speaker_identify_status = 'completed'
                 db.session.commit()
-                return {'status': 'done', 'reason': 'no renames found'}
+            except Exception as e:
+                record.speaker_identify_status = 'failed'
+                db.session.commit()
 
-            # Apply renames to segments
-            for seg in segments:
-                old_name = seg.get('speaker', '')
-                if old_name in renames:
-                    seg['speaker'] = renames[old_name]
-
-            record.diarized_segments = json.dumps(segments, ensure_ascii=False)
-
-            # Regenerate result_text
-            lines = [f"[{seg['speaker']}]: {seg['text'].strip()}" for seg in segments]
-            record.result_text = '\n'.join(lines)
-
-            record.speaker_identify_status = 'completed'
-            db.session.commit()
-        except Exception as e:
-            record.speaker_identify_status = 'failed'
-            db.session.commit()
-
-        return {'status': 'done', 'record_id': record_id}
+            return {'status': 'done', 'record_id': record_id}
+    finally:
+        _release_slot('text')
 
 
 def _parse_speaker_renames(llm_response, valid_labels):
@@ -1085,64 +1171,69 @@ def _azure_chat(model, messages):
 
 # ── Chat message Celery task ─────────────────────────────────────────
 
-@celery.task(bind=True)
+@celery.task(bind=True, max_retries=None)
 def process_chat_message(self, chat_message_id, text_model_id):
-    app = get_app()
-    with app.app_context():
-        from app import db
-        from app.models import ChatMessage, TextModel, Job, Meeting
+    if not _acquire_slot('text'):
+        raise self.retry(countdown=5)
+    try:
+        app = get_app()
+        with app.app_context():
+            from app import db
+            from app.models import ChatMessage, TextModel, Job, Meeting
 
-        msg = db.session.get(ChatMessage, chat_message_id)
-        text_model = db.session.get(TextModel, text_model_id)
-        if not msg or not text_model:
-            return {'error': 'Message or model not found'}
+            msg = db.session.get(ChatMessage, chat_message_id)
+            text_model = db.session.get(TextModel, text_model_id)
+            if not msg or not text_model:
+                return {'error': 'Message or model not found'}
 
-        msg.status = 'processing'
-        db.session.commit()
+            msg.status = 'processing'
+            db.session.commit()
 
-        try:
-            # Load transcript text from parent record
-            model_map = {'job': Job, 'meeting': Meeting}
-            record_cls = model_map.get(msg.record_type)
-            record = db.session.get(record_cls, msg.record_id) if record_cls else None
-            if not record or not record.result_text:
-                raise Exception('Kein Transkriptionstext gefunden')
+            try:
+                # Load transcript text from parent record
+                model_map = {'job': Job, 'meeting': Meeting}
+                record_cls = model_map.get(msg.record_type)
+                record = db.session.get(record_cls, msg.record_id) if record_cls else None
+                if not record or not record.result_text:
+                    raise Exception('Kein Transkriptionstext gefunden')
 
-            transcript_text = record.result_text
-            if len(transcript_text) > 8000:
-                transcript_text = transcript_text[:8000] + '\n\n[... Text gekürzt ...]'
+                transcript_text = record.result_text
+                if len(transcript_text) > 8000:
+                    transcript_text = transcript_text[:8000] + '\n\n[... Text gekürzt ...]'
 
-            system_msg = {
-                'role': 'system',
-                'content': (
-                    'Du bist ein hilfreicher Assistent. Der Benutzer hat eine Transkription erstellt '
-                    'und möchte Fragen dazu stellen. Hier ist der Transkriptionstext:\n\n'
-                    f'{transcript_text}\n\n'
-                    'Beantworte die Fragen des Benutzers basierend auf diesem Text. '
-                    'Antworte auf Deutsch, es sei denn, der Benutzer fragt in einer anderen Sprache.'
-                )
-            }
+                system_msg = {
+                    'role': 'system',
+                    'content': (
+                        'Du bist ein hilfreicher Assistent. Der Benutzer hat eine Transkription erstellt '
+                        'und möchte Fragen dazu stellen. Hier ist der Transkriptionstext:\n\n'
+                        f'{transcript_text}\n\n'
+                        'Beantworte die Fragen des Benutzers basierend auf diesem Text. '
+                        'Antworte auf Deutsch, es sei denn, der Benutzer fragt in einer anderen Sprache.'
+                    )
+                }
 
-            # Load conversation history (completed messages before this one)
-            history = ChatMessage.query.filter_by(
-                record_type=msg.record_type,
-                record_id=msg.record_id,
-                user_id=msg.user_id
-            ).filter(
-                ChatMessage.id <= msg.id,
-                ChatMessage.status == 'completed'
-            ).order_by(ChatMessage.created_at).all()
+                # Load conversation history (completed messages before this one)
+                history = ChatMessage.query.filter_by(
+                    record_type=msg.record_type,
+                    record_id=msg.record_id,
+                    user_id=msg.user_id
+                ).filter(
+                    ChatMessage.id <= msg.id,
+                    ChatMessage.status == 'completed'
+                ).order_by(ChatMessage.created_at).all()
 
-            messages = [system_msg]
-            for h in history:
-                messages.append({'role': h.role, 'content': h.content})
+                messages = [system_msg]
+                for h in history:
+                    messages.append({'role': h.role, 'content': h.content})
 
-            result = _call_chat_api(text_model, messages)
-            msg.content = result
-            msg.status = 'completed'
-        except Exception as e:
-            msg.content = f'Fehler: {str(e)}'
-            msg.status = 'failed'
+                result = _call_chat_api(text_model, messages)
+                msg.content = result
+                msg.status = 'completed'
+            except Exception as e:
+                msg.content = f'Fehler: {str(e)}'
+                msg.status = 'failed'
 
-        db.session.commit()
+            db.session.commit()
+    finally:
+        _release_slot('text')
         return {'status': msg.status, 'chat_message_id': chat_message_id}

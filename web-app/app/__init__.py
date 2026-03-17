@@ -262,3 +262,8 @@ def _seed_defaults(app):
     if not SystemSetting.query.get('timezone'):
         db.session.add(SystemSetting(key='timezone', value='Europe/Berlin'))
         db.session.commit()
+    # Seed parallel task limits
+    for key, default in [('max_parallel_speech_tasks', '0'), ('max_parallel_text_tasks', '0')]:
+        if not SystemSetting.query.get(key):
+            db.session.add(SystemSetting(key=key, value=default))
+    db.session.commit()

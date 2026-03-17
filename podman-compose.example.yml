@@ -32,7 +32,7 @@ services:
     build: ./web-app
     container_name: transcribeops-worker
     network_mode: host
-    command: celery -A celery_worker.celery worker --loglevel=info --concurrency=2
+    command: celery -A celery_worker.celery worker --loglevel=info --concurrency=8
     volumes:
       - transcribeops-db:/app/data
       - transcribeops-uploads:/app/app/static/uploads
