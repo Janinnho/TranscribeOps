@@ -20,6 +20,18 @@ group_text_models = db.Table('group_text_models',
     db.Column('text_model_id', db.Integer, db.ForeignKey('text_models.id'), primary_key=True)
 )
 
+group_speech_model_functions = db.Table('group_speech_model_functions',
+    db.Column('group_id', db.Integer, db.ForeignKey('groups.id'), primary_key=True),
+    db.Column('speech_model_id', db.Integer, db.ForeignKey('speech_models.id'), primary_key=True),
+    db.Column('function', db.String(20), primary_key=True)  # 'transcription', 'meeting', 'dictation'
+)
+
+group_text_model_functions = db.Table('group_text_model_functions',
+    db.Column('group_id', db.Integer, db.ForeignKey('groups.id'), primary_key=True),
+    db.Column('text_model_id', db.Integer, db.ForeignKey('text_models.id'), primary_key=True),
+    db.Column('function', db.String(20), primary_key=True)  # 'text_tools', 'summary', 'chat'
+)
+
 
 def _gen_uid():
     return uuid.uuid4().hex
@@ -50,15 +62,23 @@ class User(UserMixin, db.Model):
             return False
         return check_password_hash(self.password_hash, password)
 
-    def get_available_speech_models(self, mode=None):
+    def get_available_speech_models(self, mode=None, function=None):
         if self.is_admin:
             q = SpeechModel.query.filter_by(is_active=True)
         else:
             model_ids = set()
             for group in self.groups:
                 for model in group.speech_models:
-                    if model.is_active:
-                        model_ids.add(model.id)
+                    if not model.is_active:
+                        continue
+                    if function:
+                        restrictions = db.session.query(group_speech_model_functions).filter_by(
+                            group_id=group.id, speech_model_id=model.id).all()
+                        if restrictions:
+                            funcs = [r.function for r in restrictions]
+                            if function not in funcs:
+                                continue
+                    model_ids.add(model.id)
             q = SpeechModel.query.filter(SpeechModel.id.in_(model_ids)) if model_ids else SpeechModel.query.filter(False)
         if mode == 'single':
             q = q.filter(SpeechModel.speaker_mode.in_(['single', 'both']))
@@ -66,15 +86,25 @@ class User(UserMixin, db.Model):
             q = q.filter(SpeechModel.speaker_mode.in_(['multi', 'both']))
         return q.all()
 
-    def get_available_text_models(self):
+    def get_available_text_models(self, function=None):
         if self.is_admin:
             return TextModel.query.filter_by(is_active=True).all()
-        models = set()
+        model_ids = set()
         for group in self.groups:
             for model in group.text_models:
-                if model.is_active:
-                    models.add(model)
-        return list(models)
+                if not model.is_active:
+                    continue
+                if function:
+                    restrictions = db.session.query(group_text_model_functions).filter_by(
+                        group_id=group.id, text_model_id=model.id).all()
+                    if restrictions:
+                        funcs = [r.function for r in restrictions]
+                        if function not in funcs:
+                            continue
+                model_ids.add(model.id)
+        if model_ids:
+            return TextModel.query.filter(TextModel.id.in_(model_ids)).all()
+        return []
 
     def has_dictionary_access(self):
         if self.is_admin:

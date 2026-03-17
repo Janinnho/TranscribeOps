@@ -18,8 +18,8 @@ def transcription():
     if not current_user.has_transcription_access():
         flash('Kein Zugriff auf Transkription.', 'danger')
         return redirect(url_for('main.settings'))
-    single_models = current_user.get_available_speech_models(mode='single')
-    multi_models = current_user.get_available_speech_models(mode='multi')
+    single_models = current_user.get_available_speech_models(mode='single', function='transcription')
+    multi_models = current_user.get_available_speech_models(mode='multi', function='transcription')
     text_models = current_user.get_available_text_models()
     audio_save_enabled, audio_save_default = current_user.get_audio_save_settings()
     hide_single_model = current_user.get_hide_single_model()
@@ -38,7 +38,7 @@ def meeting():
     if not current_user.has_meeting_access():
         flash('Kein Zugriff auf Meeting.', 'danger')
         return redirect(url_for('main.settings'))
-    speech_models = current_user.get_available_speech_models(mode='multi')
+    speech_models = current_user.get_available_speech_models(mode='multi', function='meeting')
     text_models = current_user.get_available_text_models()
     audio_save_enabled, audio_save_default = current_user.get_audio_save_settings()
     hide_single_model = current_user.get_hide_single_model()
@@ -56,7 +56,7 @@ def dictation():
     if not current_user.has_dictation_access():
         flash('Kein Zugriff auf Diktieren.', 'danger')
         return redirect(url_for('main.settings'))
-    speech_models = current_user.get_available_speech_models(mode='single')
+    speech_models = current_user.get_available_speech_models(mode='single', function='dictation')
     hide_single_model = current_user.get_hide_single_model()
     return render_template('main/dictation.html',
                            speech_models=speech_models,
@@ -69,7 +69,7 @@ def text_tools():
     if not current_user.has_text_tools_access():
         flash('Kein Zugriff auf Text Tools.', 'danger')
         return redirect(url_for('main.settings'))
-    text_models = current_user.get_available_text_models()
+    text_models = current_user.get_available_text_models(function='text_tools')
     hide_single_model = current_user.get_hide_single_model()
     return render_template('main/text_tools.html',
                            text_models=text_models,

@@ -218,6 +218,14 @@ def _apply_migrations():
         if _has_table('dictations') and not _has_column('dictations', 'progress'):
             _safe_execute(conn, "ALTER TABLE dictations ADD COLUMN progress INTEGER DEFAULT 0")
 
+        # Per-function model restrictions
+        if not _has_table('group_speech_model_functions'):
+            from app.models import group_speech_model_functions
+            group_speech_model_functions.create(bind=db.engine, checkfirst=True)
+        if not _has_table('group_text_model_functions'):
+            from app.models import group_text_model_functions
+            group_text_model_functions.create(bind=db.engine, checkfirst=True)
+
 
 def _seed_defaults(app):
     from app.models import User, Group, SpeechModel, TextModel, SystemSetting

@@ -703,11 +703,33 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <hr>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
-                        {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}"><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
+                        {% for m in speech_models %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}" id="newGrpSpeech{{ m.id }}" onchange="document.getElementById('newGrpSpeechFn{{ m.id }}').style.display = this.checked ? 'block' : 'none'">
+                            <label class="form-check-label" for="newGrpSpeech{{ m.id }}">{{ m.display_name }}</label>
+                        </div>
+                        <div class="ms-4 mb-2" id="newGrpSpeechFn{{ m.id }}" style="display:none">
+                            <small class="text-muted">Funktionen (keine Auswahl = alle):</small>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="transcription" id="newGrpSFn{{ m.id }}_t"><label class="form-check-label" for="newGrpSFn{{ m.id }}_t">Transkription</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="meeting" id="newGrpSFn{{ m.id }}_m"><label class="form-check-label" for="newGrpSFn{{ m.id }}_m">Meeting</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="dictation" id="newGrpSFn{{ m.id }}_d"><label class="form-check-label" for="newGrpSFn{{ m.id }}_d">Diktieren</label></div>
+                        </div>
+                        {% endfor %}
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Textmodelle</label>
-                        {% for m in text_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="text_model_ids" value="{{ m.id }}"><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
+                        {% for m in text_models %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="text_model_ids" value="{{ m.id }}" id="newGrpText{{ m.id }}" onchange="document.getElementById('newGrpTextFn{{ m.id }}').style.display = this.checked ? 'block' : 'none'">
+                            <label class="form-check-label" for="newGrpText{{ m.id }}">{{ m.display_name }}</label>
+                        </div>
+                        <div class="ms-4 mb-2" id="newGrpTextFn{{ m.id }}" style="display:none">
+                            <small class="text-muted">Funktionen (keine Auswahl = alle):</small>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="text_tools" id="newGrpTFn{{ m.id }}_tt"><label class="form-check-label" for="newGrpTFn{{ m.id }}_tt">Text-Tools</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="summary" id="newGrpTFn{{ m.id }}_s"><label class="form-check-label" for="newGrpTFn{{ m.id }}_s">Zusammenfassung</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="chat" id="newGrpTFn{{ m.id }}_c"><label class="form-check-label" for="newGrpTFn{{ m.id }}_c">Chat</label></div>
+                        </div>
+                        {% endfor %}
                     </div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
@@ -793,11 +815,37 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <hr>
                     <div class="mb-3">
                         <label class="form-label">Sprachmodelle</label>
-                        {% for m in speech_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}" {{ 'checked' if m in group.speech_models }}><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
+                        {% for m in speech_models %}
+                        {% set is_assigned = m in group.speech_models %}
+                        {% set sfns = group_speech_fns.get(group.id, {}).get(m.id, []) %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}" id="edGrp{{ group.id }}Speech{{ m.id }}" {{ 'checked' if is_assigned }} onchange="document.getElementById('edGrp{{ group.id }}SpeechFn{{ m.id }}').style.display = this.checked ? 'block' : 'none'">
+                            <label class="form-check-label" for="edGrp{{ group.id }}Speech{{ m.id }}">{{ m.display_name }}</label>
+                        </div>
+                        <div class="ms-4 mb-2" id="edGrp{{ group.id }}SpeechFn{{ m.id }}" style="{{ 'display:block' if is_assigned else 'display:none' }}">
+                            <small class="text-muted">Funktionen (keine Auswahl = alle):</small>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="transcription" id="edGrp{{ group.id }}SFn{{ m.id }}_t" {{ 'checked' if 'transcription' in sfns }}><label class="form-check-label" for="edGrp{{ group.id }}SFn{{ m.id }}_t">Transkription</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="meeting" id="edGrp{{ group.id }}SFn{{ m.id }}_m" {{ 'checked' if 'meeting' in sfns }}><label class="form-check-label" for="edGrp{{ group.id }}SFn{{ m.id }}_m">Meeting</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="dictation" id="edGrp{{ group.id }}SFn{{ m.id }}_d" {{ 'checked' if 'dictation' in sfns }}><label class="form-check-label" for="edGrp{{ group.id }}SFn{{ m.id }}_d">Diktieren</label></div>
+                        </div>
+                        {% endfor %}
                     </div>
                     <div class="mb-3">
                         <label class="form-label">Textmodelle</label>
-                        {% for m in text_models %}<div class="form-check"><input class="form-check-input" type="checkbox" name="text_model_ids" value="{{ m.id }}" {{ 'checked' if m in group.text_models }}><label class="form-check-label">{{ m.display_name }}</label></div>{% endfor %}
+                        {% for m in text_models %}
+                        {% set is_assigned = m in group.text_models %}
+                        {% set tfns = group_text_fns.get(group.id, {}).get(m.id, []) %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="text_model_ids" value="{{ m.id }}" id="edGrp{{ group.id }}Text{{ m.id }}" {{ 'checked' if is_assigned }} onchange="document.getElementById('edGrp{{ group.id }}TextFn{{ m.id }}').style.display = this.checked ? 'block' : 'none'">
+                            <label class="form-check-label" for="edGrp{{ group.id }}Text{{ m.id }}">{{ m.display_name }}</label>
+                        </div>
+                        <div class="ms-4 mb-2" id="edGrp{{ group.id }}TextFn{{ m.id }}" style="{{ 'display:block' if is_assigned else 'display:none' }}">
+                            <small class="text-muted">Funktionen (keine Auswahl = alle):</small>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="text_tools" id="edGrp{{ group.id }}TFn{{ m.id }}_tt" {{ 'checked' if 'text_tools' in tfns }}><label class="form-check-label" for="edGrp{{ group.id }}TFn{{ m.id }}_tt">Text-Tools</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="summary" id="edGrp{{ group.id }}TFn{{ m.id }}_s" {{ 'checked' if 'summary' in tfns }}><label class="form-check-label" for="edGrp{{ group.id }}TFn{{ m.id }}_s">Zusammenfassung</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="chat" id="edGrp{{ group.id }}TFn{{ m.id }}_c" {{ 'checked' if 'chat' in tfns }}><label class="form-check-label" for="edGrp{{ group.id }}TFn{{ m.id }}_c">Chat</label></div>
+                        </div>
+                        {% endfor %}
                     </div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>

@@ -4,7 +4,8 @@ from flask_login import login_required, current_user
 import os
 from flask import current_app
 from app import db
-from app.models import User, Group, SpeechModel, TextModel, SystemSetting, Job, Meeting, Dictation, TextTask
+from app.models import (User, Group, SpeechModel, TextModel, SystemSetting, Job, Meeting, Dictation, TextTask,
+                        group_speech_model_functions, group_text_model_functions)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -124,9 +125,27 @@ def dashboard():
     all_records.sort(key=lambda r: r['created_at_raw'] or '', reverse=True)
     all_records = all_records[:100]
 
+    # Build per-group function restriction maps for the template
+    group_speech_fns = {}
+    group_text_fns = {}
+    for group in groups:
+        speech_fns = {}
+        rows = db.session.query(group_speech_model_functions).filter_by(group_id=group.id).all()
+        for r in rows:
+            speech_fns.setdefault(r.speech_model_id, []).append(r.function)
+        group_speech_fns[group.id] = speech_fns
+
+        text_fns = {}
+        rows = db.session.query(group_text_model_functions).filter_by(group_id=group.id).all()
+        for r in rows:
+            text_fns.setdefault(r.text_model_id, []).append(r.function)
+        group_text_fns[group.id] = text_fns
+
     return render_template('admin/dashboard.html',
                            users=users, groups=groups,
                            speech_models=speech_models, text_models=text_models,
+                           group_speech_fns=group_speech_fns,
+                           group_text_fns=group_text_fns,
                            current_timezone=current_timezone,
                            audio_storage_path=audio_path,
                            upload_folder=upload_path,
@@ -264,9 +283,37 @@ def create_group():
     group.text_models = TextModel.query.filter(TextModel.id.in_(text_model_ids)).all() if text_model_ids else []
 
     db.session.add(group)
+    db.session.flush()
+
+    # Save per-function model restrictions
+    _save_model_functions(group)
+
     db.session.commit()
     flash(f'Gruppe "{name}" erstellt.', 'success')
     return redirect(url_for('admin.dashboard'))
+
+
+def _save_model_functions(group):
+    """Save per-function model restrictions from form data."""
+    # Clear old entries
+    db.session.execute(group_speech_model_functions.delete().where(
+        group_speech_model_functions.c.group_id == group.id))
+    db.session.execute(group_text_model_functions.delete().where(
+        group_text_model_functions.c.group_id == group.id))
+
+    # Save speech model functions
+    for model in group.speech_models:
+        functions = request.form.getlist(f'speech_fn_{model.id}')
+        for fn in functions:
+            db.session.execute(group_speech_model_functions.insert().values(
+                group_id=group.id, speech_model_id=model.id, function=fn))
+
+    # Save text model functions
+    for model in group.text_models:
+        functions = request.form.getlist(f'text_fn_{model.id}')
+        for fn in functions:
+            db.session.execute(group_text_model_functions.insert().values(
+                group_id=group.id, text_model_id=model.id, function=fn))
 
 
 @admin_bp.route('/group/<int:group_id>', methods=['POST'])
@@ -316,6 +363,9 @@ def update_group(group_id):
     group.speech_models = SpeechModel.query.filter(SpeechModel.id.in_(speech_model_ids)).all() if speech_model_ids else []
     group.text_models = TextModel.query.filter(TextModel.id.in_(text_model_ids)).all() if text_model_ids else []
 
+    # Save per-function model restrictions
+    _save_model_functions(group)
+
     db.session.commit()
     flash(f'Gruppe "{group.name}" aktualisiert.', 'success')
     return redirect(url_for('admin.dashboard'))
@@ -328,6 +378,10 @@ def delete_group(group_id):
     if not group:
         flash('Gruppe nicht gefunden.', 'danger')
         return redirect(url_for('admin.dashboard'))
+    db.session.execute(group_speech_model_functions.delete().where(
+        group_speech_model_functions.c.group_id == group.id))
+    db.session.execute(group_text_model_functions.delete().where(
+        group_text_model_functions.c.group_id == group.id))
     db.session.delete(group)
     db.session.commit()
     flash('Gruppe gelöscht.', 'success')
