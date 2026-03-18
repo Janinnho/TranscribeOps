@@ -241,6 +241,7 @@
                             <th>Modell</th>
                             <th>Erstellt</th>
                             <th>Fehler</th>
+                            <th>Aktionen</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -271,10 +272,21 @@
                             </button>
                             {% endif %}
                         </td>
+                        <td>
+                            {% if r.status in ['pending', 'processing'] %}
+                            <form method="POST" action="{{ url_for('admin.cancel_job', record_type=r.record_type, record_id=r.record_id) }}"
+                                  style="display:inline" onsubmit="return confirm('Job wirklich abbrechen?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Abbrechen">
+                                    <i class="bi bi-stop-circle"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% endfor %}
                     {% if not all_records %}
-                    <tr><td colspan="7" class="text-center text-muted py-3">Keine Jobs vorhanden</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted py-3">Keine Jobs vorhanden</td></tr>
                     {% endif %}
                     </tbody>
                 </table>
@@ -352,36 +364,6 @@
             </div>
         </div>
 
-        <!-- Parallel Task Limits -->
-        <div class="card border-0 shadow-sm mb-4">
-            <div class="card-body">
-                <h6 class="card-title"><i class="bi bi-cpu me-2"></i>Parallele Verarbeitung</h6>
-                <p class="text-muted small mb-3">Maximale Anzahl gleichzeitig laufender Tasks. 0 = kein Limit.</p>
-                <form method="POST" action="{{ url_for('admin.update_global') }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="timezone" value="{{ current_timezone }}">
-                    <div class="row g-3 align-items-end">
-                        <div class="col-md-4">
-                            <label class="form-label">Sprachmodell-Tasks</label>
-                            <input type="number" class="form-control" name="max_parallel_speech_tasks"
-                                   value="{{ max_parallel_speech_tasks }}" min="0" max="20">
-                            <small class="text-muted">Transkription, Meeting, Diktation</small>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Textmodell-Tasks</label>
-                            <input type="number" class="form-control" name="max_parallel_text_tasks"
-                                   value="{{ max_parallel_text_tasks }}" min="0" max="20">
-                            <small class="text-muted">Titel, Zusammenfassung, Sprecher, Chat</small>
-                        </div>
-                        <div class="col-md-4">
-                            <button type="submit" class="btn btn-primary btn-sm">
-                                <i class="bi bi-check-lg me-1"></i>Speichern
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
 
         <!-- System Info -->
         <div class="card border-0 shadow-sm mb-4">
@@ -931,6 +913,11 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                         <input type="number" class="form-control" name="request_timeout_secs" value="600" min="30">
                         <small class="text-muted">Timeout pro API-Anfrage/Chunk. Standard: 600s. Für Diarisierung ggf. erhöhen (z.B. 1200).</small>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max. parallele Tasks</label>
+                        <input type="number" class="form-control" name="max_parallel_tasks" value="0" min="0">
+                        <small class="text-muted">0 = kein Limit</small>
+                    </div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
@@ -1015,6 +1002,11 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                         <input type="number" class="form-control" name="request_timeout_secs" value="{{ m.request_timeout_secs or 600 }}" min="30">
                         <small class="text-muted">Timeout pro API-Anfrage/Chunk. Standard: 600s. Für Diarisierung ggf. erhöhen (z.B. 1200).</small>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max. parallele Tasks</label>
+                        <input type="number" class="form-control" name="max_parallel_tasks" value="{{ m.max_parallel_tasks or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Limit</small>
+                    </div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>
@@ -1048,6 +1040,7 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment"></div>
                     <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" placeholder="2024-06-01"></div>
                     <div class="mb-3"><label class="form-label">Request Timeout (Sekunden)</label><input type="number" class="form-control" name="request_timeout_secs" value="300" min="10"><small class="text-muted">Maximale Wartezeit pro API-Anfrage (Standard: 300s)</small></div>
+                    <div class="mb-3"><label class="form-label">Max. parallele Tasks</label><input type="number" class="form-control" name="max_parallel_tasks" value="0" min="0"><small class="text-muted">0 = kein Limit</small></div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
@@ -1081,6 +1074,7 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment" value="{{ m.azure_deployment or '' }}"></div>
                     <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" value="{{ m.azure_api_version or '' }}"></div>
                     <div class="mb-3"><label class="form-label">Request Timeout (Sekunden)</label><input type="number" class="form-control" name="request_timeout_secs" value="{{ m.request_timeout_secs or 300 }}" min="10"><small class="text-muted">Maximale Wartezeit pro API-Anfrage (Standard: 300s)</small></div>
+                    <div class="mb-3"><label class="form-label">Max. parallele Tasks</label><input type="number" class="form-control" name="max_parallel_tasks" value="{{ m.max_parallel_tasks or 0 }}" min="0"><small class="text-muted">0 = kein Limit</small></div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>

@@ -230,6 +230,7 @@ class SpeechModel(db.Model):
     max_upload_duration_secs = db.Column(db.Integer, default=0)  # 0 = no limit; reject uploads exceeding this
     request_timeout_secs = db.Column(db.Integer, default=600)  # timeout per API request/chunk
     use_speaker_references = db.Column(db.Boolean, default=False)  # extract speaker samples from chunk 1, pass to subsequent chunks
+    max_parallel_tasks = db.Column(db.Integer, default=0)  # 0 = no limit
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -246,6 +247,7 @@ class TextModel(db.Model):
     azure_deployment = db.Column(db.String(100))
     azure_api_version = db.Column(db.String(50))
     request_timeout_secs = db.Column(db.Integer, default=300)
+    max_parallel_tasks = db.Column(db.Integer, default=0)  # 0 = no limit
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 

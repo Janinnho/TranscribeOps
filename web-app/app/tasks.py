@@ -24,25 +24,29 @@ def get_app():
     return create_app()
 
 
-def _get_concurrency_limit(slot_type):
-    """Read limit from SystemSetting. slot_type: 'speech' or 'text'."""
+def _get_concurrency_limit(model_type, model_id):
+    """Read limit from the model's max_parallel_tasks column."""
     app = get_app()
     with app.app_context():
-        from app.models import SystemSetting
-        key = f'max_parallel_{slot_type}_tasks'
-        setting = SystemSetting.query.get(key)
-        if setting and setting.value.isdigit():
-            return int(setting.value)
+        from app import db
+        if model_type == 'speech':
+            from app.models import SpeechModel
+            model = db.session.get(SpeechModel, model_id)
+        else:
+            from app.models import TextModel
+            model = db.session.get(TextModel, model_id)
+        if model and model.max_parallel_tasks:
+            return model.max_parallel_tasks
     return 0  # 0 = kein Limit
 
 
-def _acquire_slot(slot_type):
+def _acquire_slot(model_type, model_id):
     """Try to acquire a concurrency slot. Returns True if acquired."""
-    limit = _get_concurrency_limit(slot_type)
+    limit = _get_concurrency_limit(model_type, model_id)
     if limit <= 0:
         return True  # kein Limit
     r = _get_redis()
-    key = f'transcribeops:slots:{slot_type}'
+    key = f'transcribeops:slots:{model_type}:{model_id}'
     current = r.incr(key)
     if current <= limit:
         return True
@@ -51,13 +55,13 @@ def _acquire_slot(slot_type):
     return False
 
 
-def _release_slot(slot_type):
+def _release_slot(model_type, model_id):
     """Release a concurrency slot."""
-    limit = _get_concurrency_limit(slot_type)
+    limit = _get_concurrency_limit(model_type, model_id)
     if limit <= 0:
         return
     r = _get_redis()
-    key = f'transcribeops:slots:{slot_type}'
+    key = f'transcribeops:slots:{model_type}:{model_id}'
     r.decr(key)
     # Nicht unter 0 fallen lassen
     if int(r.get(key) or 0) < 0:
@@ -186,10 +190,18 @@ def _run_speech_processing(record, multi_speaker=False, audio_path=None):
 
 @celery.task(bind=True, max_retries=None)
 def process_transcription(self, job_id):
-    if not _acquire_slot('speech'):
+    app = get_app()
+    with app.app_context():
+        from app import db
+        from app.models import Job
+        job = db.session.get(Job, job_id)
+        if not job:
+            return {'error': 'Job not found'}
+        model_id = job.speech_model_id
+
+    if not _acquire_slot('speech', model_id):
         raise self.retry(countdown=5)
     try:
-        app = get_app()
         with app.app_context():
             from app import db
             from app.models import Job, User
@@ -212,15 +224,23 @@ def process_transcription(self, job_id):
 
             return {'status': job.status, 'job_id': job_id}
     finally:
-        _release_slot('speech')
+        _release_slot('speech', model_id)
 
 
 @celery.task(bind=True, max_retries=None)
 def process_meeting(self, meeting_id):
-    if not _acquire_slot('speech'):
+    app = get_app()
+    with app.app_context():
+        from app import db
+        from app.models import Meeting
+        meeting = db.session.get(Meeting, meeting_id)
+        if not meeting:
+            return {'error': 'Meeting not found'}
+        model_id = meeting.speech_model_id
+
+    if not _acquire_slot('speech', model_id):
         raise self.retry(countdown=5)
     try:
-        app = get_app()
         with app.app_context():
             from app import db
             from app.models import Meeting, User
@@ -243,15 +263,23 @@ def process_meeting(self, meeting_id):
 
             return {'status': meeting.status, 'meeting_id': meeting_id}
     finally:
-        _release_slot('speech')
+        _release_slot('speech', model_id)
 
 
 @celery.task(bind=True, max_retries=None)
 def process_dictation(self, dictation_id):
-    if not _acquire_slot('speech'):
+    app = get_app()
+    with app.app_context():
+        from app import db
+        from app.models import Dictation
+        dictation = db.session.get(Dictation, dictation_id)
+        if not dictation:
+            return {'error': 'Dictation not found'}
+        model_id = dictation.speech_model_id
+
+    if not _acquire_slot('speech', model_id):
         raise self.retry(countdown=5)
     try:
-        app = get_app()
         with app.app_context():
             from app import db
             from app.models import Dictation, User
@@ -271,15 +299,23 @@ def process_dictation(self, dictation_id):
 
             return {'status': dictation.status, 'dictation_id': dictation_id}
     finally:
-        _release_slot('speech')
+        _release_slot('speech', model_id)
 
 
 @celery.task(bind=True, max_retries=None)
 def process_text_tool(self, task_id):
-    if not _acquire_slot('text'):
+    app = get_app()
+    with app.app_context():
+        from app import db
+        from app.models import TextTask
+        task = db.session.get(TextTask, task_id)
+        if not task:
+            return {'error': 'Task not found'}
+        model_id = task.text_model_id
+
+    if not _acquire_slot('text', model_id):
         raise self.retry(countdown=5)
     try:
-        app = get_app()
         with app.app_context():
             from app import db
             from app.models import TextTask
@@ -308,12 +344,12 @@ def process_text_tool(self, task_id):
             db.session.commit()
             return {'status': task.status, 'task_id': task_id}
     finally:
-        _release_slot('text')
+        _release_slot('text', model_id)
 
 
 @celery.task(bind=True, max_retries=None)
 def process_summary(self, record_id, text_model_id, model_type='job'):
-    if not _acquire_slot('text'):
+    if not _acquire_slot('text', text_model_id):
         raise self.retry(countdown=5)
     try:
         app = get_app()
@@ -347,7 +383,7 @@ def process_summary(self, record_id, text_model_id, model_type='job'):
             db.session.commit()
             return {'status': 'done', 'record_id': record_id}
     finally:
-        _release_slot('text')
+        _release_slot('text', text_model_id)
 
 
 def _trigger_auto_tasks(user_id, record_id, model_type):
@@ -383,7 +419,7 @@ def _trigger_auto_tasks(user_id, record_id, model_type):
 
 @celery.task(bind=True, max_retries=None)
 def process_auto_title(self, record_id, text_model_id, model_type='job'):
-    if not _acquire_slot('text'):
+    if not _acquire_slot('text', text_model_id):
         raise self.retry(countdown=5)
     try:
         app = get_app()
@@ -437,12 +473,12 @@ def process_auto_title(self, record_id, text_model_id, model_type='job'):
 
             return {'status': 'done', 'record_id': record_id}
     finally:
-        _release_slot('text')
+        _release_slot('text', text_model_id)
 
 
 @celery.task(bind=True, max_retries=None)
 def process_speaker_identification(self, record_id, text_model_id, model_type='job'):
-    if not _acquire_slot('text'):
+    if not _acquire_slot('text', text_model_id):
         raise self.retry(countdown=5)
     try:
         app = get_app()
@@ -530,7 +566,7 @@ def process_speaker_identification(self, record_id, text_model_id, model_type='j
 
             return {'status': 'done', 'record_id': record_id}
     finally:
-        _release_slot('text')
+        _release_slot('text', text_model_id)
 
 
 def _parse_speaker_renames(llm_response, valid_labels):
@@ -1173,7 +1209,7 @@ def _azure_chat(model, messages):
 
 @celery.task(bind=True, max_retries=None)
 def process_chat_message(self, chat_message_id, text_model_id):
-    if not _acquire_slot('text'):
+    if not _acquire_slot('text', text_model_id):
         raise self.retry(countdown=5)
     try:
         app = get_app()
@@ -1235,5 +1271,5 @@ def process_chat_message(self, chat_message_id, text_model_id):
 
             db.session.commit()
     finally:
-        _release_slot('text')
+        _release_slot('text', text_model_id)
         return {'status': msg.status, 'chat_message_id': chat_message_id}

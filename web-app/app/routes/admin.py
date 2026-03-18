@@ -57,11 +57,6 @@ def dashboard():
     tz_setting = SystemSetting.query.get('timezone')
     current_timezone = tz_setting.value if tz_setting else 'Europe/Berlin'
 
-    max_parallel_speech = SystemSetting.query.get('max_parallel_speech_tasks')
-    max_parallel_text = SystemSetting.query.get('max_parallel_text_tasks')
-    max_parallel_speech_tasks = int(max_parallel_speech.value) if max_parallel_speech and max_parallel_speech.value.isdigit() else 0
-    max_parallel_text_tasks = int(max_parallel_text.value) if max_parallel_text and max_parallel_text.value.isdigit() else 0
-
     audio_path = current_app.config.get('AUDIO_STORAGE_PATH', '')
     upload_path = current_app.config.get('UPLOAD_FOLDER', '')
     db_url = current_app.config.get('SQLALCHEMY_DATABASE_URI', '')
@@ -87,6 +82,8 @@ def dashboard():
         user = db.session.get(User, record.user_id)
         all_records.append({
             'type': 'Transkription',
+            'record_type': 'job',
+            'record_id': record.id,
             'title': record.title,
             'status': record.status,
             'user_name': user.display_name if user else '?',
@@ -100,6 +97,8 @@ def dashboard():
         user = db.session.get(User, record.user_id)
         all_records.append({
             'type': 'Meeting',
+            'record_type': 'meeting',
+            'record_id': record.id,
             'title': record.title,
             'status': record.status,
             'user_name': user.display_name if user else '?',
@@ -113,6 +112,8 @@ def dashboard():
         user = db.session.get(User, record.user_id)
         all_records.append({
             'type': 'Diktat',
+            'record_type': 'dictation',
+            'record_id': record.id,
             'title': record.title,
             'status': record.status,
             'user_name': user.display_name if user else '?',
@@ -155,9 +156,7 @@ def dashboard():
                            upload_disk_usage=_fmt_size(_dir_size(upload_path)),
                            stats=stats,
                            sso_settings=sso_settings,
-                           all_records=all_records,
-                           max_parallel_speech_tasks=max_parallel_speech_tasks,
-                           max_parallel_text_tasks=max_parallel_text_tasks)
+                           all_records=all_records)
 
 
 # --- User Management ---
@@ -412,6 +411,7 @@ def create_speech_model():
         max_upload_duration_secs=request.form.get('max_upload_duration_secs', 0, type=int),
         request_timeout_secs=request.form.get('request_timeout_secs', 600, type=int),
         use_speaker_references=request.form.get('use_speaker_references') == 'on',
+        max_parallel_tasks=request.form.get('max_parallel_tasks', 0, type=int),
         is_active=request.form.get('is_active') == 'on'
     )
     db.session.add(model)
@@ -445,6 +445,7 @@ def update_speech_model(model_id):
     model.max_upload_duration_secs = request.form.get('max_upload_duration_secs', 0, type=int)
     model.request_timeout_secs = request.form.get('request_timeout_secs', 600, type=int)
     model.use_speaker_references = request.form.get('use_speaker_references') == 'on'
+    model.max_parallel_tasks = request.form.get('max_parallel_tasks', 0, type=int)
     model.is_active = request.form.get('is_active') == 'on'
     new_key = request.form.get('api_key', '').strip()
     if new_key:
@@ -483,6 +484,7 @@ def create_text_model():
         azure_deployment=request.form.get('azure_deployment', '').strip(),
         azure_api_version=request.form.get('azure_api_version', '').strip(),
         request_timeout_secs=request.form.get('request_timeout_secs', 300, type=int),
+        max_parallel_tasks=request.form.get('max_parallel_tasks', 0, type=int),
         is_active=request.form.get('is_active') == 'on'
     )
     db.session.add(model)
@@ -507,6 +509,7 @@ def update_text_model(model_id):
     model.azure_deployment = request.form.get('azure_deployment', '').strip()
     model.azure_api_version = request.form.get('azure_api_version', '').strip()
     model.request_timeout_secs = request.form.get('request_timeout_secs', 300, type=int)
+    model.max_parallel_tasks = request.form.get('max_parallel_tasks', 0, type=int)
     model.is_active = request.form.get('is_active') == 'on'
     new_key = request.form.get('api_key', '').strip()
     if new_key:
@@ -542,18 +545,35 @@ def update_global():
     else:
         db.session.add(SystemSetting(key='timezone', value=tz))
 
-    for key in ['max_parallel_speech_tasks', 'max_parallel_text_tasks']:
-        val = request.form.get(key, '0').strip()
-        if not val.isdigit():
-            val = '0'
-        s = SystemSetting.query.get(key)
-        if s:
-            s.value = val
-        else:
-            db.session.add(SystemSetting(key=key, value=val))
-
     db.session.commit()
     flash('Globale Einstellungen gespeichert.', 'success')
+    return redirect(url_for('admin.dashboard'))
+
+
+# --- Job Cancellation ---
+
+@admin_bp.route('/job/<record_type>/<int:record_id>/cancel', methods=['POST'])
+@admin_required
+def cancel_job(record_type, record_id):
+    model_map = {'job': Job, 'meeting': Meeting, 'dictation': Dictation}
+    model_cls = model_map.get(record_type)
+    if not model_cls:
+        flash('Ungültiger Typ.', 'danger')
+        return redirect(url_for('admin.dashboard'))
+
+    record = db.session.get(model_cls, record_id)
+    if not record or record.status not in ('pending', 'processing'):
+        flash('Job nicht gefunden oder bereits abgeschlossen.', 'warning')
+        return redirect(url_for('admin.dashboard'))
+
+    if record.celery_task_id:
+        from app.celery_app import celery
+        celery.control.revoke(record.celery_task_id, terminate=True)
+
+    record.status = 'failed'
+    record.error_message = 'Vom Administrator abgebrochen'
+    db.session.commit()
+    flash('Job abgebrochen.', 'success')
     return redirect(url_for('admin.dashboard'))
 
 

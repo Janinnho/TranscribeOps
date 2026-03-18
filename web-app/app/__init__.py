@@ -218,6 +218,12 @@ def _apply_migrations():
         if _has_table('dictations') and not _has_column('dictations', 'progress'):
             _safe_execute(conn, "ALTER TABLE dictations ADD COLUMN progress INTEGER DEFAULT 0")
 
+        # Per-model parallel task limits
+        if _has_table('speech_models') and not _has_column('speech_models', 'max_parallel_tasks'):
+            _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN max_parallel_tasks INTEGER DEFAULT 0")
+        if _has_table('text_models') and not _has_column('text_models', 'max_parallel_tasks'):
+            _safe_execute(conn, "ALTER TABLE text_models ADD COLUMN max_parallel_tasks INTEGER DEFAULT 0")
+
         # Per-function model restrictions
         if not _has_table('group_speech_model_functions'):
             from app.models import group_speech_model_functions
@@ -270,8 +276,4 @@ def _seed_defaults(app):
     if not SystemSetting.query.get('timezone'):
         db.session.add(SystemSetting(key='timezone', value='Europe/Berlin'))
         db.session.commit()
-    # Seed parallel task limits
-    for key, default in [('max_parallel_speech_tasks', '0'), ('max_parallel_text_tasks', '0')]:
-        if not SystemSetting.query.get(key):
-            db.session.add(SystemSetting(key=key, value=default))
     db.session.commit()
