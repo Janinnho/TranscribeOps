@@ -44,6 +44,19 @@ def create_app(config_class=Config):
     from app.sso import init_oidc
     init_oidc(app)
 
+    # Read version from VERSION file
+    import os
+    version_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'VERSION')
+    try:
+        with open(version_file) as f:
+            app.config['APP_VERSION'] = f.read().strip()
+    except FileNotFoundError:
+        app.config['APP_VERSION'] = ''
+
+    @app.context_processor
+    def inject_version():
+        return {'app_version': app.config.get('APP_VERSION', '')}
+
     with app.app_context():
         import os
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -224,6 +237,17 @@ def _apply_migrations():
         if _has_table('text_models') and not _has_column('text_models', 'max_parallel_tasks'):
             _safe_execute(conn, "ALTER TABLE text_models ADD COLUMN max_parallel_tasks INTEGER DEFAULT 0")
 
+        # Speech models: processing_speed for ETA estimation
+        if _has_table('speech_models') and not _has_column('speech_models', 'processing_speed'):
+            _safe_execute(conn, "ALTER TABLE speech_models ADD COLUMN processing_speed REAL DEFAULT 0")
+
+        # Jobs/Meetings/Dictations: audio_duration_secs and processing_started_at for ETA
+        for tbl in ['jobs', 'meetings', 'dictations']:
+            if _has_table(tbl) and not _has_column(tbl, 'audio_duration_secs'):
+                _safe_execute(conn, f"ALTER TABLE {tbl} ADD COLUMN audio_duration_secs REAL")
+            if _has_table(tbl) and not _has_column(tbl, 'processing_started_at'):
+                _safe_execute(conn, f"ALTER TABLE {tbl} ADD COLUMN processing_started_at DATETIME")
+
         # Per-function model restrictions
         if not _has_table('group_speech_model_functions'):
             from app.models import group_speech_model_functions
@@ -275,5 +299,9 @@ def _seed_defaults(app):
     # Seed default timezone
     if not SystemSetting.query.get('timezone'):
         db.session.add(SystemSetting(key='timezone', value='Europe/Berlin'))
+        db.session.commit()
+    # Seed default history retention
+    if not SystemSetting.query.get('default_history_days'):
+        db.session.add(SystemSetting(key='default_history_days', value='30'))
         db.session.commit()
     db.session.commit()

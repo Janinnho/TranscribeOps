@@ -29,6 +29,7 @@
             <a href="{{ url_for('main.transcription') }}" class="d-flex align-items-center mb-2 text-decoration-none sidebar-brand">
                 <i class="bi bi-soundwave fs-4 me-2"></i>
                 <span class="fs-5 fw-semibold">TranscribeOps</span>
+                {% if app_version %}<span class="text-muted ms-1" style="font-size: 0.65rem; align-self: flex-start; margin-top: 2px;">v{{ app_version }}</span>{% endif %}
             </a>
             <hr class="mt-0 mb-2">
             <ul class="nav nav-pills flex-column mb-auto">
@@ -131,7 +132,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=2"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

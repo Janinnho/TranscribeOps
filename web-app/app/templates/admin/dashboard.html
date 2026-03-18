@@ -239,6 +239,7 @@
                             <th>Titel</th>
                             <th>Benutzer</th>
                             <th>Modell</th>
+                            <th>Restzeit</th>
                             <th>Erstellt</th>
                             <th>Fehler</th>
                             <th>Aktionen</th>
@@ -264,6 +265,11 @@
                         <td class="text-truncate" style="max-width: 250px;" title="{{ r.title or '-' }}">{{ r.title or '-' }}</td>
                         <td title="{{ r.user_email }}">{{ r.user_name }}</td>
                         <td><small>{{ r.speech_model }}</small></td>
+                        <td>
+                            {% if r.eta_seconds is not none and r.status in ['pending', 'processing'] %}
+                            <small class="text-muted" data-admin-eta="{{ r.eta_seconds }}" data-admin-started="{{ r.processing_started_at or '' }}" data-admin-status="{{ r.status }}"></small>
+                            {% endif %}
+                        </td>
                         <td><small>{{ r.created_at }}</small></td>
                         <td>
                             {% if r.error_message %}
@@ -286,7 +292,7 @@
                     </tr>
                     {% endfor %}
                     {% if not all_records %}
-                    <tr><td colspan="8" class="text-center text-muted py-3">Keine Jobs vorhanden</td></tr>
+                    <tr><td colspan="9" class="text-center text-muted py-3">Keine Jobs vorhanden</td></tr>
                     {% endif %}
                     </tbody>
                 </table>
@@ -364,6 +370,32 @@
             </div>
         </div>
 
+
+        <!-- Default History Retention -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-clock-history me-2"></i>Standard Historie-Aufbewahrung</h6>
+                <p class="text-muted small mb-3">Standardeinstellung für alle Benutzer. Benutzer können dies in ihren eigenen Einstellungen überschreiben.</p>
+                <form method="POST" action="{{ url_for('admin.update_global') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="timezone" value="{{ current_timezone }}">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <select name="default_history_days" class="form-select" style="max-width: 200px;" id="globalHistorySelect" onchange="document.getElementById('globalHistoryDaysInput').classList.toggle('d-none', this.value === '0')">
+                                <option value="0" {{ 'selected' if default_history_days == 0 }}>Unbegrenzt</option>
+                                {% for d in [7, 14, 30, 60, 90, 180, 365] %}
+                                <option value="{{ d }}" {{ 'selected' if default_history_days == d }}>{{ d }} Tage</option>
+                                {% endfor %}
+                                {% if default_history_days > 0 and default_history_days not in [7, 14, 30, 60, 90, 180, 365] %}
+                                <option value="{{ default_history_days }}" selected>{{ default_history_days }} Tage</option>
+                                {% endif %}
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Speichern</button>
+                    </div>
+                </form>
+            </div>
+        </div>
 
         <!-- System Info -->
         <div class="card border-0 shadow-sm mb-4">
@@ -918,6 +950,11 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                         <input type="number" class="form-control" name="max_parallel_tasks" value="0" min="0">
                         <small class="text-muted">0 = kein Limit</small>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">Verarbeitungsgeschwindigkeit (Sek. pro Min. Audio)</label>
+                        <input type="number" class="form-control" name="processing_speed" value="0" min="0" step="0.1">
+                        <small class="text-muted">0 = keine Zeitschätzung. Beispiel: 15 = 1 Min Audio → 15 Sek Verarbeitung.</small>
+                    </div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
                 </div>
                 <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
@@ -1006,6 +1043,11 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                         <label class="form-label">Max. parallele Tasks</label>
                         <input type="number" class="form-control" name="max_parallel_tasks" value="{{ m.max_parallel_tasks or 0 }}" min="0">
                         <small class="text-muted">0 = kein Limit</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Verarbeitungsgeschwindigkeit (Sek. pro Min. Audio)</label>
+                        <input type="number" class="form-control" name="processing_speed" value="{{ m.processing_speed or 0 }}" min="0" step="0.1">
+                        <small class="text-muted">0 = keine Zeitschätzung. Beispiel: 15 = 1 Min Audio → 15 Sek Verarbeitung.</small>
                     </div>
                     <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
                 </div>
@@ -1164,5 +1206,28 @@ function showError(btn) {
     document.getElementById('errorDetailText').textContent = btn.dataset.error;
     new bootstrap.Modal(document.getElementById('errorDetailModal')).show();
 }
+
+// Admin ETA countdown
+(function() {
+    const etaEls = document.querySelectorAll('[data-admin-eta]');
+    if (!etaEls.length) return;
+    const snapshots = [];
+    const now = Date.now() / 1000;
+    etaEls.forEach(el => {
+        snapshots.push({ el, eta: parseFloat(el.dataset.adminEta), fetchedAt: now, status: el.dataset.adminStatus });
+    });
+    function tick() {
+        const t = Date.now() / 1000;
+        for (const s of snapshots) {
+            const remaining = Math.max(0, Math.round(s.eta - (t - s.fetchedAt)));
+            const m = Math.floor(remaining / 60);
+            const sec = remaining % 60;
+            const timeStr = m > 0 ? m + ' Min ' + sec + ' Sek' : sec + ' Sek';
+            s.el.textContent = s.status === 'pending' ? 'Wartezeit: ' + timeStr : 'Restzeit: ' + timeStr;
+        }
+    }
+    tick();
+    setInterval(tick, 1000);
+})();
 </script>
 {% endblock %}

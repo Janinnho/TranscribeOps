@@ -168,6 +168,7 @@ async function loadJobs(listUrl, deleteUrlBase, detailBase) {
         const resp = await fetch(listUrl);
         const jobs = await resp.json();
         _currentJobs = jobs;
+        updateEtaData(jobs);
 
         if (!jobs.length) {
             _prevJobStates = {};
@@ -232,8 +233,10 @@ function renderJobList(filterText) {
             </div>
             ${job.status === 'processing' ? '<div class="mt-2"><div class="progress" style="height:3px"><div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:100%"></div></div></div>' : ''}
             ${job.status === 'failed' ? `<small class="text-danger d-block mt-1">${escapeHtml(job.error_message || 'Fehler')}</small>` : ''}
+            ${(job.status === 'processing' || job.status === 'pending') && job.eta_seconds != null ? `<small class="text-muted d-block mt-1" data-eta-job="${job.id}"></small>` : ''}
         </div>
     `).join('');
+    tickEtaCountdowns();
 }
 
 // Initialize job search input
@@ -283,4 +286,74 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// --- ETA countdown ---
+// Stores { jobId: { etaSeconds, fetchedAt, startedAt, estimatedTotal, status } }
+let _etaData = {};
+let _etaInterval = null;
+
+function formatEtaTime(secs) {
+    if (secs == null || secs < 0) return '';
+    secs = Math.max(0, Math.round(secs));
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return m > 0 ? `${m} Min ${s} Sek` : `${s} Sek`;
+}
+
+function updateEtaData(jobs) {
+    const now = Date.now() / 1000;
+    for (const job of jobs) {
+        if (job.status === 'processing' && job.processing_started_at && job.estimated_total_secs != null) {
+            // For processing jobs: store start time + total estimate for client-side calculation
+            _etaData[job.id] = {
+                startedAt: new Date(job.processing_started_at).getTime() / 1000,
+                estimatedTotal: job.estimated_total_secs,
+                status: 'processing',
+            };
+        } else if (job.status === 'pending' && job.eta_seconds != null) {
+            // For pending jobs: use server-provided eta_seconds with fetchedAt countdown
+            const existing = _etaData[job.id];
+            if (!existing || existing.status !== 'pending') {
+                _etaData[job.id] = {
+                    etaSeconds: job.eta_seconds,
+                    fetchedAt: now,
+                    status: 'pending',
+                };
+            }
+        } else {
+            delete _etaData[job.id];
+        }
+    }
+    if (!_etaInterval) {
+        _etaInterval = setInterval(tickEtaCountdowns, 1000);
+    }
+}
+
+function getEtaRemaining(jobId) {
+    const d = _etaData[jobId];
+    if (!d) return null;
+    if (d.status === 'processing') {
+        // Compute remaining from processing start time + estimated total
+        const elapsed = Date.now() / 1000 - d.startedAt;
+        return Math.max(0, Math.round(d.estimatedTotal - elapsed));
+    }
+    // Pending: countdown from server-provided eta_seconds
+    const elapsed = Date.now() / 1000 - d.fetchedAt;
+    return Math.max(0, Math.round(d.etaSeconds - elapsed));
+}
+
+function tickEtaCountdowns() {
+    // Update all visible ETA elements
+    document.querySelectorAll('[data-eta-job]').forEach(el => {
+        const jobId = el.getAttribute('data-eta-job');
+        const remaining = getEtaRemaining(jobId);
+        if (remaining != null && remaining >= 0) {
+            const d = _etaData[jobId];
+            const prefix = d && d.status === 'pending' ? 'Geschätzte Wartezeit: ' : 'Restzeit: ';
+            el.textContent = prefix + formatEtaTime(remaining);
+        } else {
+            el.textContent = '';
+        }
+    });
 }

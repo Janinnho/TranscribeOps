@@ -36,13 +36,20 @@
                     </div>
 
                     <div class="mb-4">
-                        <label for="historyDays" class="form-label fw-medium">Historie-Aufbewahrung</label>
-                        <div class="input-group" style="max-width: 250px;">
-                            <input type="number" class="form-control" id="historyDays" name="history_days"
-                                   value="{{ current_user.history_days }}" min="1" max="365">
-                            <span class="input-group-text">Tage</span>
+                        <label for="historyMode" class="form-label fw-medium">Historie-Aufbewahrung</label>
+                        <div class="d-flex align-items-center gap-2" style="max-width: 350px;">
+                            <select class="form-select" id="historyMode" name="history_mode" onchange="document.getElementById('historyDaysGroup').classList.toggle('d-none', this.value !== 'custom')">
+                                <option value="default" {{ 'selected' if current_user.history_days is none }}>Standard ({{ global_history_label }})</option>
+                                <option value="unlimited" {{ 'selected' if current_user.history_days == 0 }}>Unbegrenzt</option>
+                                <option value="custom" {{ 'selected' if current_user.history_days is not none and current_user.history_days > 0 }}>Eigener Wert</option>
+                            </select>
+                            <div class="input-group {{ 'd-none' if current_user.history_days is none or current_user.history_days == 0 }}" id="historyDaysGroup" style="width: 160px; flex-shrink: 0;">
+                                <input type="number" class="form-control" id="historyDays" name="history_days"
+                                       value="{{ current_user.history_days if current_user.history_days and current_user.history_days > 0 else 30 }}" min="1" max="365">
+                                <span class="input-group-text">Tage</span>
+                            </div>
                         </div>
-                        <small class="text-muted">Wie lange die Transkriptions-Historie gespeichert wird (1-365 Tage).</small>
+                        <small class="text-muted">Wie lange die Transkriptions-Historie angezeigt wird.</small>
                     </div>
 
                     <button type="submit" class="btn btn-primary">

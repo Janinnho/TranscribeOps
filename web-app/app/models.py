@@ -46,13 +46,20 @@ class User(UserMixin, db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_active_user = db.Column(db.Boolean, default=True)
     theme = db.Column(db.String(20), default='auto')  # light, dark, auto
-    history_days = db.Column(db.Integer, default=30)
+    history_days = db.Column(db.Integer, nullable=True, default=None)  # None=global default, 0=unlimited, >0=days
     auth_source = db.Column(db.String(20), default='local')  # 'local', 'header_sso', 'oidc'
     external_id = db.Column(db.String(255), nullable=True)     # OIDC 'sub' claim or header identity
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     groups = db.relationship('Group', secondary=user_groups, backref=db.backref('users', lazy='dynamic'))
     jobs = db.relationship('Job', backref='user', lazy='dynamic')
+
+    def get_effective_history_days(self):
+        """Return effective history_days: user override > global default. 0 = unlimited."""
+        if self.history_days is not None:
+            return self.history_days
+        setting = SystemSetting.query.get('default_history_days')
+        return int(setting.value) if setting else 30
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -231,6 +238,7 @@ class SpeechModel(db.Model):
     request_timeout_secs = db.Column(db.Integer, default=600)  # timeout per API request/chunk
     use_speaker_references = db.Column(db.Boolean, default=False)  # extract speaker samples from chunk 1, pass to subsequent chunks
     max_parallel_tasks = db.Column(db.Integer, default=0)  # 0 = no limit
+    processing_speed = db.Column(db.Float, default=0)  # seconds per minute of audio (0 = no estimate)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -278,6 +286,8 @@ class Job(db.Model):
     target_language = db.Column(db.String(50))
     error_message = db.Column(db.Text)
     audio_saved = db.Column(db.Boolean, default=False)
+    audio_duration_secs = db.Column(db.Float)
+    processing_started_at = db.Column(db.DateTime)
     celery_task_id = db.Column(db.String(155))
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = db.Column(db.DateTime)
@@ -307,6 +317,8 @@ class Meeting(db.Model):
     speaker_identify_status = db.Column(db.String(20))
     error_message = db.Column(db.Text)
     audio_saved = db.Column(db.Boolean, default=False)
+    audio_duration_secs = db.Column(db.Float)
+    processing_started_at = db.Column(db.DateTime)
     celery_task_id = db.Column(db.String(155))
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = db.Column(db.DateTime)
@@ -331,6 +343,8 @@ class Dictation(db.Model):
     diarized_segments = db.Column(db.Text)
     error_message = db.Column(db.Text)
     audio_saved = db.Column(db.Boolean, default=False)
+    audio_duration_secs = db.Column(db.Float)
+    processing_started_at = db.Column(db.DateTime)
     celery_task_id = db.Column(db.String(155))
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = db.Column(db.DateTime)

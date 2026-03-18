@@ -78,6 +78,7 @@
                                  id="processingProgressBar" style="width: 100%; transition: width 0.5s ease;"></div>
                         </div>
                         <small class="text-muted mt-2 d-block" id="processingPercent"></small>
+                        <small class="text-muted mt-1 d-block" id="processingEta"></small>
                     </div>
                 </div>
 
@@ -401,6 +402,30 @@ function renderJob(job) {
             progressBar.style.width = '100%';
             progressBar.classList.add('progress-bar-animated');
             progressPercent.textContent = '';
+        }
+        // ETA display
+        const etaEl = document.getElementById('processingEta');
+        if (job.status === 'processing' && job.processing_started_at && job.estimated_total_secs != null) {
+            // For processing jobs: client computes remaining from start time + total estimate
+            window._etaSnapshot = {
+                startedAt: new Date(job.processing_started_at).getTime() / 1000,
+                estimatedTotal: job.estimated_total_secs,
+                status: 'processing',
+            };
+        } else if (job.status === 'pending' && job.eta_seconds != null && job.eta_seconds >= 0) {
+            // For pending jobs: use server-provided eta_seconds with fetchedAt countdown
+            const now = Date.now() / 1000;
+            const snap = window._etaSnapshot;
+            if (!snap || snap.status !== 'pending') {
+                window._etaSnapshot = {
+                    etaSeconds: job.eta_seconds,
+                    fetchedAt: now,
+                    status: 'pending',
+                };
+            }
+        } else {
+            window._etaSnapshot = null;
+            etaEl.textContent = '';
         }
         disableActions();
     } else if (job.status === 'failed') {
@@ -1156,6 +1181,29 @@ document.addEventListener('DOMContentLoaded', () => {
     initSegmentEditing();
     initChat();
     initAudioSync();
+
+    // Client-side ETA countdown (ticks every second independently of polling)
+    setInterval(() => {
+        const etaEl = document.getElementById('processingEta');
+        if (!etaEl || !window._etaSnapshot) return;
+        const snap = window._etaSnapshot;
+        let remaining;
+        if (snap.status === 'processing') {
+            // Compute remaining from processing start time + estimated total
+            const elapsed = Date.now() / 1000 - snap.startedAt;
+            remaining = Math.max(0, Math.round(snap.estimatedTotal - elapsed));
+        } else {
+            // Pending: countdown from server-provided eta_seconds
+            const elapsed = Date.now() / 1000 - snap.fetchedAt;
+            remaining = Math.max(0, Math.round(snap.etaSeconds - elapsed));
+        }
+        const m = Math.floor(remaining / 60);
+        const s = remaining % 60;
+        const timeStr = m > 0 ? `${m} Min ${s} Sek` : `${s} Sek`;
+        etaEl.textContent = snap.status === 'pending'
+            ? `Geschätzte Wartezeit: ${timeStr}`
+            : `Geschätzte Restzeit: ${timeStr}`;
+    }, 1000);
 });
 </script>
 {% endblock %}

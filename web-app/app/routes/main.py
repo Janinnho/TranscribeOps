@@ -154,11 +154,21 @@ def dictionary():
 def settings():
     if request.method == 'POST':
         theme = request.form.get('theme', 'auto')
-        history_days = request.form.get('history_days', 30, type=int)
         if theme in ('light', 'dark', 'auto'):
             current_user.theme = theme
-        if 1 <= history_days <= 365:
-            current_user.history_days = history_days
+        history_mode = request.form.get('history_mode', 'default')
+        if history_mode == 'default':
+            current_user.history_days = None
+        elif history_mode == 'unlimited':
+            current_user.history_days = 0
+        else:
+            days = request.form.get('history_days', 30, type=int)
+            if 1 <= days <= 365:
+                current_user.history_days = days
         db.session.commit()
         flash('Einstellungen gespeichert.', 'success')
-    return render_template('main/settings.html')
+    from app.models import SystemSetting
+    hist_setting = SystemSetting.query.get('default_history_days')
+    global_days = int(hist_setting.value) if hist_setting else 30
+    global_history_label = 'Unbegrenzt' if global_days == 0 else f'{global_days} Tage'
+    return render_template('main/settings.html', global_history_label=global_history_label)

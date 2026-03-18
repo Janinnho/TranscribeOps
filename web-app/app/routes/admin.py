@@ -56,6 +56,8 @@ def dashboard():
     # Global tab data
     tz_setting = SystemSetting.query.get('timezone')
     current_timezone = tz_setting.value if tz_setting else 'Europe/Berlin'
+    hist_setting = SystemSetting.query.get('default_history_days')
+    default_history_days = int(hist_setting.value) if hist_setting else 30
 
     audio_path = current_app.config.get('AUDIO_STORAGE_PATH', '')
     upload_path = current_app.config.get('UPLOAD_FOLDER', '')
@@ -77,52 +79,38 @@ def dashboard():
     # Global job list: recent jobs/meetings/dictations across all users
     from sqlalchemy import union_all, literal, text
     from app.utils import format_dt
+    from app.routes.api import _compute_eta_seconds
+
+    def _build_record(record, rtype, record_type_str):
+        user = db.session.get(User, record.user_id)
+        eta = _compute_eta_seconds(record) if record.status in ('pending', 'processing') else None
+        started = getattr(record, 'processing_started_at', None)
+        if started and started.tzinfo is None:
+            from datetime import timezone as tz
+            started = started.replace(tzinfo=tz.utc)
+        return {
+            'type': rtype,
+            'record_type': record_type_str,
+            'record_id': record.id,
+            'title': record.title,
+            'status': record.status,
+            'user_name': user.display_name if user else '?',
+            'user_email': user.email if user else '',
+            'error_message': record.error_message,
+            'created_at': format_dt(record.created_at),
+            'created_at_raw': record.created_at,
+            'speech_model': record.speech_model.display_name if record.speech_model else '-',
+            'eta_seconds': eta,
+            'processing_started_at': started.isoformat() if started else None,
+        }
+
     all_records = []
     for record in Job.query.order_by(Job.created_at.desc()).limit(100).all():
-        user = db.session.get(User, record.user_id)
-        all_records.append({
-            'type': 'Transkription',
-            'record_type': 'job',
-            'record_id': record.id,
-            'title': record.title,
-            'status': record.status,
-            'user_name': user.display_name if user else '?',
-            'user_email': user.email if user else '',
-            'error_message': record.error_message,
-            'created_at': format_dt(record.created_at),
-            'created_at_raw': record.created_at,
-            'speech_model': record.speech_model.display_name if record.speech_model else '-',
-        })
+        all_records.append(_build_record(record, 'Transkription', 'job'))
     for record in Meeting.query.order_by(Meeting.created_at.desc()).limit(100).all():
-        user = db.session.get(User, record.user_id)
-        all_records.append({
-            'type': 'Meeting',
-            'record_type': 'meeting',
-            'record_id': record.id,
-            'title': record.title,
-            'status': record.status,
-            'user_name': user.display_name if user else '?',
-            'user_email': user.email if user else '',
-            'error_message': record.error_message,
-            'created_at': format_dt(record.created_at),
-            'created_at_raw': record.created_at,
-            'speech_model': record.speech_model.display_name if record.speech_model else '-',
-        })
+        all_records.append(_build_record(record, 'Meeting', 'meeting'))
     for record in Dictation.query.order_by(Dictation.created_at.desc()).limit(100).all():
-        user = db.session.get(User, record.user_id)
-        all_records.append({
-            'type': 'Diktat',
-            'record_type': 'dictation',
-            'record_id': record.id,
-            'title': record.title,
-            'status': record.status,
-            'user_name': user.display_name if user else '?',
-            'user_email': user.email if user else '',
-            'error_message': record.error_message,
-            'created_at': format_dt(record.created_at),
-            'created_at_raw': record.created_at,
-            'speech_model': record.speech_model.display_name if record.speech_model else '-',
-        })
+        all_records.append(_build_record(record, 'Diktat', 'dictation'))
     all_records.sort(key=lambda r: r['created_at_raw'] or '', reverse=True)
     all_records = all_records[:100]
 
@@ -148,6 +136,7 @@ def dashboard():
                            group_speech_fns=group_speech_fns,
                            group_text_fns=group_text_fns,
                            current_timezone=current_timezone,
+                           default_history_days=default_history_days,
                            audio_storage_path=audio_path,
                            upload_folder=upload_path,
                            database_url=db_url,
@@ -412,6 +401,7 @@ def create_speech_model():
         request_timeout_secs=request.form.get('request_timeout_secs', 600, type=int),
         use_speaker_references=request.form.get('use_speaker_references') == 'on',
         max_parallel_tasks=request.form.get('max_parallel_tasks', 0, type=int),
+        processing_speed=request.form.get('processing_speed', 0, type=float),
         is_active=request.form.get('is_active') == 'on'
     )
     db.session.add(model)
@@ -446,6 +436,7 @@ def update_speech_model(model_id):
     model.request_timeout_secs = request.form.get('request_timeout_secs', 600, type=int)
     model.use_speaker_references = request.form.get('use_speaker_references') == 'on'
     model.max_parallel_tasks = request.form.get('max_parallel_tasks', 0, type=int)
+    model.processing_speed = request.form.get('processing_speed', 0, type=float)
     model.is_active = request.form.get('is_active') == 'on'
     new_key = request.form.get('api_key', '').strip()
     if new_key:
@@ -544,6 +535,18 @@ def update_global():
         setting.value = tz
     else:
         db.session.add(SystemSetting(key='timezone', value=tz))
+
+    # Default history retention
+    hist_val = request.form.get('default_history_days')
+    if hist_val is not None:
+        hist_val = hist_val.strip()
+        # '0' = unlimited, otherwise positive integer
+        if hist_val == '0' or (hist_val.isdigit() and int(hist_val) > 0):
+            hist_setting = SystemSetting.query.get('default_history_days')
+            if hist_setting:
+                hist_setting.value = hist_val
+            else:
+                db.session.add(SystemSetting(key='default_history_days', value=hist_val))
 
     db.session.commit()
     flash('Globale Einstellungen gespeichert.', 'success')

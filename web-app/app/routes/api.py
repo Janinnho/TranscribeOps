@@ -18,6 +18,92 @@ def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_AUDIO
 
 
+def _extract_audio_duration(filepath):
+    """Extract audio duration in seconds using ffprobe. Returns float or None."""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ['ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+             '-of', 'default=noprint_wrappers=1:nokey=1', filepath],
+            capture_output=True, text=True, timeout=30
+        )
+        return float(result.stdout.strip()) if result.stdout.strip() else None
+    except Exception:
+        return None
+
+
+def _estimate_total_processing_secs(record):
+    """Estimate total processing time for a record based on model speed."""
+    if not record.audio_duration_secs:
+        return None
+    speech_model = record.speech_model
+    if not speech_model or not speech_model.processing_speed:
+        return None
+    return record.audio_duration_secs * speech_model.processing_speed / 60.0
+
+
+def _remaining_secs_for_processing(record):
+    """Calculate remaining seconds for a currently-processing record."""
+    total_estimate = _estimate_total_processing_secs(record)
+    if total_estimate is None:
+        return None
+    started = record.processing_started_at
+    if started:
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+        return max(0, total_estimate - elapsed)
+    return total_estimate
+
+
+def _compute_eta_seconds(record):
+    """Compute estimated remaining seconds for a processing record."""
+    total_estimate = _estimate_total_processing_secs(record)
+    if total_estimate is None:
+        return None
+
+    if record.status == 'pending':
+        queue_extra = _queue_wait_seconds(record)
+        return round(total_estimate + queue_extra)
+
+    if record.status == 'processing':
+        remaining = _remaining_secs_for_processing(record)
+        return round(remaining) if remaining is not None else None
+
+    return None
+
+
+def _queue_wait_seconds(pending_record):
+    """Estimate how long a pending record must wait for currently processing jobs on the same model."""
+    if not pending_record.speech_model_id:
+        return 0
+    extra = 0
+    for model_cls in (Job, Meeting, Dictation):
+        processing = model_cls.query.filter_by(
+            speech_model_id=pending_record.speech_model_id,
+            status='processing'
+        ).all()
+        for r in processing:
+            remaining = _remaining_secs_for_processing(r)
+            if remaining is not None:
+                extra += remaining
+    return extra
+
+
+def _eta_fields(record):
+    """Return dict with ETA-related fields for API responses."""
+    started = record.processing_started_at
+    if started and started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    total = _estimate_total_processing_secs(record)
+    return {
+        'eta_seconds': _compute_eta_seconds(record),
+        'audio_duration_secs': record.audio_duration_secs,
+        'processing_started_at': started.isoformat() if started else None,
+        'estimated_total_secs': round(total) if total is not None else None,
+    }
+
+
 @api_bp.route('/upload', methods=['POST'])
 @login_required
 def upload():
@@ -89,11 +175,14 @@ def upload():
         filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_name)
         file.save(filepath)
 
+    # Extract audio duration (reuse from validation if available)
+    audio_duration = locals().get('duration') or _extract_audio_duration(filepath)
+
     if job_type == 'meeting':
         record = Meeting(
             user_id=current_user.id, title=filename, original_filename=filename,
             file_path=filepath, speech_model_id=speech_model_id, language=language,
-            audio_saved=save_audio, status='pending'
+            audio_saved=save_audio, audio_duration_secs=audio_duration, status='pending'
         )
         db.session.add(record)
         db.session.commit()
@@ -103,7 +192,8 @@ def upload():
         record = Job(
             user_id=current_user.id, job_type='transcription', title=filename,
             original_filename=filename, file_path=filepath, speech_model_id=speech_model_id,
-            language=language, multi_speaker=multi_speaker, audio_saved=save_audio, status='pending'
+            language=language, multi_speaker=multi_speaker, audio_saved=save_audio,
+            audio_duration_secs=audio_duration, status='pending'
         )
         db.session.add(record)
         db.session.commit()
@@ -140,13 +230,14 @@ def upload_audio():
     filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], unique_name)
     file.save(filepath)
 
+    audio_duration = _extract_audio_duration(filepath)
     title = f"Aufnahme {now_local().strftime('%d.%m.%Y %H:%M')}"
 
     if job_type == 'meeting':
         record = Meeting(
             user_id=current_user.id, title=title, original_filename=f"recording.{ext}",
             file_path=filepath, speech_model_id=speech_model_id, language=language,
-            audio_saved=save_audio, status='pending'
+            audio_saved=save_audio, audio_duration_secs=audio_duration, status='pending'
         )
         db.session.add(record)
         db.session.commit()
@@ -156,7 +247,7 @@ def upload_audio():
         record = Dictation(
             user_id=current_user.id, title=title, original_filename=f"recording.{ext}",
             file_path=filepath, speech_model_id=speech_model_id, language=language,
-            audio_saved=save_audio, status='pending'
+            audio_saved=save_audio, audio_duration_secs=audio_duration, status='pending'
         )
         db.session.add(record)
         db.session.commit()
@@ -307,6 +398,7 @@ def _job_to_dict(j):
         'tool_action': j.tool_action,
         'multi_speaker': j.multi_speaker,
         'audio_available': bool(j.file_path and j.audio_saved and os.path.exists(j.file_path)),
+        **_eta_fields(j),
     }
 
 
@@ -316,11 +408,11 @@ def get_jobs(job_type):
     if job_type not in ('transcription',):
         return jsonify({'error': 'Ungültiger Typ'}), 400
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=current_user.history_days)
-    jobs = Job.query.filter_by(
-        user_id=current_user.id,
-        job_type=job_type
-    ).filter(Job.created_at >= cutoff).order_by(Job.created_at.desc()).limit(50).all()
+    history = current_user.get_effective_history_days()
+    q = Job.query.filter_by(user_id=current_user.id, job_type=job_type)
+    if history > 0:
+        q = q.filter(Job.created_at >= datetime.now(timezone.utc) - timedelta(days=history))
+    jobs = q.order_by(Job.created_at.desc()).limit(50).all()
 
     return jsonify([_job_to_dict(j) for j in jobs])
 
@@ -596,16 +688,18 @@ def _meeting_to_dict(m):
         'error_message': _sanitize_error(m.error_message),
         'multi_speaker': True,
         'audio_available': bool(m.file_path and m.audio_saved and os.path.exists(m.file_path)),
+        **_eta_fields(m),
     }
 
 
 @api_bp.route('/meetings')
 @login_required
 def get_meetings():
-    cutoff = datetime.now(timezone.utc) - timedelta(days=current_user.history_days)
-    meetings = Meeting.query.filter_by(
-        user_id=current_user.id
-    ).filter(Meeting.created_at >= cutoff).order_by(Meeting.created_at.desc()).limit(50).all()
+    history = current_user.get_effective_history_days()
+    q = Meeting.query.filter_by(user_id=current_user.id)
+    if history > 0:
+        q = q.filter(Meeting.created_at >= datetime.now(timezone.utc) - timedelta(days=history))
+    meetings = q.order_by(Meeting.created_at.desc()).limit(50).all()
     return jsonify([_meeting_to_dict(m) for m in meetings])
 
 
@@ -742,16 +836,18 @@ def _dictation_to_dict(d):
         'error_message': _sanitize_error(d.error_message),
         'multi_speaker': False,
         'audio_available': bool(d.file_path and d.audio_saved and os.path.exists(d.file_path)),
+        **_eta_fields(d),
     }
 
 
 @api_bp.route('/dictations')
 @login_required
 def get_dictations():
-    cutoff = datetime.now(timezone.utc) - timedelta(days=current_user.history_days)
-    dictations = Dictation.query.filter_by(
-        user_id=current_user.id
-    ).filter(Dictation.created_at >= cutoff).order_by(Dictation.created_at.desc()).limit(50).all()
+    history = current_user.get_effective_history_days()
+    q = Dictation.query.filter_by(user_id=current_user.id)
+    if history > 0:
+        q = q.filter(Dictation.created_at >= datetime.now(timezone.utc) - timedelta(days=history))
+    dictations = q.order_by(Dictation.created_at.desc()).limit(50).all()
     return jsonify([_dictation_to_dict(d) for d in dictations])
 
 

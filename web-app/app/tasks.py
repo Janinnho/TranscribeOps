@@ -106,6 +106,10 @@ def _persist_audio_file(record, app):
     base_name = os.path.splitext(os.path.basename(src_path))[0] + '.mp3'
     dest_path = os.path.join(storage_path, base_name)
 
+    if os.path.abspath(src_path) == os.path.abspath(dest_path):
+        # Already in storage — nothing to do
+        return
+
     if src_path.lower().endswith('.mp3'):
         # Already MP3 — just copy
         shutil.copy2(src_path, dest_path)
@@ -159,6 +163,7 @@ def _run_speech_processing(record, multi_speaker=False, audio_path=None):
             raise Exception('Kein Sprachmodell konfiguriert')
 
         record.progress = 0
+        record.processing_started_at = datetime.now(timezone.utc)
         db.session.commit()
 
         dictionary_prompt = _get_dictionary_prompt(record.user_id)
