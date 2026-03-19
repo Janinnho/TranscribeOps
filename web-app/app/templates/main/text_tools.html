@@ -1,0 +1,232 @@
+{% extends "base.html" %}
+{% block title %}Text Tools - TranscribeOps{% endblock %}
+{% block page_title %}Text Tools{% endblock %}
+{% block content %}
+<div class="text-tools-bg rounded-4 p-4">
+    <div class="mx-auto" style="max-width: 820px;">
+
+        <!-- Model selector -->
+        {% if not (hide_single_model and text_models|length <= 1) %}
+        <div class="d-flex align-items-center gap-2 mb-3">
+            <label class="form-label mb-0 text-nowrap fw-medium"><i class="bi bi-cpu me-1"></i>Modell:</label>
+            <select class="form-select form-select-sm" id="textModel" style="max-width: 260px;">
+                {% for m in text_models %}
+                <option value="{{ m.id }}">{{ m.display_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% else %}
+        <select class="d-none" id="textModel">{% for m in text_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}</select>
+        {% endif %}
+
+        <!-- Main textarea -->
+        <textarea class="form-control mb-3" id="inputText" rows="12" placeholder="Text hier einfügen..." style="font-size: 1rem; resize: vertical;"></textarea>
+
+        <!-- Action buttons -->
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <button class="btn btn-outline-primary" onclick="processText('rewrite')">
+                <i class="bi bi-pencil me-1"></i>Umschreiben
+            </button>
+            <button class="btn btn-outline-primary" onclick="processText('grammar')">
+                <i class="bi bi-spellcheck me-1"></i>Grammatik prüfen
+            </button>
+            <div class="btn-group">
+                <button class="btn btn-outline-primary" onclick="processText('translate')">
+                    <i class="bi bi-translate me-1"></i>Übersetzen
+                </button>
+                <button class="btn btn-outline-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
+                    <span class="visually-hidden">Sprache wählen</span>
+                </button>
+                <ul class="dropdown-menu" id="langMenu">
+                    <li><a class="dropdown-item active" href="#" onclick="setLang(this, 'Englisch')">Englisch</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Deutsch')">Deutsch</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Französisch')">Französisch</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Spanisch')">Spanisch</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Italienisch')">Italienisch</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Portugiesisch')">Portugiesisch</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Niederländisch')">Niederländisch</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Polnisch')">Polnisch</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Japanisch')">Japanisch</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Chinesisch')">Chinesisch</a></li>
+                </ul>
+            </div>
+            <button class="btn btn-outline-primary" onclick="processText('summarize')">
+                <i class="bi bi-card-text me-1"></i>Zusammenfassen
+            </button>
+        </div>
+
+        <!-- Processing indicator -->
+        <div id="processingState" class="d-none my-4">
+            <div class="text-center py-3">
+                <div class="spinner-border text-primary mb-2" role="status"><span class="visually-hidden">Laden...</span></div>
+                <p class="text-muted mb-0">Verarbeite...</p>
+            </div>
+        </div>
+
+        <!-- Current result -->
+        <div id="resultCard" class="d-none my-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body p-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="fw-medium"><i class="bi bi-file-text me-1"></i>Ergebnis</span>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="copyText(document.getElementById('resultText').textContent)">
+                            <i class="bi bi-clipboard me-1"></i>Kopieren
+                        </button>
+                    </div>
+                    <div id="resultText" class="p-3 bg-body-secondary rounded" style="white-space: pre-wrap; max-height: 350px; overflow-y: auto;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- History -->
+        <div class="mt-4">
+            <h6 class="text-muted mb-3"><i class="bi bi-clock-history me-1"></i>Letzte Verarbeitungen</h6>
+            <div id="historyList"></div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let targetLanguage = 'Englisch';
+
+function setLang(el, lang) {
+    targetLanguage = lang;
+    document.querySelectorAll('#langMenu .dropdown-item').forEach(a => a.classList.remove('active'));
+    el.classList.add('active');
+}
+
+async function processText(action) {
+    const text = document.getElementById('inputText').value.trim();
+    if (!text) return;
+
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    const body = {
+        action: action,
+        text: text,
+        text_model_id: parseInt(document.getElementById('textModel').value),
+        target_language: targetLanguage
+    };
+
+    document.getElementById('processingState').classList.remove('d-none');
+    document.getElementById('resultCard').classList.add('d-none');
+
+    try {
+        const resp = await fetch('/api/text-task', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+            body: JSON.stringify(body)
+        });
+        const data = await resp.json();
+        if (data.id) {
+            pollResult(data.id);
+        } else {
+            document.getElementById('processingState').classList.add('d-none');
+        }
+    } catch (err) {
+        document.getElementById('processingState').classList.add('d-none');
+    }
+}
+
+async function pollResult(publicId) {
+    const check = async () => {
+        const resp = await fetch(`/api/text-task/${publicId}`);
+        const task = await resp.json();
+        if (task.status === 'completed' || task.status === 'failed') {
+            document.getElementById('processingState').classList.add('d-none');
+            document.getElementById('resultCard').classList.remove('d-none');
+            document.getElementById('resultText').textContent = task.result_text || task.error_message || 'Fehler';
+            loadHistory();
+        } else {
+            setTimeout(check, 2000);
+        }
+    };
+    check();
+}
+
+function copyText(text) {
+    navigator.clipboard.writeText(text);
+    // Quick feedback
+    const toast = document.createElement('div');
+    toast.className = 'position-fixed bottom-0 end-0 m-3 p-2 px-3 bg-success text-white rounded shadow';
+    toast.style.zIndex = '9999';
+    toast.innerHTML = '<i class="bi bi-check-circle me-1"></i>Kopiert!';
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 1500);
+}
+
+const ACTION_COLORS = {
+    'Umschreiben': 'primary',
+    'Grammatik': 'warning',
+    'Übersetzen': 'info',
+    'Zusammenfassen': 'success',
+};
+
+async function loadHistory() {
+    const container = document.getElementById('historyList');
+    try {
+        const resp = await fetch('/api/text-tasks');
+        const tasks = await resp.json();
+
+        if (!tasks.length) {
+            container.innerHTML = '<p class="text-muted text-center py-3"><i class="bi bi-inbox me-1"></i>Noch keine Verarbeitungen</p>';
+            return;
+        }
+
+        container.innerHTML = tasks.map(t => {
+            const color = ACTION_COLORS[t.action_label] || 'secondary';
+            const statusIcon = t.status === 'completed' ? '' :
+                t.status === 'processing' ? '<span class="spinner-border spinner-border-sm text-primary me-2"></span>' :
+                t.status === 'failed' ? '<i class="bi bi-x-circle text-danger me-1"></i>' : '';
+            const resultPreview = t.status === 'completed' && t.result_text
+                ? `<div class="mt-2 p-2 bg-body-secondary rounded small" style="white-space: pre-wrap; max-height: 120px; overflow-y: auto;">${escapeHtml(t.result_text)}</div>`
+                : t.status === 'failed'
+                ? `<div class="mt-2 small text-danger">${escapeHtml(t.error_message || 'Fehler')}</div>`
+                : '';
+            const copyBtn = t.status === 'completed' && t.result_text
+                ? `<button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="event.stopPropagation(); copyText(this.closest('.history-item').querySelector('.history-result').textContent)" title="Kopieren"><i class="bi bi-clipboard"></i></button>`
+                : '';
+            const deleteBtn = `<button class="btn btn-sm btn-link text-danger py-0 px-1" onclick="event.stopPropagation(); deleteTask('${t.id}')" title="Löschen"><i class="bi bi-trash"></i></button>`;
+
+            return `<div class="history-item border rounded p-3 mb-2">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex align-items-center gap-2">
+                        ${statusIcon}
+                        <span class="badge bg-${color}">${escapeHtml(t.action_label)}</span>
+                        <small class="text-muted">${t.created_at}</small>
+                    </div>
+                    <div class="d-flex gap-1">${copyBtn}${deleteBtn}</div>
+                </div>
+                ${t.status === 'completed' && t.result_text ? `<div class="history-result mt-2 p-2 bg-body-secondary rounded small" style="white-space: pre-wrap; max-height: 120px; overflow-y: auto;">${escapeHtml(t.result_text)}</div>` : ''}
+                ${t.status === 'failed' ? `<div class="mt-2 small text-danger">${escapeHtml(t.error_message || 'Fehler')}</div>` : ''}
+                ${t.status === 'processing' ? '<div class="mt-2"><div class="progress" style="height:3px"><div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:100%"></div></div></div>' : ''}
+            </div>`;
+        }).join('');
+    } catch (err) {
+        console.error('Failed to load history:', err);
+    }
+}
+
+async function deleteTask(publicId) {
+    if (!confirm('Eintrag löschen?')) return;
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    await fetch(`/api/text-task/${publicId}`, {
+        method: 'DELETE',
+        headers: {'X-CSRFToken': token}
+    });
+    loadHistory();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadHistory();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,317 @@
+{% extends "base.html" %}
+{% block title %}Diktieren - TranscribeOps{% endblock %}
+{% block page_title %}Diktieren{% endblock %}
+{% block content %}
+<div class="dictation-bg rounded-4 p-4" id="dictationBg">
+    <div class="mx-auto" style="max-width: 820px;">
+
+        <!-- Model + Language (compact inline) -->
+        <div class="d-flex align-items-center gap-3 mb-4">
+            {% if not (hide_single_model and speech_models|length <= 1) %}
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 text-nowrap fw-medium"><i class="bi bi-cpu me-1"></i>Modell:</label>
+                <select class="form-select form-select-sm" id="speechModel" style="max-width: 260px;">
+                    {% for m in speech_models %}
+                    <option value="{{ m.id }}">{{ m.display_name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% else %}
+            <select class="d-none" id="speechModel">{% for m in speech_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}</select>
+            {% endif %}
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 text-nowrap fw-medium"><i class="bi bi-globe me-1"></i>Sprache:</label>
+                <select class="form-select form-select-sm" id="language" style="max-width: 180px;">
+                    <option value="">Automatisch</option>
+                    <option value="de">Deutsch</option>
+                    <option value="en">Englisch</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Microphone button (centered) -->
+        <div class="text-center py-5">
+            <button class="btn dictation-btn rounded-circle shadow-lg" id="dictateBtn" onclick="toggleDictation()">
+                <i class="bi bi-mic-fill" id="dictateIcon"></i>
+            </button>
+            <p class="mt-4 fs-5" id="dictateStatus">Klicken oder Leertaste gedrückt halten</p>
+            <span class="badge bg-danger d-none fs-6" id="dictateTimer">00:00</span>
+        </div>
+
+        <!-- Recent dictations list -->
+        <div class="mt-4">
+            <h6 class="text-muted mb-3"><i class="bi bi-clock-history me-1"></i>Letzte Diktate</h6>
+            <div id="dictationHistory"></div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let mediaRecorder = null;
+let audioChunks = [];
+let dictTimer = null;
+let dictSeconds = 0;
+let spaceHeld = false;
+
+function toggleDictation() {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        startDictation();
+    } else {
+        stopDictation();
+    }
+}
+
+async function startDictation() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        dictSeconds = 0;
+
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+            stream.getTracks().forEach(t => t.stop());
+            const blob = new Blob(audioChunks, {type: 'audio/webm'});
+            uploadDictation(blob);
+        };
+
+        mediaRecorder.start();
+
+        // UI: recording state
+        document.getElementById('dictateBtn').classList.add('recording');
+        document.getElementById('dictateIcon').classList.replace('bi-mic-fill', 'bi-stop-fill');
+        document.getElementById('dictateStatus').textContent = 'Aufnahme läuft... Klicken oder Leertaste loslassen';
+        document.getElementById('dictationBg').classList.add('recording');
+
+        const timer = document.getElementById('dictateTimer');
+        timer.classList.remove('d-none');
+        dictTimer = setInterval(() => {
+            dictSeconds++;
+            const m = String(Math.floor(dictSeconds / 60)).padStart(2, '0');
+            const s = String(dictSeconds % 60).padStart(2, '0');
+            timer.textContent = `${m}:${s}`;
+        }, 1000);
+    } catch (err) {
+        alert('Mikrofon-Zugriff nicht möglich: ' + err.message);
+    }
+}
+
+function stopDictation() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        clearInterval(dictTimer);
+
+        document.getElementById('dictateBtn').classList.remove('recording');
+        document.getElementById('dictateIcon').classList.replace('bi-stop-fill', 'bi-mic-fill');
+        document.getElementById('dictateStatus').textContent = 'Wird verarbeitet...';
+        document.getElementById('dictationBg').classList.remove('recording');
+    }
+}
+
+async function uploadDictation(blob) {
+    const formData = new FormData();
+    formData.append('audio', blob, 'dictation.webm');
+    formData.append('job_type', 'dictation');
+    formData.append('speech_model_id', document.getElementById('speechModel').value);
+    formData.append('language', document.getElementById('language').value);
+
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    const resp = await fetch('/api/upload-audio', {
+        method: 'POST', body: formData, headers: {'X-CSRFToken': token}
+    });
+    const data = await resp.json();
+    document.getElementById('dictateTimer').classList.add('d-none');
+
+    if (data.job_id) {
+        // Add processing placeholder to list
+        addProcessingEntry(data.job_id);
+        pollDictResult(data.job_id);
+    }
+}
+
+function addProcessingEntry(jobId) {
+    const container = document.getElementById('dictationHistory');
+    const emptyMsg = container.querySelector('.dictation-empty');
+    if (emptyMsg) emptyMsg.remove();
+
+    const entry = document.createElement('div');
+    entry.className = 'dictation-entry border rounded p-3 mb-2';
+    entry.id = `dict-${jobId}`;
+    entry.style.background = 'var(--bs-body-bg)';
+    entry.innerHTML = `
+        <div class="d-flex align-items-center gap-2">
+            <span class="spinner-border spinner-border-sm text-primary"></span>
+            <span class="text-muted">Wird transkribiert...</span>
+        </div>
+        <div class="mt-2"><div class="progress" style="height:3px"><div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:100%"></div></div></div>
+    `;
+    container.prepend(entry);
+}
+
+async function pollDictResult(jobId) {
+    const check = async () => {
+        const resp = await fetch(`/api/dictation/${jobId}`);
+        const job = await resp.json();
+        if (job.status === 'completed') {
+            const text = job.result_text || '';
+            // Auto-copy to clipboard
+            try {
+                await navigator.clipboard.writeText(text);
+                showToast('In Zwischenablage kopiert!');
+            } catch (e) { /* clipboard may not be available */ }
+
+            document.getElementById('dictateStatus').textContent = 'Klicken oder Leertaste gedrückt halten';
+            updateEntryCompleted(jobId, text, job.created_at);
+        } else if (job.status === 'failed') {
+            document.getElementById('dictateStatus').textContent = 'Klicken oder Leertaste gedrückt halten';
+            updateEntryFailed(jobId, job.error_message);
+        } else {
+            setTimeout(check, 2000);
+        }
+    };
+    check();
+}
+
+function updateEntryCompleted(jobId, text, createdAt) {
+    const entry = document.getElementById(`dict-${jobId}`);
+    if (!entry) return;
+    entry.innerHTML = `
+        <div class="d-flex justify-content-between align-items-start">
+            <div class="flex-grow-1 me-2" style="white-space: pre-wrap; font-size: 0.95rem;">${escapeHtml(text)}</div>
+            <div class="d-flex gap-1 flex-shrink-0">
+                <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="copyText(this.closest('.dictation-entry'))" title="Kopieren"><i class="bi bi-clipboard"></i></button>
+                <button class="btn btn-sm btn-link text-danger py-0 px-1" onclick="deleteDictation('${jobId}', this.closest('.dictation-entry'))" title="Löschen"><i class="bi bi-trash"></i></button>
+            </div>
+        </div>
+        ${createdAt ? `<small class="text-muted">${createdAt}</small>` : ''}
+    `;
+}
+
+function updateEntryFailed(jobId, errorMessage) {
+    const entry = document.getElementById(`dict-${jobId}`);
+    if (!entry) return;
+    entry.innerHTML = `
+        <div class="d-flex justify-content-between align-items-center">
+            <span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>${escapeHtml(errorMessage || 'Fehler')}</span>
+            <button class="btn btn-sm btn-link text-danger py-0 px-1" onclick="deleteDictation('${jobId}', this.closest('.dictation-entry'))" title="Löschen"><i class="bi bi-trash"></i></button>
+        </div>
+    `;
+}
+
+function copyText(entryEl) {
+    const textEl = entryEl.querySelector('.flex-grow-1');
+    if (textEl) {
+        navigator.clipboard.writeText(textEl.textContent);
+        showToast('Kopiert!');
+    }
+}
+
+async function deleteDictation(jobId, entryEl) {
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    await fetch(`/api/dictation/${jobId}`, {
+        method: 'DELETE',
+        headers: {'X-CSRFToken': token}
+    });
+    entryEl.remove();
+    // Show empty message if no entries left
+    const container = document.getElementById('dictationHistory');
+    if (!container.querySelector('.dictation-entry')) {
+        container.innerHTML = '<p class="dictation-empty text-muted text-center py-3"><i class="bi bi-inbox me-1"></i>Noch keine Diktate</p>';
+    }
+}
+
+function showToast(msg) {
+    const toast = document.createElement('div');
+    toast.className = 'position-fixed bottom-0 end-0 m-3 p-2 px-3 bg-success text-white rounded shadow';
+    toast.style.zIndex = '9999';
+    toast.innerHTML = `<i class="bi bi-check-circle me-1"></i>${msg}`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2000);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// Load recent dictations on page load
+async function loadDictationHistory() {
+    const container = document.getElementById('dictationHistory');
+    try {
+        const resp = await fetch('/api/dictations');
+        const jobs = await resp.json();
+
+        if (!jobs.length) {
+            container.innerHTML = '<p class="dictation-empty text-muted text-center py-3"><i class="bi bi-inbox me-1"></i>Noch keine Diktate</p>';
+            return;
+        }
+
+        container.innerHTML = jobs.map(job => {
+            if (job.status === 'completed') {
+                return `<div class="dictation-entry border rounded p-3 mb-2" id="dict-${job.id}" style="background: var(--bs-body-bg);">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1 me-2" style="white-space: pre-wrap; font-size: 0.95rem;">${escapeHtml(job.result_text || '')}</div>
+                        <div class="d-flex gap-1 flex-shrink-0">
+                            <button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="copyText(this.closest('.dictation-entry'))" title="Kopieren"><i class="bi bi-clipboard"></i></button>
+                            <button class="btn btn-sm btn-link text-danger py-0 px-1" onclick="deleteDictation('${job.id}', this.closest('.dictation-entry'))" title="Löschen"><i class="bi bi-trash"></i></button>
+                        </div>
+                    </div>
+                    <small class="text-muted">${job.created_at}</small>
+                </div>`;
+            } else if (job.status === 'failed') {
+                return `<div class="dictation-entry border rounded p-3 mb-2" id="dict-${job.id}" style="background: var(--bs-body-bg);">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>${escapeHtml(job.error_message || 'Fehler')}</span>
+                        <button class="btn btn-sm btn-link text-danger py-0 px-1" onclick="deleteDictation('${job.id}', this.closest('.dictation-entry'))" title="Löschen"><i class="bi bi-trash"></i></button>
+                    </div>
+                </div>`;
+            } else {
+                // Still processing — start polling
+                pollDictResult(job.id);
+                return `<div class="dictation-entry border rounded p-3 mb-2" id="dict-${job.id}" style="background: var(--bs-body-bg);">
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="spinner-border spinner-border-sm text-primary"></span>
+                        <span class="text-muted">Wird transkribiert...</span>
+                    </div>
+                    <div class="mt-2"><div class="progress" style="height:3px"><div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:100%"></div></div></div>
+                </div>`;
+            }
+        }).join('');
+    } catch (err) {
+        console.error('Failed to load dictation history:', err);
+    }
+}
+
+// Push-to-Talk: Spacebar
+document.addEventListener('keydown', (e) => {
+    if (e.code !== 'Space') return;
+    const tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    e.preventDefault();
+    if (spaceHeld) return;
+    spaceHeld = true;
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        startDictation();
+    }
+});
+
+document.addEventListener('keyup', (e) => {
+    if (e.code !== 'Space') return;
+    const tag = e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    e.preventDefault();
+    spaceHeld = false;
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        stopDictation();
+    }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadDictationHistory();
+});
+</script>
+{% endblock %}

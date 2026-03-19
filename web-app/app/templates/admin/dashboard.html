@@ -1,0 +1,1233 @@
+{% extends "base.html" %}
+{% block title %}Admin - TranscribeOps{% endblock %}
+{% block page_title %}Administration{% endblock %}
+{% block content %}
+<!-- Tab Navigation -->
+<ul class="nav nav-tabs mb-4" role="tablist">
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#usersTab"><i class="bi bi-people me-1"></i>Benutzer</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#groupsTab"><i class="bi bi-diagram-3 me-1"></i>Gruppen</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#speechTab"><i class="bi bi-mic me-1"></i>Sprachmodelle</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#textTab"><i class="bi bi-chat-dots me-1"></i>Textmodelle</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#jobsTab"><i class="bi bi-list-task me-1"></i>Jobs</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#globalTab"><i class="bi bi-globe2 me-1"></i>Global</button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#ssoTab"><i class="bi bi-shield-lock me-1"></i>Single-Sign-On</button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- Users Tab -->
+    <div class="tab-pane fade show active" id="usersTab">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Benutzer</h5>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createUserModal">
+                <i class="bi bi-plus-lg me-1"></i>Neuer Benutzer
+            </button>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Anzeigename</th><th>E-Mail</th><th>Admin</th><th>Aktiv</th><th>Quelle</th><th>Gruppen</th><th>Aktionen</th></tr></thead>
+                    <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td><i class="bi bi-person-circle me-1"></i>{{ user.display_name }}</td>
+                        <td>{{ user.email }}</td>
+                        <td><span class="badge {{ 'bg-primary' if user.is_admin else 'bg-secondary' }}">{{ 'Ja' if user.is_admin else 'Nein' }}</span></td>
+                        <td><span class="badge {{ 'bg-success' if user.is_active_user else 'bg-danger' }}">{{ 'Ja' if user.is_active_user else 'Nein' }}</span></td>
+                        <td>
+                            {% if user.auth_source == 'header_sso' %}
+                            <span class="badge bg-warning text-dark"><i class="bi bi-shield-check me-1"></i>Header SSO</span>
+                            {% elif user.auth_source == 'oidc' %}
+                            <span class="badge bg-info"><i class="bi bi-key me-1"></i>OIDC</span>
+                            {% else %}
+                            <span class="badge bg-secondary"><i class="bi bi-person me-1"></i>Lokal</span>
+                            {% endif %}
+                        </td>
+                        <td>{% for g in user.groups %}<span class="badge bg-info me-1">{{ g.name }}</span>{% endfor %}</td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editUser{{ user.id }}"><i class="bi bi-pencil"></i></button>
+                            {% if user.id != current_user.id %}
+                            <form method="POST" action="{{ url_for('admin.delete_user', user_id=user.id) }}" class="d-inline" onsubmit="return confirm('Benutzer wirklich löschen?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Groups Tab -->
+    <div class="tab-pane fade" id="groupsTab">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Gruppen</h5>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createGroupModal">
+                <i class="bi bi-plus-lg me-1"></i>Neue Gruppe
+            </button>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Name</th><th>Beschreibung</th><th>Default</th><th>Features</th><th>Automatisierung</th><th>Benutzer</th><th>Modelle</th><th>Aktionen</th></tr></thead>
+                    <tbody>
+                    {% for group in groups %}
+                    <tr>
+                        <td>{{ group.name }}</td>
+                        <td>{{ group.description or '-' }}</td>
+                        <td>
+                            {% if group.is_default %}
+                            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Default</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Nein</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if group.transcription_enabled %}<span class="badge bg-success me-1" title="Transkription">Transkr.</span>{% endif %}
+                            {% if group.meeting_enabled %}<span class="badge bg-success me-1" title="Meeting">Meeting</span>{% endif %}
+                            {% if group.dictation_enabled %}<span class="badge bg-success me-1" title="Diktieren">Diktat</span>{% endif %}
+                            {% if group.text_tools_enabled %}<span class="badge bg-success me-1" title="Text Tools">Text</span>{% endif %}
+                            {% if group.dictionary_enabled %}<span class="badge bg-success me-1" title="Wörterbuch">Wörtb.</span>{% endif %}
+                        </td>
+                        <td>
+                            {% if group.auto_title_enabled %}<span class="badge bg-info me-1">Auto-Titel</span>{% endif %}
+                            {% if group.auto_summary_enabled %}<span class="badge bg-info me-1">Auto-Zusammenf.</span>{% endif %}
+                            {% if group.auto_speaker_enabled %}<span class="badge bg-info me-1">Auto-Sprecher</span>{% endif %}
+                            {% if group.audio_save_enabled %}<span class="badge bg-info me-1">Audio</span>{% endif %}
+                            {% if not group.auto_title_enabled and not group.auto_summary_enabled and not group.auto_speaker_enabled and not group.audio_save_enabled %}<span class="text-muted">-</span>{% endif %}
+                        </td>
+                        <td>{{ group.users.count() }}</td>
+                        <td>
+                            {% for m in group.speech_models %}<span class="badge bg-secondary me-1">{{ m.display_name }}</span>{% endfor %}
+                            {% for m in group.text_models %}<span class="badge bg-secondary me-1">{{ m.display_name }}</span>{% endfor %}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editGroup{{ group.id }}"><i class="bi bi-pencil"></i></button>
+                            <form method="POST" action="{{ url_for('admin.delete_group', group_id=group.id) }}" class="d-inline" onsubmit="return confirm('Gruppe löschen?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Speech Models Tab -->
+    <div class="tab-pane fade" id="speechTab">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Sprachmodelle (Transkription)</h5>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createSpeechModal">
+                <i class="bi bi-plus-lg me-1"></i>Neues Modell
+            </button>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Name</th><th>Anzeigename</th><th>Provider</th><th>Modell-ID</th><th>Modus</th><th>Features</th><th>Aktiv</th><th>Aktionen</th></tr></thead>
+                    <tbody>
+                    {% for m in speech_models %}
+                    <tr>
+                        <td>{{ m.name }}</td>
+                        <td>{{ m.display_name }}</td>
+                        <td><span class="badge bg-info">{{ m.provider }}</span></td>
+                        <td><code>{{ m.model_id }}</code></td>
+                        <td><span class="badge bg-secondary">{{ {'single':'Einzel','multi':'Multi','both':'Beides'}.get(m.speaker_mode, m.speaker_mode) }}</span></td>
+                        <td>
+                            {% if m.supports_prompt %}<span class="badge bg-success me-1" title="Wörterbuch/Prompt">Prompt</span>{% endif %}
+                            {% if m.supports_timestamps %}<span class="badge bg-success me-1" title="Zeitstempel">Timestamps</span>{% endif %}
+                            {% if m.supports_diarize %}<span class="badge bg-success" title="Sprecher-Erkennung">Diarize</span>{% endif %}
+                        </td>
+                        <td><span class="badge {{ 'bg-success' if m.is_active else 'bg-danger' }}">{{ 'Ja' if m.is_active else 'Nein' }}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editSpeech{{ m.id }}"><i class="bi bi-pencil"></i></button>
+                            <form method="POST" action="{{ url_for('admin.delete_speech_model', model_id=m.id) }}" class="d-inline" onsubmit="return confirm('Modell löschen?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Text Models Tab -->
+    <div class="tab-pane fade" id="textTab">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Textmodelle (LLM)</h5>
+            <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createTextModal">
+                <i class="bi bi-plus-lg me-1"></i>Neues Modell
+            </button>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead><tr><th>Name</th><th>Anzeigename</th><th>Provider</th><th>Modell-ID</th><th>Aktiv</th><th>Aktionen</th></tr></thead>
+                    <tbody>
+                    {% for m in text_models %}
+                    <tr>
+                        <td>{{ m.name }}</td>
+                        <td>{{ m.display_name }}</td>
+                        <td><span class="badge bg-info">{{ m.provider }}</span></td>
+                        <td><code>{{ m.model_id }}</code></td>
+                        <td><span class="badge {{ 'bg-success' if m.is_active else 'bg-danger' }}">{{ 'Ja' if m.is_active else 'Nein' }}</span></td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editText{{ m.id }}"><i class="bi bi-pencil"></i></button>
+                            <form method="POST" action="{{ url_for('admin.delete_text_model', model_id=m.id) }}" class="d-inline" onsubmit="return confirm('Modell löschen?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Jobs Tab -->
+    <div class="tab-pane fade" id="jobsTab">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="mb-0">Alle Jobs</h5>
+            <div class="d-flex gap-2 align-items-center">
+                <select class="form-select form-select-sm" id="jobStatusFilter" onchange="filterJobs()" style="width:auto">
+                    <option value="">Alle Status</option>
+                    <option value="processing">Verarbeitung</option>
+                    <option value="pending">Wartend</option>
+                    <option value="completed">Fertig</option>
+                    <option value="failed">Fehler</option>
+                </select>
+                <select class="form-select form-select-sm" id="jobTypeFilter" onchange="filterJobs()" style="width:auto">
+                    <option value="">Alle Typen</option>
+                    <option value="Transkription">Transkription</option>
+                    <option value="Meeting">Meeting</option>
+                    <option value="Diktat">Diktat</option>
+                </select>
+                <small class="text-muted">Letzte 100</small>
+            </div>
+        </div>
+        <div class="card border-0 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" id="jobsTable">
+                    <thead>
+                        <tr>
+                            <th>Status</th>
+                            <th>Typ</th>
+                            <th>Titel</th>
+                            <th>Benutzer</th>
+                            <th>Modell</th>
+                            <th>Restzeit</th>
+                            <th>Erstellt</th>
+                            <th>Fehler</th>
+                            <th>Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for r in all_records %}
+                    <tr class="job-row" data-status="{{ r.status }}" data-type="{{ r.type }}">
+                        <td>
+                            {% if r.status == 'completed' %}
+                            <span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Fertig</span>
+                            {% elif r.status == 'processing' %}
+                            <span class="badge bg-info"><span class="spinner-grow spinner-grow-sm me-1"></span>Verarbeitung</span>
+                            {% elif r.status == 'pending' %}
+                            <span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Wartend</span>
+                            {% elif r.status == 'failed' %}
+                            <span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Fehler</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ r.status }}</span>
+                            {% endif %}
+                        </td>
+                        <td><span class="badge bg-secondary">{{ r.type }}</span></td>
+                        <td class="text-truncate" style="max-width: 250px;" title="{{ r.title or '-' }}">{{ r.title or '-' }}</td>
+                        <td title="{{ r.user_email }}">{{ r.user_name }}</td>
+                        <td><small>{{ r.speech_model }}</small></td>
+                        <td>
+                            {% if r.eta_seconds is not none and r.status in ['pending', 'processing'] %}
+                            <small class="text-muted" data-admin-eta="{{ r.eta_seconds }}" data-admin-started="{{ r.processing_started_at or '' }}" data-admin-status="{{ r.status }}"></small>
+                            {% endif %}
+                        </td>
+                        <td><small>{{ r.created_at }}</small></td>
+                        <td>
+                            {% if r.error_message %}
+                            <button class="btn btn-sm btn-outline-danger" onclick="showError(this)" data-error="{{ r.error_message|e }}" title="Fehler anzeigen">
+                                <i class="bi bi-exclamation-triangle"></i>
+                            </button>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if r.status in ['pending', 'processing'] %}
+                            <form method="POST" action="{{ url_for('admin.cancel_job', record_type=r.record_type, record_id=r.record_id) }}"
+                                  style="display:inline" onsubmit="return confirm('Job wirklich abbrechen?')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Abbrechen">
+                                    <i class="bi bi-stop-circle"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% if not all_records %}
+                    <tr><td colspan="9" class="text-center text-muted py-3">Keine Jobs vorhanden</td></tr>
+                    {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <!-- Error Detail Modal -->
+        <div class="modal fade" id="errorDetailModal" tabindex="-1">
+            <div class="modal-dialog">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title"><i class="bi bi-exclamation-triangle text-danger me-2"></i>Fehlermeldung</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body">
+                        <pre id="errorDetailText" class="mb-0 p-3 bg-body-secondary rounded" style="white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto;"></pre>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('errorDetailText').textContent)"><i class="bi bi-clipboard me-1"></i>Kopieren</button>
+                        <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Schließen</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Global Tab -->
+    <div class="tab-pane fade" id="globalTab">
+        <h5 class="mb-4">Globale Einstellungen</h5>
+
+        <!-- Timezone -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-clock me-2"></i>Zeitzone</h6>
+                <p class="text-muted small mb-3">Alle Zeitstempel in der Anwendung werden in dieser Zeitzone angezeigt.</p>
+                <form method="POST" action="{{ url_for('admin.update_global') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="d-flex align-items-center gap-3">
+                        <select name="timezone" class="form-select" style="max-width: 350px;">
+                            {% set timezones = [
+                                ('Europe/Berlin', 'Europe/Berlin (MEZ/MESZ)'),
+                                ('Europe/Zurich', 'Europe/Zurich'),
+                                ('Europe/Vienna', 'Europe/Vienna'),
+                                ('Europe/London', 'Europe/London (GMT/BST)'),
+                                ('Europe/Paris', 'Europe/Paris'),
+                                ('Europe/Amsterdam', 'Europe/Amsterdam'),
+                                ('Europe/Brussels', 'Europe/Brussels'),
+                                ('Europe/Rome', 'Europe/Rome'),
+                                ('Europe/Madrid', 'Europe/Madrid'),
+                                ('Europe/Warsaw', 'Europe/Warsaw'),
+                                ('Europe/Prague', 'Europe/Prague'),
+                                ('Europe/Stockholm', 'Europe/Stockholm'),
+                                ('Europe/Helsinki', 'Europe/Helsinki'),
+                                ('Europe/Athens', 'Europe/Athens'),
+                                ('Europe/Istanbul', 'Europe/Istanbul'),
+                                ('Europe/Moscow', 'Europe/Moscow'),
+                                ('US/Eastern', 'US/Eastern (EST/EDT)'),
+                                ('US/Central', 'US/Central (CST/CDT)'),
+                                ('US/Mountain', 'US/Mountain (MST/MDT)'),
+                                ('US/Pacific', 'US/Pacific (PST/PDT)'),
+                                ('Asia/Tokyo', 'Asia/Tokyo (JST)'),
+                                ('Asia/Shanghai', 'Asia/Shanghai (CST)'),
+                                ('Asia/Kolkata', 'Asia/Kolkata (IST)'),
+                                ('Asia/Dubai', 'Asia/Dubai (GST)'),
+                                ('Australia/Sydney', 'Australia/Sydney (AEST)'),
+                                ('Pacific/Auckland', 'Pacific/Auckland (NZST)'),
+                                ('UTC', 'UTC'),
+                            ] %}
+                            {% for tz_val, tz_label in timezones %}
+                            <option value="{{ tz_val }}" {{ 'selected' if current_timezone == tz_val }}>{{ tz_label }}</option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Speichern</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+
+        <!-- Default History Retention -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-clock-history me-2"></i>Standard Historie-Aufbewahrung</h6>
+                <p class="text-muted small mb-3">Standardeinstellung für alle Benutzer. Benutzer können dies in ihren eigenen Einstellungen überschreiben.</p>
+                <form method="POST" action="{{ url_for('admin.update_global') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="timezone" value="{{ current_timezone }}">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="d-flex align-items-center gap-2">
+                            <select name="default_history_days" class="form-select" style="max-width: 200px;" id="globalHistorySelect" onchange="document.getElementById('globalHistoryDaysInput').classList.toggle('d-none', this.value === '0')">
+                                <option value="0" {{ 'selected' if default_history_days == 0 }}>Unbegrenzt</option>
+                                {% for d in [7, 14, 30, 60, 90, 180, 365] %}
+                                <option value="{{ d }}" {{ 'selected' if default_history_days == d }}>{{ d }} Tage</option>
+                                {% endfor %}
+                                {% if default_history_days > 0 and default_history_days not in [7, 14, 30, 60, 90, 180, 365] %}
+                                <option value="{{ default_history_days }}" selected>{{ default_history_days }} Tage</option>
+                                {% endif %}
+                            </select>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm"><i class="bi bi-check-lg me-1"></i>Speichern</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- System Info -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-info-circle me-2"></i>Systeminformationen</h6>
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        <tr><td class="text-muted" style="width: 220px;">Audio-Speicher</td><td><code>{{ audio_storage_path }}</code></td></tr>
+                        <tr><td class="text-muted">Upload-Ordner</td><td><code>{{ upload_folder }}</code></td></tr>
+                        <tr><td class="text-muted">Datenbank</td><td><code>{{ database_url }}</code></td></tr>
+                        <tr><td class="text-muted">Max. Dateigröße</td><td>{{ max_upload_mb }} MB</td></tr>
+                        <tr><td class="text-muted">Audio-Speicher belegt</td><td>{{ audio_disk_usage }}</td></tr>
+                        <tr><td class="text-muted">Upload-Ordner belegt</td><td>{{ upload_disk_usage }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Statistics -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-bar-chart me-2"></i>Statistiken</h6>
+                <table class="table table-sm mb-0">
+                    <tbody>
+                        <tr><td class="text-muted" style="width: 220px;">Benutzer</td><td>{{ stats.users }}</td></tr>
+                        <tr><td class="text-muted">Transkriptionen</td><td>{{ stats.jobs }}</td></tr>
+                        <tr><td class="text-muted">Meetings</td><td>{{ stats.meetings }}</td></tr>
+                        <tr><td class="text-muted">Diktate</td><td>{{ stats.dictations }}</td></tr>
+                        <tr><td class="text-muted">Text-Aufgaben</td><td>{{ stats.text_tasks }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- SSO Tab -->
+    <div class="tab-pane fade" id="ssoTab">
+        <h5 class="mb-4">Single-Sign-On (SSO)</h5>
+        <form method="POST" action="{{ url_for('admin.update_sso') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+            <!-- SSO Enable/Method Selection -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="bi bi-toggle-on me-2"></i>SSO Aktivierung</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="sso_enabled"
+                               id="ssoEnabled" value="on"
+                               {{ 'checked' if sso_settings.sso_enabled == 'true' }}
+                               onchange="toggleSsoFields()">
+                        <label class="form-check-label" for="ssoEnabled">
+                            Single-Sign-On aktivieren
+                        </label>
+                    </div>
+                    <div id="ssoMethodGroup" class="{{ 'd-none' if sso_settings.sso_enabled != 'true' }}">
+                        <label class="form-label fw-medium mt-3">SSO Methode</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="sso_method"
+                                   value="header" id="ssoMethodHeader"
+                                   {{ 'checked' if sso_settings.sso_method != 'oidc' }}
+                                   onchange="toggleSsoFields()">
+                            <label class="form-check-label" for="ssoMethodHeader">
+                                Header-basiert (z.B. Cloudflare Access, Entra ID Proxy)
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="sso_method"
+                                   value="oidc" id="ssoMethodOidc"
+                                   {{ 'checked' if sso_settings.sso_method == 'oidc' }}
+                                   onchange="toggleSsoFields()">
+                            <label class="form-check-label" for="ssoMethodOidc">
+                                OpenID Connect (OIDC)
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Header SSO Config -->
+            <div class="card border-0 shadow-sm mb-4" id="headerSsoConfig">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="bi bi-envelope me-2"></i>Header-SSO Konfiguration</h6>
+                    <div class="alert alert-warning small mb-3">
+                        <i class="bi bi-exclamation-triangle me-1"></i>
+                        <strong>Sicherheitshinweis:</strong> Header-basiertes SSO setzt voraus, dass die Anwendung ausschließlich über den Reverse Proxy erreichbar ist. Direkte Zugriffe müssen durch Firewall-Regeln oder Netzwerk-Isolation verhindert werden.
+                    </div>
+                    <p class="text-muted small">Der Reverse Proxy sendet authentifizierte Benutzerinformationen als HTTP-Header.</p>
+                    <div class="mb-3">
+                        <label class="form-label">E-Mail Header <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="sso_header_email"
+                               value="{{ sso_settings.sso_header_email }}"
+                               placeholder="Cf-Access-Authenticated-User-Email">
+                        <small class="text-muted">Name des HTTP-Headers der die E-Mail-Adresse enthält.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Name Header (optional)</label>
+                        <input type="text" class="form-control" name="sso_header_name"
+                               value="{{ sso_settings.sso_header_name }}"
+                               placeholder="X-Auth-Name">
+                        <small class="text-muted">Name des HTTP-Headers der den Anzeigenamen enthält.</small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- OIDC Config -->
+            <div class="card border-0 shadow-sm mb-4" id="oidcSsoConfig">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="bi bi-key me-2"></i>OpenID Connect Konfiguration</h6>
+                    <div class="mb-3">
+                        <label class="form-label">Discovery URL <span class="text-danger">*</span></label>
+                        <input type="url" class="form-control" name="oidc_discovery_url"
+                               value="{{ sso_settings.oidc_discovery_url }}"
+                               placeholder="https://login.microsoftonline.com/{tenant}/v2.0/.well-known/openid-configuration">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Client ID <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" name="oidc_client_id"
+                               value="{{ sso_settings.oidc_client_id }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Client Secret <span class="text-danger">*</span></label>
+                        <input type="password" class="form-control" name="oidc_client_secret"
+                               placeholder="{{ '(gespeichert)' if sso_settings.oidc_client_secret else '' }}">
+                        <small class="text-muted">Leer lassen um den bestehenden Wert beizubehalten.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Scopes</label>
+                        <input type="text" class="form-control" name="oidc_scopes"
+                               value="{{ sso_settings.oidc_scopes or 'openid email profile' }}"
+                               placeholder="openid email profile">
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">E-Mail Claim</label>
+                            <input type="text" class="form-control" name="oidc_email_claim"
+                                   value="{{ sso_settings.oidc_email_claim or 'email' }}"
+                                   placeholder="email">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Name Claim</label>
+                            <input type="text" class="form-control" name="oidc_name_claim"
+                                   value="{{ sso_settings.oidc_name_claim or 'name' }}"
+                                   placeholder="name">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- General SSO Settings -->
+            <div class="card border-0 shadow-sm mb-4" id="ssoGeneralConfig">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="bi bi-gear me-2"></i>Allgemeine SSO-Einstellungen</h6>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="sso_auto_create"
+                               id="ssoAutoCreate" value="on"
+                               {{ 'checked' if sso_settings.sso_auto_create == 'true' }}>
+                        <label class="form-check-label" for="ssoAutoCreate">
+                            Benutzer automatisch erstellen beim ersten SSO-Login
+                        </label>
+                    </div>
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="sso_default_admin"
+                               id="ssoDefaultAdmin" value="on"
+                               {{ 'checked' if sso_settings.sso_default_admin == 'true' }}>
+                        <label class="form-check-label" for="ssoDefaultAdmin">
+                            Automatisch erstellte SSO-Benutzer als Admin anlegen
+                        </label>
+                    </div>
+                    <div class="alert alert-info small mt-3 mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Manuelles Login ist immer unter <code>/manuell-login</code> erreichbar.
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-check-lg me-1"></i>SSO-Einstellungen speichern
+            </button>
+        </form>
+    </div>
+</div>
+
+<script>
+function toggleSsoFields() {
+    const enabled = document.getElementById('ssoEnabled').checked;
+    const methodGroup = document.getElementById('ssoMethodGroup');
+    const headerConfig = document.getElementById('headerSsoConfig');
+    const oidcConfig = document.getElementById('oidcSsoConfig');
+    const generalConfig = document.getElementById('ssoGeneralConfig');
+
+    methodGroup.classList.toggle('d-none', !enabled);
+    headerConfig.classList.toggle('d-none', !enabled || !document.getElementById('ssoMethodHeader').checked);
+    oidcConfig.classList.toggle('d-none', !enabled || !document.getElementById('ssoMethodOidc').checked);
+    generalConfig.classList.toggle('d-none', !enabled);
+}
+document.addEventListener('DOMContentLoaded', toggleSsoFields);
+</script>
+
+<!-- Create User Modal -->
+<div class="modal fade" id="createUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.create_user') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Neuer Benutzer</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" required></div>
+                    <div class="mb-3"><label class="form-label">E-Mail</label><input type="email" class="form-control" name="email" required></div>
+                    <div class="mb-3"><label class="form-label">Passwort</label><input type="password" class="form-control" name="password" required></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="is_admin" id="newUserAdmin"><label class="form-check-label" for="newUserAdmin">Administrator</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit User Modals -->
+{% for user in users %}
+<div class="modal fade" id="editUser{{ user.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.update_user', user_id=user.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Benutzer bearbeiten: {{ user.display_name }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" value="{{ user.display_name }}" required></div>
+                    <div class="mb-3"><label class="form-label">E-Mail</label><input type="email" class="form-control" name="email" value="{{ user.email }}" required></div>
+                    <div class="mb-3"><label class="form-label">Neues Passwort (leer = unverändert)</label><input type="password" class="form-control" name="password"></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_admin" {{ 'checked' if user.is_admin }}><label class="form-check-label">Administrator</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="is_active_user" {{ 'checked' if user.is_active_user }}><label class="form-check-label">Aktiv</label></div>
+                    <div class="mb-3">
+                        <label class="form-label">Gruppen</label>
+                        {% for g in groups %}
+                        <div class="form-check"><input class="form-check-input" type="checkbox" name="group_ids" value="{{ g.id }}" {{ 'checked' if g in user.groups }}><label class="form-check-label">{{ g.name }}{% if g.is_default %} <span class="badge bg-success badge-sm">Default</span>{% endif %}</label></div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<!-- Create Group Modal -->
+<div class="modal fade" id="createGroupModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.create_group') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Neue Gruppe</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Name</label><input type="text" class="form-control" name="name" required></div>
+                    <div class="mb-3"><label class="form-label">Beschreibung</label><input type="text" class="form-control" name="description"></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_default" id="newGroupDefault"><label class="form-check-label" for="newGroupDefault">Als Default-Gruppe festlegen <small class="text-muted">(neue Benutzer werden automatisch zugewiesen)</small></label></div>
+                    <hr>
+                    <label class="form-label fw-medium">Verfügbare Features</label>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="transcription_enabled" id="newGroupTranscr" checked><label class="form-check-label" for="newGroupTranscr">Transkription</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="meeting_enabled" id="newGroupMeeting" checked><label class="form-check-label" for="newGroupMeeting">Meeting</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="dictation_enabled" id="newGroupDict2" checked><label class="form-check-label" for="newGroupDict2">Diktieren</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="text_tools_enabled" id="newGroupText" checked><label class="form-check-label" for="newGroupText">Text Tools</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" id="newGroupDict" checked><label class="form-check-label" for="newGroupDict">Wörterbuch</label></div>
+                    <hr>
+                    <label class="form-label fw-medium">Automatisierung</label>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_title_enabled" id="newGroupAutoTitle" onchange="document.getElementById('newGroupAutoTitleModel').disabled = !this.checked">
+                        <label class="form-check-label" for="newGroupAutoTitle">Auto-Titel generieren</label>
+                    </div>
+                    <div class="mb-2 ms-4">
+                        <select class="form-select form-select-sm" name="auto_title_model_id" id="newGroupAutoTitleModel" disabled>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_summary_enabled" id="newGroupAutoSummary" onchange="document.getElementById('newGroupAutoSummaryModel').disabled = !this.checked">
+                        <label class="form-check-label" for="newGroupAutoSummary">Auto-Zusammenfassung generieren</label>
+                    </div>
+                    <div class="mb-2 ms-4">
+                        <select class="form-select form-select-sm" name="auto_summary_model_id" id="newGroupAutoSummaryModel" disabled>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_speaker_enabled" id="newGroupAutoSpeaker" onchange="document.getElementById('newGroupAutoSpeakerModel').disabled = !this.checked">
+                        <label class="form-check-label" for="newGroupAutoSpeaker">Auto-Sprechererkennung <small class="text-muted">(Namen aus Transkription erkennen)</small></label>
+                    </div>
+                    <div class="mb-3 ms-4">
+                        <select class="form-select form-select-sm" name="auto_speaker_model_id" id="newGroupAutoSpeakerModel" disabled>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Audio speichern</label>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="audio_save_enabled" id="newGroupAudioSave" onchange="document.getElementById('newGroupAudioDefault').disabled = !this.checked">
+                        <label class="form-check-label" for="newGroupAudioSave">Audio speichern aktivieren <small class="text-muted">(Checkbox beim Upload anzeigen)</small></label>
+                    </div>
+                    <div class="form-check mb-3 ms-4">
+                        <input class="form-check-input" type="checkbox" name="audio_save_default" id="newGroupAudioDefault" checked disabled>
+                        <label class="form-check-label" for="newGroupAudioDefault">Standardmässig speichern</label>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Oberfläche</label>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="hide_single_model" id="newGroupHideSingleModel" checked>
+                        <label class="form-check-label" for="newGroupHideSingleModel">Modellauswahl ausblenden wenn nur ein Modell verfügbar</label>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Upload-Limit</label>
+                    <div class="mb-3">
+                        <label class="form-label">Max. Upload-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_upload_size_mb" value="0" min="0">
+                        <small class="text-muted">0 = kein Limit (globales Server-Limit gilt). Begrenzt die max. Dateigröße, die Benutzer dieser Gruppe hochladen können.</small>
+                    </div>
+                    <hr>
+                    <div class="mb-3">
+                        <label class="form-label">Sprachmodelle</label>
+                        {% for m in speech_models %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}" id="newGrpSpeech{{ m.id }}" onchange="document.getElementById('newGrpSpeechFn{{ m.id }}').style.display = this.checked ? 'block' : 'none'">
+                            <label class="form-check-label" for="newGrpSpeech{{ m.id }}">{{ m.display_name }}</label>
+                        </div>
+                        <div class="ms-4 mb-2" id="newGrpSpeechFn{{ m.id }}" style="display:none">
+                            <small class="text-muted">Funktionen (keine Auswahl = alle):</small>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="transcription" id="newGrpSFn{{ m.id }}_t"><label class="form-check-label" for="newGrpSFn{{ m.id }}_t">Transkription</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="meeting" id="newGrpSFn{{ m.id }}_m"><label class="form-check-label" for="newGrpSFn{{ m.id }}_m">Meeting</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="dictation" id="newGrpSFn{{ m.id }}_d"><label class="form-check-label" for="newGrpSFn{{ m.id }}_d">Diktieren</label></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Textmodelle</label>
+                        {% for m in text_models %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="text_model_ids" value="{{ m.id }}" id="newGrpText{{ m.id }}" onchange="document.getElementById('newGrpTextFn{{ m.id }}').style.display = this.checked ? 'block' : 'none'">
+                            <label class="form-check-label" for="newGrpText{{ m.id }}">{{ m.display_name }}</label>
+                        </div>
+                        <div class="ms-4 mb-2" id="newGrpTextFn{{ m.id }}" style="display:none">
+                            <small class="text-muted">Funktionen (keine Auswahl = alle):</small>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="text_tools" id="newGrpTFn{{ m.id }}_tt"><label class="form-check-label" for="newGrpTFn{{ m.id }}_tt">Text-Tools</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="summary" id="newGrpTFn{{ m.id }}_s"><label class="form-check-label" for="newGrpTFn{{ m.id }}_s">Zusammenfassung</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="chat" id="newGrpTFn{{ m.id }}_c"><label class="form-check-label" for="newGrpTFn{{ m.id }}_c">Chat</label></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Group Modals -->
+{% for group in groups %}
+<div class="modal fade" id="editGroup{{ group.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.update_group', group_id=group.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Gruppe bearbeiten: {{ group.name }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Name</label><input type="text" class="form-control" name="name" value="{{ group.name }}" required></div>
+                    <div class="mb-3"><label class="form-label">Beschreibung</label><input type="text" class="form-control" name="description" value="{{ group.description or '' }}"></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="is_default" {{ 'checked' if group.is_default }}><label class="form-check-label">Als Default-Gruppe festlegen <small class="text-muted">(neue Benutzer werden automatisch zugewiesen)</small></label></div>
+                    <hr>
+                    <label class="form-label fw-medium">Verfügbare Features</label>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="transcription_enabled" {{ 'checked' if group.transcription_enabled }}><label class="form-check-label">Transkription</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="meeting_enabled" {{ 'checked' if group.meeting_enabled }}><label class="form-check-label">Meeting</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="dictation_enabled" {{ 'checked' if group.dictation_enabled }}><label class="form-check-label">Diktieren</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="text_tools_enabled" {{ 'checked' if group.text_tools_enabled }}><label class="form-check-label">Text Tools</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" {{ 'checked' if group.dictionary_enabled }}><label class="form-check-label">Wörterbuch</label></div>
+                    <hr>
+                    <label class="form-label fw-medium">Automatisierung</label>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_title_enabled" id="editAutoTitle{{ group.id }}" {{ 'checked' if group.auto_title_enabled }} onchange="document.getElementById('editAutoTitleModel{{ group.id }}').disabled = !this.checked">
+                        <label class="form-check-label" for="editAutoTitle{{ group.id }}">Auto-Titel generieren</label>
+                    </div>
+                    <div class="mb-2 ms-4">
+                        <select class="form-select form-select-sm" name="auto_title_model_id" id="editAutoTitleModel{{ group.id }}" {{ 'disabled' if not group.auto_title_enabled }}>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}" {{ 'selected' if group.auto_title_model_id == m.id }}>{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_summary_enabled" id="editAutoSummary{{ group.id }}" {{ 'checked' if group.auto_summary_enabled }} onchange="document.getElementById('editAutoSummaryModel{{ group.id }}').disabled = !this.checked">
+                        <label class="form-check-label" for="editAutoSummary{{ group.id }}">Auto-Zusammenfassung generieren</label>
+                    </div>
+                    <div class="mb-2 ms-4">
+                        <select class="form-select form-select-sm" name="auto_summary_model_id" id="editAutoSummaryModel{{ group.id }}" {{ 'disabled' if not group.auto_summary_enabled }}>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}" {{ 'selected' if group.auto_summary_model_id == m.id }}>{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="auto_speaker_enabled" id="editAutoSpeaker{{ group.id }}" {{ 'checked' if group.auto_speaker_enabled }} onchange="document.getElementById('editAutoSpeakerModel{{ group.id }}').disabled = !this.checked">
+                        <label class="form-check-label" for="editAutoSpeaker{{ group.id }}">Auto-Sprechererkennung <small class="text-muted">(Namen aus Transkription erkennen)</small></label>
+                    </div>
+                    <div class="mb-3 ms-4">
+                        <select class="form-select form-select-sm" name="auto_speaker_model_id" id="editAutoSpeakerModel{{ group.id }}" {{ 'disabled' if not group.auto_speaker_enabled }}>
+                            <option value="">Textmodell wählen...</option>
+                            {% for m in text_models %}<option value="{{ m.id }}" {{ 'selected' if group.auto_speaker_model_id == m.id }}>{{ m.display_name }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Audio speichern</label>
+                    <div class="form-check mb-1">
+                        <input class="form-check-input" type="checkbox" name="audio_save_enabled" id="editAudioSave{{ group.id }}" {{ 'checked' if group.audio_save_enabled }} onchange="document.getElementById('editAudioDefault{{ group.id }}').disabled = !this.checked">
+                        <label class="form-check-label" for="editAudioSave{{ group.id }}">Audio speichern aktivieren <small class="text-muted">(Checkbox beim Upload anzeigen)</small></label>
+                    </div>
+                    <div class="form-check mb-3 ms-4">
+                        <input class="form-check-input" type="checkbox" name="audio_save_default" id="editAudioDefault{{ group.id }}" {{ 'checked' if group.audio_save_default }} {{ 'disabled' if not group.audio_save_enabled }}>
+                        <label class="form-check-label" for="editAudioDefault{{ group.id }}">Standardmässig speichern</label>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Oberfläche</label>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="hide_single_model" id="editHideSingleModel{{ group.id }}" {{ 'checked' if group.hide_single_model }}>
+                        <label class="form-check-label" for="editHideSingleModel{{ group.id }}">Modellauswahl ausblenden wenn nur ein Modell verfügbar</label>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Upload-Limit</label>
+                    <div class="mb-3">
+                        <label class="form-label">Max. Upload-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_upload_size_mb" value="{{ group.max_upload_size_mb or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Limit (globales Server-Limit gilt). Begrenzt die max. Dateigröße, die Benutzer dieser Gruppe hochladen können.</small>
+                    </div>
+                    <hr>
+                    <div class="mb-3">
+                        <label class="form-label">Sprachmodelle</label>
+                        {% for m in speech_models %}
+                        {% set is_assigned = m in group.speech_models %}
+                        {% set sfns = group_speech_fns.get(group.id, {}).get(m.id, []) %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="speech_model_ids" value="{{ m.id }}" id="edGrp{{ group.id }}Speech{{ m.id }}" {{ 'checked' if is_assigned }} onchange="document.getElementById('edGrp{{ group.id }}SpeechFn{{ m.id }}').style.display = this.checked ? 'block' : 'none'">
+                            <label class="form-check-label" for="edGrp{{ group.id }}Speech{{ m.id }}">{{ m.display_name }}</label>
+                        </div>
+                        <div class="ms-4 mb-2" id="edGrp{{ group.id }}SpeechFn{{ m.id }}" style="{{ 'display:block' if is_assigned else 'display:none' }}">
+                            <small class="text-muted">Funktionen (keine Auswahl = alle):</small>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="transcription" id="edGrp{{ group.id }}SFn{{ m.id }}_t" {{ 'checked' if 'transcription' in sfns }}><label class="form-check-label" for="edGrp{{ group.id }}SFn{{ m.id }}_t">Transkription</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="meeting" id="edGrp{{ group.id }}SFn{{ m.id }}_m" {{ 'checked' if 'meeting' in sfns }}><label class="form-check-label" for="edGrp{{ group.id }}SFn{{ m.id }}_m">Meeting</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="speech_fn_{{ m.id }}" value="dictation" id="edGrp{{ group.id }}SFn{{ m.id }}_d" {{ 'checked' if 'dictation' in sfns }}><label class="form-check-label" for="edGrp{{ group.id }}SFn{{ m.id }}_d">Diktieren</label></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Textmodelle</label>
+                        {% for m in text_models %}
+                        {% set is_assigned = m in group.text_models %}
+                        {% set tfns = group_text_fns.get(group.id, {}).get(m.id, []) %}
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="text_model_ids" value="{{ m.id }}" id="edGrp{{ group.id }}Text{{ m.id }}" {{ 'checked' if is_assigned }} onchange="document.getElementById('edGrp{{ group.id }}TextFn{{ m.id }}').style.display = this.checked ? 'block' : 'none'">
+                            <label class="form-check-label" for="edGrp{{ group.id }}Text{{ m.id }}">{{ m.display_name }}</label>
+                        </div>
+                        <div class="ms-4 mb-2" id="edGrp{{ group.id }}TextFn{{ m.id }}" style="{{ 'display:block' if is_assigned else 'display:none' }}">
+                            <small class="text-muted">Funktionen (keine Auswahl = alle):</small>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="text_tools" id="edGrp{{ group.id }}TFn{{ m.id }}_tt" {{ 'checked' if 'text_tools' in tfns }}><label class="form-check-label" for="edGrp{{ group.id }}TFn{{ m.id }}_tt">Text-Tools</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="summary" id="edGrp{{ group.id }}TFn{{ m.id }}_s" {{ 'checked' if 'summary' in tfns }}><label class="form-check-label" for="edGrp{{ group.id }}TFn{{ m.id }}_s">Zusammenfassung</label></div>
+                            <div class="form-check form-check-inline"><input class="form-check-input" type="checkbox" name="text_fn_{{ m.id }}" value="chat" id="edGrp{{ group.id }}TFn{{ m.id }}_c" {{ 'checked' if 'chat' in tfns }}><label class="form-check-label" for="edGrp{{ group.id }}TFn{{ m.id }}_c">Chat</label></div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<!-- Create Speech Model Modal -->
+<div class="modal fade" id="createSpeechModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.create_speech_model') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Neues Sprachmodell</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Interner Name</label><input type="text" class="form-control" name="name" required></div>
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" required></div>
+                    <div class="mb-3">
+                        <label class="form-label">Provider</label>
+                        <select class="form-select" name="provider" required>
+                            <option value="whisper_local">Lokaler Whisper-Server</option>
+                            <option value="openai">OpenAI API</option>
+                            <option value="azure">Azure AI OpenAI</option>
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label">Endpoint URL</label><input type="url" class="form-control" name="endpoint_url" placeholder="http://whisper:8080/v1/audio/transcriptions"></div>
+                    <div class="mb-3"><label class="form-label">API Key</label><input type="password" class="form-control" name="api_key"></div>
+                    <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="whisper-1"></div>
+                    <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment"></div>
+                    <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" placeholder="2024-06-01"></div>
+                    <div class="mb-3">
+                        <label class="form-label">Sprecher-Modus</label>
+                        <select class="form-select" name="speaker_mode">
+                            <option value="single">Einzelperson</option>
+                            <option value="multi">Mehrere Personen</option>
+                            <option value="both">Beides</option>
+                        </select>
+                        <small class="text-muted">Bestimmt, wo dieses Modell auswählbar ist.</small>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Modell-Fähigkeiten</label>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" id="newSpeechPrompt" checked><label class="form-check-label" for="newSpeechPrompt">Wörterbuch / Prompt</label></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" id="newSpeechTimestamps" checked><label class="form-check-label" for="newSpeechTimestamps">Zeitstempel</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" id="newSpeechDiarize"><label class="form-check-label" for="newSpeechDiarize">Sprecher-Erkennung (Diarisierung)</label></div>
+                    <div class="api-params-preview small bg-light rounded p-2 mb-3" style="font-family: monospace;"></div>
+                    <hr>
+                    <label class="form-label fw-medium">Upload-Limits</label>
+                    <small class="text-muted d-block mb-2">Dateien, die diese Limits überschreiten, werden beim Upload abgelehnt.</small>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Upload-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_upload_size_mb" value="0" min="0">
+                        <small class="text-muted">0 = kein Limit.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max. Upload-Dauer (Sekunden)</label>
+                        <input type="number" class="form-control" name="max_upload_duration_secs" value="0" min="0">
+                        <small class="text-muted">0 = kein Limit.</small>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Audio-Splitting</label>
+                    <small class="text-muted d-block mb-2">Große Dateien werden vor dem API-Aufruf in Chunks aufgeteilt.</small>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Chunk-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_file_size_mb" value="0" min="0">
+                        <small class="text-muted">0 = kein Splitting nach Größe.</small>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Chunk-Dauer (Sekunden)</label>
+                        <input type="number" class="form-control" name="max_duration_secs" value="0" min="0">
+                        <small class="text-muted">0 = kein Splitting nach Dauer.</small>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="use_speaker_references" id="newSpeechSpeakerRefs">
+                        <label class="form-check-label" for="newSpeechSpeakerRefs">Speaker-Referenzen über Chunks weitergeben</label>
+                        <small class="text-muted d-block">Extrahiert nach dem ersten Chunk Audio-Samples pro Sprecher und schickt diese als <code>known_speaker_references</code> an folgende Chunks mit. Nur für OpenAI/Azure mit Diarisierung.</small>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Anfrage</label>
+                    <div class="mb-3">
+                        <label class="form-label">Request-Timeout (Sekunden)</label>
+                        <input type="number" class="form-control" name="request_timeout_secs" value="600" min="30">
+                        <small class="text-muted">Timeout pro API-Anfrage/Chunk. Standard: 600s. Für Diarisierung ggf. erhöhen (z.B. 1200).</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max. parallele Tasks</label>
+                        <input type="number" class="form-control" name="max_parallel_tasks" value="0" min="0">
+                        <small class="text-muted">0 = kein Limit</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Verarbeitungsgeschwindigkeit (Sek. pro Min. Audio)</label>
+                        <input type="number" class="form-control" name="processing_speed" value="0" min="0" step="0.1">
+                        <small class="text-muted">0 = keine Zeitschätzung. Beispiel: 15 = 1 Min Audio → 15 Sek Verarbeitung.</small>
+                    </div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Speech Model Modals -->
+{% for m in speech_models %}
+<div class="modal fade" id="editSpeech{{ m.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.update_speech_model', model_id=m.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Sprachmodell bearbeiten: {{ m.name }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Interner Name</label><input type="text" class="form-control" name="name" value="{{ m.name }}" required></div>
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" value="{{ m.display_name }}" required></div>
+                    <div class="mb-3">
+                        <label class="form-label">Provider</label>
+                        <select class="form-select" name="provider">
+                            <option value="whisper_local" {{ 'selected' if m.provider == 'whisper_local' }}>Lokaler Whisper-Server</option>
+                            <option value="openai" {{ 'selected' if m.provider == 'openai' }}>OpenAI API</option>
+                            <option value="azure" {{ 'selected' if m.provider == 'azure' }}>Azure AI OpenAI</option>
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label">Endpoint URL</label><input type="url" class="form-control" name="endpoint_url" value="{{ m.endpoint_url or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">API Key (leer = unverändert)</label><input type="password" class="form-control" name="api_key"></div>
+                    <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="{{ m.model_id or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment" value="{{ m.azure_deployment or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" value="{{ m.azure_api_version or '' }}"></div>
+                    <div class="mb-3">
+                        <label class="form-label">Sprecher-Modus</label>
+                        <select class="form-select" name="speaker_mode">
+                            <option value="single" {{ 'selected' if m.speaker_mode == 'single' }}>Einzelperson</option>
+                            <option value="multi" {{ 'selected' if m.speaker_mode == 'multi' }}>Mehrere Personen</option>
+                            <option value="both" {{ 'selected' if m.speaker_mode == 'both' }}>Beides</option>
+                        </select>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Modell-Fähigkeiten</label>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_prompt" {{ 'checked' if m.supports_prompt }}><label class="form-check-label">Wörterbuch / Prompt</label></div>
+                    <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="supports_timestamps" {{ 'checked' if m.supports_timestamps }}><label class="form-check-label">Zeitstempel</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="supports_diarize" {{ 'checked' if m.supports_diarize }}><label class="form-check-label">Sprecher-Erkennung (Diarisierung)</label></div>
+                    <div class="api-params-preview small bg-light rounded p-2 mb-3" style="font-family: monospace;"></div>
+                    <hr>
+                    <label class="form-label fw-medium">Upload-Limits</label>
+                    <small class="text-muted d-block mb-2">Dateien, die diese Limits überschreiten, werden beim Upload abgelehnt.</small>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Upload-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_upload_size_mb" value="{{ m.max_upload_size_mb or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Limit.</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max. Upload-Dauer (Sekunden)</label>
+                        <input type="number" class="form-control" name="max_upload_duration_secs" value="{{ m.max_upload_duration_secs or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Limit.</small>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Audio-Splitting</label>
+                    <small class="text-muted d-block mb-2">Große Dateien werden vor dem API-Aufruf in Chunks aufgeteilt.</small>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Chunk-Größe (MB)</label>
+                        <input type="number" class="form-control" name="max_file_size_mb" value="{{ m.max_file_size_mb or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Splitting nach Größe.</small>
+                    </div>
+                    <div class="mb-2">
+                        <label class="form-label">Max. Chunk-Dauer (Sekunden)</label>
+                        <input type="number" class="form-control" name="max_duration_secs" value="{{ m.max_duration_secs or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Splitting nach Dauer.</small>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="use_speaker_references" {{ 'checked' if m.use_speaker_references }}>
+                        <label class="form-check-label">Speaker-Referenzen über Chunks weitergeben</label>
+                        <small class="text-muted d-block">Extrahiert nach dem ersten Chunk Audio-Samples pro Sprecher und schickt diese als <code>known_speaker_references</code> an folgende Chunks mit. Nur für OpenAI/Azure mit Diarisierung.</small>
+                    </div>
+                    <hr>
+                    <label class="form-label fw-medium">Anfrage</label>
+                    <div class="mb-3">
+                        <label class="form-label">Request-Timeout (Sekunden)</label>
+                        <input type="number" class="form-control" name="request_timeout_secs" value="{{ m.request_timeout_secs or 600 }}" min="30">
+                        <small class="text-muted">Timeout pro API-Anfrage/Chunk. Standard: 600s. Für Diarisierung ggf. erhöhen (z.B. 1200).</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Max. parallele Tasks</label>
+                        <input type="number" class="form-control" name="max_parallel_tasks" value="{{ m.max_parallel_tasks or 0 }}" min="0">
+                        <small class="text-muted">0 = kein Limit</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Verarbeitungsgeschwindigkeit (Sek. pro Min. Audio)</label>
+                        <input type="number" class="form-control" name="processing_speed" value="{{ m.processing_speed or 0 }}" min="0" step="0.1">
+                        <small class="text-muted">0 = keine Zeitschätzung. Beispiel: 15 = 1 Min Audio → 15 Sek Verarbeitung.</small>
+                    </div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<!-- Create Text Model Modal -->
+<div class="modal fade" id="createTextModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.create_text_model') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Neues Textmodell</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Interner Name</label><input type="text" class="form-control" name="name" required></div>
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" required></div>
+                    <div class="mb-3">
+                        <label class="form-label">Provider</label>
+                        <select class="form-select" name="provider" required>
+                            <option value="ollama">Ollama</option>
+                            <option value="openai">OpenAI API</option>
+                            <option value="azure">Azure AI OpenAI</option>
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label">Endpoint URL</label><input type="url" class="form-control" name="endpoint_url" placeholder="http://ollama:11434"></div>
+                    <div class="mb-3"><label class="form-label">API Key</label><input type="password" class="form-control" name="api_key"></div>
+                    <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="llama3"></div>
+                    <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment"></div>
+                    <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" placeholder="2024-06-01"></div>
+                    <div class="mb-3"><label class="form-label">Request Timeout (Sekunden)</label><input type="number" class="form-control" name="request_timeout_secs" value="300" min="10"><small class="text-muted">Maximale Wartezeit pro API-Anfrage (Standard: 300s)</small></div>
+                    <div class="mb-3"><label class="form-label">Max. parallele Tasks</label><input type="number" class="form-control" name="max_parallel_tasks" value="0" min="0"><small class="text-muted">0 = kein Limit</small></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" checked><label class="form-check-label">Aktiv</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Erstellen</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Text Model Modals -->
+{% for m in text_models %}
+<div class="modal fade" id="editText{{ m.id }}" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('admin.update_text_model', model_id=m.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header"><h5 class="modal-title">Textmodell bearbeiten: {{ m.name }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <div class="mb-3"><label class="form-label">Interner Name</label><input type="text" class="form-control" name="name" value="{{ m.name }}" required></div>
+                    <div class="mb-3"><label class="form-label">Anzeigename</label><input type="text" class="form-control" name="display_name" value="{{ m.display_name }}" required></div>
+                    <div class="mb-3">
+                        <label class="form-label">Provider</label>
+                        <select class="form-select" name="provider">
+                            <option value="ollama" {{ 'selected' if m.provider == 'ollama' }}>Ollama</option>
+                            <option value="openai" {{ 'selected' if m.provider == 'openai' }}>OpenAI API</option>
+                            <option value="azure" {{ 'selected' if m.provider == 'azure' }}>Azure AI OpenAI</option>
+                        </select>
+                    </div>
+                    <div class="mb-3"><label class="form-label">Endpoint URL</label><input type="url" class="form-control" name="endpoint_url" value="{{ m.endpoint_url or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">API Key (leer = unverändert)</label><input type="password" class="form-control" name="api_key"></div>
+                    <div class="mb-3"><label class="form-label">Modell-ID</label><input type="text" class="form-control" name="model_id" value="{{ m.model_id or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Azure Deployment</label><input type="text" class="form-control" name="azure_deployment" value="{{ m.azure_deployment or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Azure API Version</label><input type="text" class="form-control" name="azure_api_version" value="{{ m.azure_api_version or '' }}"></div>
+                    <div class="mb-3"><label class="form-label">Request Timeout (Sekunden)</label><input type="number" class="form-control" name="request_timeout_secs" value="{{ m.request_timeout_secs or 300 }}" min="10"><small class="text-muted">Maximale Wartezeit pro API-Anfrage (Standard: 300s)</small></div>
+                    <div class="mb-3"><label class="form-label">Max. parallele Tasks</label><input type="number" class="form-control" name="max_parallel_tasks" value="{{ m.max_parallel_tasks or 0 }}" min="0"><small class="text-muted">0 = kein Limit</small></div>
+                    <div class="form-check"><input class="form-check-input" type="checkbox" name="is_active" {{ 'checked' if m.is_active }}><label class="form-check-label">Aktiv</label></div>
+                </div>
+                <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Abbrechen</button><button type="submit" class="btn btn-primary">Speichern</button></div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+<script>
+function updateApiParamsPreview(form) {
+    const preview = form.querySelector('.api-params-preview');
+    if (!preview) return;
+    const providerEl = form.querySelector('[name="provider"]');
+    const diarizeEl = form.querySelector('[name="supports_diarize"]');
+    if (!providerEl || !diarizeEl) return;
+    const provider = providerEl.value;
+    const diarize = diarizeEl.checked;
+    const timestamps = form.querySelector('[name="supports_timestamps"]')?.checked || false;
+    const prompt = form.querySelector('[name="supports_prompt"]')?.checked || false;
+    const modelId = form.querySelector('[name="model_id"]')?.value || 'whisper-1';
+    const timeoutEl = form.querySelector('[name="request_timeout_secs"]');
+    const timeout = timeoutEl ? timeoutEl.value : '600';
+
+    let params = [];
+    let info = '';
+
+    if (provider === 'whisper_local') {
+        params.push(`model=${modelId}`);
+        if (diarize) {
+            params.push('response_format=verbose_json');
+            params.push('diarize=true');
+        } else if (timestamps) {
+            params.push('response_format=verbose_json');
+        }
+        if (prompt) params.push('prompt=&lt;Wörterbuch&gt;');
+        info = 'Lokaler WhisperX-Server';
+    } else if (provider === 'openai') {
+        params.push(`model=${modelId}`);
+        if (diarize) {
+            params.push('response_format=diarized_json');
+            params.push('chunking_strategy=auto');
+        } else if (timestamps) {
+            params.push('response_format=verbose_json');
+        }
+        if (prompt) params.push('prompt=&lt;Wörterbuch&gt;');
+        info = 'OpenAI API';
+    } else if (provider === 'azure') {
+        if (diarize) {
+            params.push('response_format=diarized_json');
+            params.push('chunking_strategy=auto');
+        } else if (timestamps) {
+            params.push('response_format=verbose_json');
+        }
+        if (prompt) params.push('prompt=&lt;Wörterbuch&gt;');
+        info = 'Azure OpenAI';
+    }
+
+    params.push('timeout=' + timeout + 's');
+
+    preview.innerHTML = '<div class="text-muted mb-1"><i class="bi bi-send me-1"></i>API-Parameter (' + info + '):</div>' +
+        params.map(p => '<span class="badge bg-secondary me-1 mb-1">' + p + '</span>').join('');
+}
+
+document.querySelectorAll('form').forEach(form => {
+    if (!form.querySelector('.api-params-preview')) return;
+    ['provider', 'supports_diarize', 'supports_timestamps', 'supports_prompt', 'model_id', 'request_timeout_secs'].forEach(name => {
+        const el = form.querySelector('[name="' + name + '"]');
+        if (el) el.addEventListener('change', () => updateApiParamsPreview(form));
+        if (el && el.type === 'text') el.addEventListener('input', () => updateApiParamsPreview(form));
+    });
+    updateApiParamsPreview(form);
+});
+
+// Jobs tab: filter and popovers
+function filterJobs() {
+    const status = document.getElementById('jobStatusFilter').value;
+    const type = document.getElementById('jobTypeFilter').value;
+    document.querySelectorAll('#jobsTable .job-row').forEach(row => {
+        const matchStatus = !status || row.dataset.status === status;
+        const matchType = !type || row.dataset.type === type;
+        row.style.display = (matchStatus && matchType) ? '' : 'none';
+    });
+}
+
+function showError(btn) {
+    document.getElementById('errorDetailText').textContent = btn.dataset.error;
+    new bootstrap.Modal(document.getElementById('errorDetailModal')).show();
+}
+
+// Admin ETA countdown
+(function() {
+    const etaEls = document.querySelectorAll('[data-admin-eta]');
+    if (!etaEls.length) return;
+    const snapshots = [];
+    const now = Date.now() / 1000;
+    etaEls.forEach(el => {
+        snapshots.push({ el, eta: parseFloat(el.dataset.adminEta), fetchedAt: now, status: el.dataset.adminStatus });
+    });
+    function tick() {
+        const t = Date.now() / 1000;
+        for (const s of snapshots) {
+            const remaining = Math.max(0, Math.round(s.eta - (t - s.fetchedAt)));
+            const m = Math.floor(remaining / 60);
+            const sec = remaining % 60;
+            const timeStr = m > 0 ? m + ' Min ' + sec + ' Sek' : sec + ' Sek';
+            s.el.textContent = s.status === 'pending' ? 'Wartezeit: ' + timeStr : 'Restzeit: ' + timeStr;
+        }
+    }
+    tick();
+    setInterval(tick, 1000);
+})();
+</script>
+{% endblock %}

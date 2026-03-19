@@ -1,0 +1,405 @@
+/* Sidebar */
+.sidebar {
+    width: 260px;
+    min-height: 100vh;
+    background: var(--bs-body-bg);
+    border-right: 1px solid var(--bs-border-color);
+    transition: transform 0.3s ease;
+    z-index: 1040;
+}
+
+[data-bs-theme="dark"] .sidebar {
+    background: #1a1d21;
+}
+
+[data-bs-theme="light"] .sidebar,
+:root:not([data-bs-theme="dark"]) .sidebar {
+    background: #f8f9fa;
+}
+
+.sidebar .nav-link {
+    color: var(--bs-body-color);
+    border-radius: 0.5rem;
+    padding: 0.6rem 1rem;
+    margin-bottom: 2px;
+    transition: all 0.2s;
+}
+
+.sidebar .nav-link:hover {
+    background: var(--bs-tertiary-bg);
+}
+
+.sidebar .nav-link.active {
+    background: var(--bs-primary);
+    color: white;
+}
+
+.sidebar-brand {
+    color: var(--bs-body-color);
+}
+
+/* Top bar */
+.top-bar {
+    background: var(--bs-body-bg);
+    min-height: 56px;
+}
+
+/* Upload zone */
+.upload-zone {
+    cursor: pointer;
+    transition: all 0.2s;
+    border-style: dashed !important;
+    border-width: 2px !important;
+    border-color: var(--bs-border-color) !important;
+}
+
+.upload-zone:hover,
+.upload-zone.dragover {
+    border-color: var(--bs-primary) !important;
+    background: var(--bs-tertiary-bg);
+}
+
+/* Job list — flex-grow to fill available height */
+.job-list {
+    flex-grow: 1;
+    overflow-y: auto;
+}
+
+.job-item {
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: 1px solid var(--bs-border-color);
+}
+
+.job-item:hover {
+    background: var(--bs-tertiary-bg);
+}
+
+.job-item.active {
+    border-color: var(--bs-primary);
+    background: var(--bs-primary-bg-subtle);
+}
+
+/* Inline segment editing */
+.segment-text {
+    cursor: text;
+    border-radius: 4px;
+    padding: 2px 4px;
+    margin: -2px -4px;
+    transition: background-color 0.15s;
+}
+
+.segment-text:hover {
+    background-color: var(--bs-tertiary-bg);
+}
+
+.segment-text textarea {
+    width: 100%;
+}
+
+/* Transcript search highlight */
+#diarizedView mark,
+#timestampView mark,
+#resultText mark {
+    background-color: #ffc107;
+    color: #000;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+[data-bs-theme="dark"] #diarizedView mark,
+[data-bs-theme="dark"] #timestampView mark,
+[data-bs-theme="dark"] #resultText mark {
+    background-color: #b8860b;
+    color: #fff;
+}
+
+/* Status badges */
+.status-pending { color: var(--bs-warning); }
+.status-processing { color: var(--bs-info); }
+.status-completed { color: var(--bs-success); }
+.status-failed { color: var(--bs-danger); }
+
+/* Dictation button */
+.dictation-btn {
+    width: 120px;
+    height: 120px;
+    font-size: 2.5rem;
+    border: 3px solid var(--bs-border-color);
+    color: var(--bs-body-color);
+    background: var(--bs-body-bg);
+    transition: all 0.3s;
+}
+
+.dictation-btn:hover {
+    border-color: var(--bs-danger);
+    color: var(--bs-danger);
+    transform: scale(1.05);
+}
+
+.dictation-btn.recording {
+    border-color: var(--bs-danger);
+    background: var(--bs-danger);
+    color: white;
+    animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.4); }
+    70% { box-shadow: 0 0 0 20px rgba(220, 53, 69, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+}
+
+/* ── Mobile sidebar ─────────────────────────────── */
+@media (max-width: 767.98px) {
+    .sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 260px;
+        height: 100%;
+        z-index: 1045;
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+    .sidebar.show {
+        transform: translateX(0);
+    }
+}
+
+.sidebar-backdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 1044;
+    background: rgba(0, 0, 0, 0.5);
+}
+.sidebar-backdrop.show {
+    display: block;
+}
+
+/* ── Mobile job detail layout ──────────────────── */
+@media (max-width: 991.98px) {
+    .job-detail-row {
+        overflow: visible !important;
+        height: auto !important;
+    }
+    .job-detail-row > [class*="col-"] {
+        max-height: none !important;
+        min-height: auto !important;
+    }
+}
+
+/* Spinner for loading */
+.job-status-icon {
+    width: 20px;
+    height: 20px;
+}
+
+.spinner-grow-sm {
+    width: 0.75rem;
+    height: 0.75rem;
+}
+
+/* Markdown content styling */
+.markdown-content {
+    font-size: 0.95rem;
+    line-height: 1.7;
+}
+
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.markdown-content h1 { font-size: 1.4rem; }
+.markdown-content h2 { font-size: 1.25rem; }
+.markdown-content h3 { font-size: 1.1rem; }
+
+.markdown-content p {
+    margin-bottom: 0.75rem;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+    padding-left: 1.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.markdown-content li {
+    margin-bottom: 0.25rem;
+}
+
+.markdown-content code {
+    padding: 0.15rem 0.4rem;
+    border-radius: 0.25rem;
+    background: var(--bs-tertiary-bg);
+    font-size: 0.875em;
+}
+
+.markdown-content pre {
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    background: var(--bs-tertiary-bg);
+    overflow-x: auto;
+    margin-bottom: 0.75rem;
+}
+
+.markdown-content pre code {
+    padding: 0;
+    background: transparent;
+}
+
+.markdown-content blockquote {
+    border-left: 3px solid var(--bs-primary);
+    padding-left: 1rem;
+    margin-left: 0;
+    color: var(--bs-secondary-color);
+}
+
+.markdown-content table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 0.75rem;
+}
+
+.markdown-content th,
+.markdown-content td {
+    padding: 0.4rem 0.75rem;
+    border: 1px solid var(--bs-border-color);
+}
+
+.markdown-content th {
+    background: var(--bs-tertiary-bg);
+    font-weight: 600;
+}
+
+.markdown-content hr {
+    margin: 1rem 0;
+    border-color: var(--bs-border-color);
+}
+
+.markdown-content strong {
+    font-weight: 600;
+}
+
+.markdown-content > *:first-child {
+    margin-top: 0;
+}
+
+.markdown-content > *:last-child {
+    margin-bottom: 0;
+}
+
+/* Text Tools gradient background */
+.text-tools-bg {
+    min-height: 100%;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(168, 85, 247, 0.08) 50%, rgba(59, 130, 246, 0.05) 100%);
+}
+
+[data-bs-theme="dark"] .text-tools-bg {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.08) 50%, rgba(59, 130, 246, 0.06) 100%);
+}
+
+.text-tools-bg .history-item {
+    background: var(--bs-body-bg);
+    transition: all 0.15s;
+}
+
+.text-tools-bg .history-item:hover {
+    border-color: var(--bs-primary) !important;
+}
+
+/* Dictation gradient background */
+.dictation-bg {
+    min-height: 100%;
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.06) 0%, rgba(168, 85, 247, 0.08) 50%, rgba(59, 130, 246, 0.05) 100%);
+    transition: background 0.5s ease;
+}
+
+[data-bs-theme="dark"] .dictation-bg {
+    background: linear-gradient(135deg, rgba(99, 102, 241, 0.1) 0%, rgba(168, 85, 247, 0.08) 50%, rgba(59, 130, 246, 0.06) 100%);
+}
+
+/* Dictation recording — red glow */
+.dictation-bg.recording {
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.08) 0%, rgba(255, 80, 80, 0.12) 50%, rgba(220, 53, 69, 0.06) 100%);
+}
+
+[data-bs-theme="dark"] .dictation-bg.recording {
+    background: linear-gradient(135deg, rgba(220, 53, 69, 0.15) 0%, rgba(255, 80, 80, 0.18) 50%, rgba(220, 53, 69, 0.1) 100%);
+}
+
+.dictation-bg .job-item {
+    background: var(--bs-body-bg);
+    transition: all 0.15s;
+}
+
+.dictation-bg .job-item:hover {
+    border-color: var(--bs-primary) !important;
+}
+
+/* Chat bubbles */
+.chat-msg-user {
+    background: var(--bs-primary);
+    color: #fff;
+    padding: 0.5rem 0.75rem;
+    border-radius: 1rem 1rem 0.25rem 1rem;
+    font-size: 0.9rem;
+    word-break: break-word;
+}
+
+.chat-msg-assistant {
+    background: var(--bs-tertiary-bg);
+    color: var(--bs-body-color);
+    padding: 0.5rem 0.75rem;
+    border-radius: 1rem 1rem 1rem 0.25rem;
+    font-size: 0.9rem;
+    word-break: break-word;
+}
+
+.chat-msg-assistant .markdown-content {
+    font-size: 0.9rem;
+}
+
+.chat-msg-assistant .markdown-content > *:first-child {
+    margin-top: 0;
+}
+
+.chat-msg-assistant .markdown-content > *:last-child {
+    margin-bottom: 0;
+}
+
+/* Audio player: active segment highlight */
+.segment-active {
+    border-left: 3px solid var(--bs-primary);
+    background-color: rgba(var(--bs-primary-rgb), 0.08);
+    padding-left: 8px;
+    margin-left: -11px;
+    border-radius: 0 4px 4px 0;
+    transition: background-color 0.3s, border-color 0.3s;
+}
+
+[data-bs-theme="dark"] .segment-active {
+    background-color: rgba(var(--bs-primary-rgb), 0.15);
+}
+
+/* Timestamp links (clickable seek) */
+.timestamp-link {
+    cursor: pointer;
+    transition: color 0.15s, text-decoration 0.15s;
+}
+
+.timestamp-link:hover {
+    color: var(--bs-primary) !important;
+    text-decoration: underline;
+}

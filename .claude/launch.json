@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "full-stack",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "--build"],
+      "port": 5050
+    },
+    {
+      "name": "web-app-dev",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["web-app/run.py"],
+      "port": 5000
+    },
+    {
+      "name": "whisper-api-dev",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["whisper-api/app.py"],
+      "port": 8000
+    }
+  ]
+}

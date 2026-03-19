@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% block title %}Transkription - TranscribeOps{% endblock %}
+{% block page_title %}Transkription{% endblock %}
+{% block content %}
+<div class="row g-4 h-100">
+    <!-- Left: Upload area -->
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-4"><i class="bi bi-cloud-arrow-up me-2"></i>Audio hochladen</h5>
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">Sprechermodus</label>
+                            <select class="form-select" id="multiSpeaker" name="multi_speaker" onchange="updateModelList()">
+                                <option value="false">Einzelperson</option>
+                                <option value="true">Mehrere Personen</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4" id="speechModelCol">
+                            <label class="form-label">Modell</label>
+                            <select class="form-select" id="speechModel" name="speech_model_id" onchange="updateUploadLimits()"></select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Sprache (optional)</label>
+                            <select class="form-select" id="language" name="language">
+                                <option value="">Automatisch</option>
+                                <option value="de">Deutsch</option>
+                                <option value="en">Englisch</option>
+                                <option value="fr">Französisch</option>
+                                <option value="es">Spanisch</option>
+                                <option value="it">Italienisch</option>
+                                <option value="pt">Portugiesisch</option>
+                                <option value="nl">Niederländisch</option>
+                                <option value="pl">Polnisch</option>
+                                <option value="ja">Japanisch</option>
+                                <option value="zh">Chinesisch</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    {% if audio_save_enabled %}
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="saveAudio" name="save_audio" {{ 'checked' if audio_save_default }}>
+                        <label class="form-check-label" for="saveAudio"><i class="bi bi-hdd me-1"></i>Audiodatei speichern</label>
+                    </div>
+                    {% endif %}
+
+                    <div class="upload-zone border rounded-3 p-5 text-center mb-3" id="dropZone">
+                        <i class="bi bi-cloud-arrow-up display-4 text-muted"></i>
+                        <p class="mt-2 mb-1">Audiodatei hierher ziehen oder klicken</p>
+                        <small class="text-muted" id="uploadLimits">MP3, WAV, OGG, FLAC, M4A, WebM</small>
+                        <input type="file" class="d-none" id="fileInput" accept=".mp3,.wav,.ogg,.webm,.flac,.m4a,.mp4,.mpeg,.mpga">
+                    </div>
+
+                    <div id="selectedFile" class="d-none mb-3">
+                        <div class="d-flex align-items-center p-3 bg-body-secondary rounded">
+                            <i class="bi bi-file-earmark-music fs-4 me-3"></i>
+                            <div class="flex-grow-1">
+                                <span id="fileName" class="fw-medium"></span>
+                                <br><small id="fileSize" class="text-muted"></small>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="removeFile">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="uploadProgress" class="d-none mb-3">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                        </div>
+                        <small class="text-muted mt-1 d-block">Wird hochgeladen...</small>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>
+                        <i class="bi bi-upload me-2"></i>Transkription starten
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Job history -->
+    <div class="col-lg-5 d-flex flex-column">
+        <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
+            <div class="card-body p-4 flex-grow-1 d-flex flex-column overflow-hidden">
+                <h5 class="card-title mb-3"><i class="bi bi-clock-history me-2"></i>Historie & Jobs</h5>
+                <div class="mb-2">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="jobSearchInput" placeholder="Suchen..." autocomplete="off">
+                    </div>
+                </div>
+                <div id="jobList" class="job-list">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox display-6"></i>
+                        <p class="mt-2">Noch keine Transkriptionen</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const JOB_TYPE = 'transcription';
+
+const singleModels = [{% for m in single_models %}{id:{{ m.id }},name:"{{ m.display_name }}",max_size:{{ m.max_upload_size_mb or 0 }},max_duration:{{ m.max_upload_duration_secs or 0 }}},{% endfor %}];
+const multiModels = [{% for m in multi_models %}{id:{{ m.id }},name:"{{ m.display_name }}",max_size:{{ m.max_upload_size_mb or 0 }},max_duration:{{ m.max_upload_duration_secs or 0 }}},{% endfor %}];
+const hideSingleModel = {{ 'true' if hide_single_model else 'false' }};
+
+function updateModelList() {
+    const isMulti = document.getElementById('multiSpeaker').value === 'true';
+    const models = isMulti ? multiModels : singleModels;
+    const select = document.getElementById('speechModel');
+    select.innerHTML = models.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+    // Hide model column if only one model and setting enabled
+    const col = document.getElementById('speechModelCol');
+    if (hideSingleModel && models.length <= 1) {
+        col.classList.add('d-none');
+    } else {
+        col.classList.remove('d-none');
+    }
+    updateUploadLimits();
+}
+
+function updateUploadLimits() {
+    const el = document.getElementById('uploadLimits');
+    if (!el) return;
+    const isMulti = document.getElementById('multiSpeaker').value === 'true';
+    const models = isMulti ? multiModels : singleModels;
+    const select = document.getElementById('speechModel');
+    const selId = parseInt(select.value);
+    const model = models.find(m => m.id === selId);
+    let text = 'MP3, WAV, OGG, FLAC, M4A, WebM';
+    const parts = [];
+    if (model && model.max_size > 0) parts.push('max. ' + model.max_size + ' MB');
+    if (model && model.max_duration > 0) {
+        const mins = Math.floor(model.max_duration / 60);
+        if (mins > 0) parts.push('max. ' + mins + ' Min.');
+        else parts.push('max. ' + model.max_duration + ' Sek.');
+    }
+    if (parts.length) text += ' (' + parts.join(', ') + ')';
+    el.textContent = text;
+}
+
+function getSelectedModelMaxSize() {
+    const isMulti = document.getElementById('multiSpeaker').value === 'true';
+    const models = isMulti ? multiModels : singleModels;
+    const selId = parseInt(document.getElementById('speechModel').value);
+    const model = models.find(m => m.id === selId);
+    return model ? model.max_size : 0;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    updateModelList();
+    initUpload('uploadForm', 'fileInput', 'dropZone', 'selectedFile', 'fileName', 'fileSize',
+               'removeFile', 'uploadBtn', 'uploadProgress', JOB_TYPE);
+    loadJobs('/api/jobs/transcription', '/api/job', '/transcription-job');
+    setInterval(() => loadJobs('/api/jobs/transcription', '/api/job', '/transcription-job'), 5000);
+});
+</script>
+{% endblock %}
