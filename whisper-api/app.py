@@ -116,8 +116,8 @@ def _process_transcription(tmp_path, model_size, language, response_format, enab
     transcribe_kwargs = {"batch_size": BATCH_SIZE}
     if language:
         transcribe_kwargs["language"] = language
-    if prompt:
-        transcribe_kwargs["initial_prompt"] = prompt
+    # Note: WhisperX's transcribe() does not support initial_prompt.
+    # The prompt parameter is accepted from the API but not forwarded to WhisperX.
 
     logger.info(f"Transcribing '{filename}' with model '{model_size}', language={language}")
     start_time = time.time()
