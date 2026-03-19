@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}Meeting - TranscribeOps{% endblock %}
+{% block page_title %}Meeting{% endblock %}
+{% block content %}
+<div class="row g-4 h-100">
+    <!-- Left: Recording / Upload -->
+    <div class="col-lg-7">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-4"><i class="bi bi-camera-video me-2"></i>Meeting aufzeichnen</h5>
+
+                <div class="row g-3 mb-4">
+                    {% if not (hide_single_model and speech_models|length <= 1) %}
+                    <div class="col-md-6">
+                        <label class="form-label">Modell</label>
+                        <select class="form-select" id="speechModel" onchange="updateUploadLimits()">
+                            {% for m in speech_models %}
+                            <option value="{{ m.id }}">{{ m.display_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    {% else %}
+                    <select class="d-none" id="speechModel">{% for m in speech_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}</select>
+                    {% endif %}
+                    <div class="{{ 'col-md-6' if not (hide_single_model and speech_models|length <= 1) else 'col-md-12' }}">
+                        <label class="form-label">Sprache (optional)</label>
+                        <select class="form-select" id="language">
+                            <option value="">Automatisch</option>
+                            <option value="de">Deutsch</option>
+                            <option value="en">Englisch</option>
+                            <option value="fr">Französisch</option>
+                            <option value="es">Spanisch</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Mic recording -->
+                <div class="text-center mb-4 p-4 border rounded-3">
+                    <button class="btn btn-lg btn-outline-danger rounded-circle p-4" id="recordBtn" onclick="toggleMeetingRecord()">
+                        <i class="bi bi-mic-fill fs-2" id="recordIcon"></i>
+                    </button>
+                    <p class="mt-3 mb-0" id="recordStatus">Klicken um Aufnahme zu starten</p>
+                    <span class="badge bg-danger d-none mt-2" id="recordTimer">00:00:00</span>
+                </div>
+
+                <div class="text-center text-muted mb-3">- oder -</div>
+
+                <!-- File upload -->
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <input type="hidden" id="multiSpeaker" name="multi_speaker" value="true">
+                    {% if audio_save_enabled %}
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="saveAudio" name="save_audio" {{ 'checked' if audio_save_default }}>
+                        <label class="form-check-label" for="saveAudio"><i class="bi bi-hdd me-1"></i>Audiodatei speichern</label>
+                    </div>
+                    {% endif %}
+                    <div class="upload-zone border rounded-3 p-4 text-center mb-3" id="dropZone">
+                        <i class="bi bi-cloud-arrow-up display-5 text-muted"></i>
+                        <p class="mt-2 mb-1">Audiodatei hochladen</p>
+                        <small class="text-muted" id="uploadLimits">MP3, WAV, OGG, FLAC, M4A, WebM</small>
+                        <input type="file" class="d-none" id="fileInput" accept=".mp3,.wav,.ogg,.webm,.flac,.m4a,.mp4">
+                    </div>
+                    <div id="selectedFile" class="d-none mb-3">
+                        <div class="d-flex align-items-center p-3 bg-body-secondary rounded">
+                            <i class="bi bi-file-earmark-music fs-4 me-3"></i>
+                            <div class="flex-grow-1">
+                                <span id="fileName" class="fw-medium"></span>
+                                <br><small id="fileSize" class="text-muted"></small>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-outline-danger" id="removeFile"><i class="bi bi-x-lg"></i></button>
+                        </div>
+                    </div>
+                    <div id="uploadProgress" class="d-none mb-3">
+                        <div class="progress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>
+                        <i class="bi bi-upload me-2"></i>Hochladen & Transkribieren
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: History -->
+    <div class="col-lg-5 d-flex flex-column">
+        <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
+            <div class="card-body p-4 flex-grow-1 d-flex flex-column overflow-hidden">
+                <h5 class="card-title mb-3"><i class="bi bi-clock-history me-2"></i>Meeting-Historie</h5>
+                <div class="mb-2">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" class="form-control" id="jobSearchInput" placeholder="Suchen..." autocomplete="off">
+                    </div>
+                </div>
+                <div id="jobList" class="job-list">
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox display-6"></i>
+                        <p class="mt-2">Noch keine Meetings</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const JOB_TYPE = 'meeting';
+const speechModelData = [{% for m in speech_models %}{id:{{ m.id }},max_size:{{ m.max_upload_size_mb or 0 }},max_duration:{{ m.max_upload_duration_secs or 0 }}},{% endfor %}];
+
+function updateUploadLimits() {
+    const el = document.getElementById('uploadLimits');
+    if (!el) return;
+    const select = document.getElementById('speechModel');
+    const selId = parseInt(select.value);
+    const model = speechModelData.find(m => m.id === selId);
+    let text = 'MP3, WAV, OGG, FLAC, M4A, WebM';
+    const parts = [];
+    if (model && model.max_size > 0) parts.push('max. ' + model.max_size + ' MB');
+    if (model && model.max_duration > 0) {
+        const mins = Math.floor(model.max_duration / 60);
+        if (mins > 0) parts.push('max. ' + mins + ' Min.');
+        else parts.push('max. ' + model.max_duration + ' Sek.');
+    }
+    if (parts.length) text += ' (' + parts.join(', ') + ')';
+    el.textContent = text;
+}
+
+let mediaRecorder = null;
+let audioChunks = [];
+let recordingTimer = null;
+let recordingSeconds = 0;
+
+function toggleMeetingRecord() {
+    if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+        startMeetingRecord();
+    } else {
+        stopMeetingRecord();
+    }
+}
+
+async function startMeetingRecord() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        recordingSeconds = 0;
+
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+        mediaRecorder.onstop = () => {
+            stream.getTracks().forEach(t => t.stop());
+            const blob = new Blob(audioChunks, {type: 'audio/webm'});
+            uploadRecording(blob);
+        };
+
+        mediaRecorder.start();
+        document.getElementById('recordBtn').classList.replace('btn-outline-danger', 'btn-danger');
+        document.getElementById('recordIcon').classList.replace('bi-mic-fill', 'bi-stop-fill');
+        document.getElementById('recordStatus').textContent = 'Aufnahme läuft... Klicken zum Stoppen';
+        const timer = document.getElementById('recordTimer');
+        timer.classList.remove('d-none');
+        recordingTimer = setInterval(() => {
+            recordingSeconds++;
+            const h = String(Math.floor(recordingSeconds / 3600)).padStart(2, '0');
+            const m = String(Math.floor((recordingSeconds % 3600) / 60)).padStart(2, '0');
+            const s = String(recordingSeconds % 60).padStart(2, '0');
+            timer.textContent = `${h}:${m}:${s}`;
+        }, 1000);
+    } catch (err) {
+        alert('Mikrofon-Zugriff nicht möglich: ' + err.message);
+    }
+}
+
+function stopMeetingRecord() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        clearInterval(recordingTimer);
+        document.getElementById('recordBtn').classList.replace('btn-danger', 'btn-outline-danger');
+        document.getElementById('recordIcon').classList.replace('bi-stop-fill', 'bi-mic-fill');
+        document.getElementById('recordStatus').textContent = 'Aufnahme wird verarbeitet...';
+    }
+}
+
+async function uploadRecording(blob) {
+    const formData = new FormData();
+    formData.append('audio', blob, 'meeting_recording.webm');
+    formData.append('job_type', 'meeting');
+    formData.append('speech_model_id', document.getElementById('speechModel').value);
+    formData.append('language', document.getElementById('language').value);
+    formData.append('multi_speaker', 'true');
+    const saveAudioEl = document.getElementById('saveAudio');
+    if (saveAudioEl) formData.append('save_audio', saveAudioEl.checked ? '1' : '0');
+
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    const resp = await fetch('/api/upload-audio', {
+        method: 'POST', body: formData, headers: {'X-CSRFToken': token}
+    });
+    const data = await resp.json();
+    document.getElementById('recordStatus').textContent = 'Klicken um Aufnahme zu starten';
+    document.getElementById('recordTimer').classList.add('d-none');
+    loadJobs('/api/meetings', '/api/meeting', '/meeting-job');
+}
+
+function getSelectedModelMaxSize() {
+    const selId = parseInt(document.getElementById('speechModel').value);
+    const model = speechModelData.find(m => m.id === selId);
+    return model ? model.max_size : 0;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    updateUploadLimits();
+    initUpload('uploadForm', 'fileInput', 'dropZone', 'selectedFile', 'fileName', 'fileSize',
+               'removeFile', 'uploadBtn', 'uploadProgress', JOB_TYPE);
+    loadJobs('/api/meetings', '/api/meeting', '/meeting-job');
+    setInterval(() => loadJobs('/api/meetings', '/api/meeting', '/meeting-job'), 5000);
+});
+</script>
+{% endblock %}
