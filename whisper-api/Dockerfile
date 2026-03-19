@@ -21,8 +21,8 @@ ENV WHISPER_BATCH_SIZE="16"
 ENV HF_TOKEN=""
 ENV PYTHONUNBUFFERED=1
 
-# Pre-download default model during build for faster startup
-RUN python -c "import whisperx; whisperx.load_model('medium', device='cpu', compute_type='int8')"
+# Note: Model is downloaded at first startup and cached in the whisper_cache volume.
+# Pre-downloading during build is skipped because the volume mount overrides /root/.cache.
 
 EXPOSE 8000
 

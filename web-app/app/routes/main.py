@@ -84,11 +84,13 @@ def transcription_job_detail(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
         abort(404)
-    text_models = current_user.get_available_text_models()
+    text_models = current_user.get_available_text_models(function='summary')
+    chat_models = current_user.get_available_text_models(function='chat')
     hide_single_model = current_user.get_hide_single_model()
     return render_template('main/job_detail.html',
                            job=job, record_type='job',
                            text_models=text_models,
+                           chat_models=chat_models,
                            hide_single_model=hide_single_model,
                            back_url=url_for('main.transcription'))
 
@@ -101,11 +103,13 @@ def meeting_job_detail(public_id):
     m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not m:
         abort(404)
-    text_models = current_user.get_available_text_models()
+    text_models = current_user.get_available_text_models(function='summary')
+    chat_models = current_user.get_available_text_models(function='chat')
     hide_single_model = current_user.get_hide_single_model()
     return render_template('main/job_detail.html',
                            job=m, record_type='meeting',
                            text_models=text_models,
+                           chat_models=chat_models,
                            hide_single_model=hide_single_model,
                            back_url=url_for('main.meeting'))
 
@@ -118,11 +122,13 @@ def dictation_job_detail(public_id):
     d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not d:
         abort(404)
-    text_models = current_user.get_available_text_models()
+    text_models = current_user.get_available_text_models(function='summary')
+    chat_models = current_user.get_available_text_models(function='chat')
     hide_single_model = current_user.get_hide_single_model()
     return render_template('main/job_detail.html',
                            job=d, record_type='dictation',
                            text_models=text_models,
+                           chat_models=chat_models,
                            hide_single_model=hide_single_model,
                            back_url=url_for('main.dictation'))
 

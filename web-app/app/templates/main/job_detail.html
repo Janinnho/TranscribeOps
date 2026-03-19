@@ -237,9 +237,9 @@
                 </div>
 
                 <!-- Model selector -->
-                <div class="mb-2 {{ 'd-none' if hide_single_model and text_models|length <= 1 }}">
+                <div class="mb-2 {{ 'd-none' if hide_single_model and (chat_models|default(text_models))|length <= 1 }}">
                     <select class="form-select form-select-sm" id="chatModelSelect">
-                        {% for m in text_models %}
+                        {% for m in chat_models|default(text_models) %}
                         <option value="{{ m.id }}">{{ m.display_name }}</option>
                         {% endfor %}
                     </select>

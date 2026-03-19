@@ -1277,4 +1277,5 @@ def process_chat_message(self, chat_message_id, text_model_id):
             db.session.commit()
     finally:
         _release_slot('text', text_model_id)
-        return {'status': msg.status, 'chat_message_id': chat_message_id}
+
+    return {'status': msg.status if msg else 'failed', 'chat_message_id': chat_message_id}
