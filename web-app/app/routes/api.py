@@ -132,6 +132,18 @@ def upload():
     multi_speaker = request.form.get('multi_speaker') == 'true'
     save_audio = request.form.get('save_audio') == '1'
 
+    # Validate feature access based on job_type
+    if job_type == 'meeting' and not current_user.has_meeting_access():
+        return jsonify({'error': 'Kein Zugriff auf Meeting-Funktion'}), 403
+    elif job_type != 'meeting' and not current_user.has_transcription_access():
+        return jsonify({'error': 'Kein Zugriff auf Transkription'}), 403
+
+    # Validate speech model access
+    if speech_model_id:
+        allowed_model_ids = {m.id for m in current_user.get_available_speech_models()}
+        if speech_model_id not in allowed_model_ids:
+            return jsonify({'error': 'Kein Zugriff auf dieses Sprachmodell'}), 403
+
     # Check speech model upload limits
     if speech_model_id:
         speech_model = db.session.get(SpeechModel, speech_model_id)
@@ -224,6 +236,18 @@ def upload_audio():
     speech_model_id = request.form.get('speech_model_id', type=int)
     language = request.form.get('language', '').strip() or None
     save_audio = request.form.get('save_audio') == '1'
+
+    # Validate feature access based on job_type
+    if job_type == 'meeting' and not current_user.has_meeting_access():
+        return jsonify({'error': 'Kein Zugriff auf Meeting-Funktion'}), 403
+    elif job_type != 'meeting' and not current_user.has_dictation_access():
+        return jsonify({'error': 'Kein Zugriff auf Diktat-Funktion'}), 403
+
+    # Validate speech model access
+    if speech_model_id:
+        allowed_model_ids = {m.id for m in current_user.get_available_speech_models()}
+        if speech_model_id not in allowed_model_ids:
+            return jsonify({'error': 'Kein Zugriff auf dieses Sprachmodell'}), 403
 
     ext = 'webm'
     unique_name = f"{uuid.uuid4().hex}_recording.{ext}"

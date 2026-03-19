@@ -61,7 +61,9 @@ def create_app(config_class=Config):
         import os
         os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
         os.makedirs(app.config['AUDIO_STORAGE_PATH'], exist_ok=True)
-        os.makedirs(os.path.dirname(app.config['SQLALCHEMY_DATABASE_URI'].replace('sqlite:///', '')), exist_ok=True)
+        db_uri = app.config['SQLALCHEMY_DATABASE_URI']
+        if db_uri.startswith('sqlite:///'):
+            os.makedirs(os.path.dirname(db_uri.replace('sqlite:///', '')), exist_ok=True)
         try:
             db.create_all()
         except Exception:

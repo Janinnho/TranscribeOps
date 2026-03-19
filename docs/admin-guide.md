@@ -349,7 +349,7 @@ Beim ersten Start werden automatisch folgende Daten angelegt:
 | Name | `whisper-lokal` |
 | Anzeigename | `Lokales Whisper` |
 | Provider | `whisper_local` |
-| Endpunkt-URL | `http://whisper:8080/v1/audio/transcriptions` |
+| Endpunkt-URL | `http://whisper:8000/v1/audio/transcriptions` |
 | Modell-ID | `whisper-1` |
 | Sprecher-Modus | `both` |
 | Zeitstempel | Ja |

@@ -127,7 +127,7 @@ Beim ersten Start passiert Folgendes automatisch:
 2. **Migrationen werden ausgeführt** — Fehlende Spalten/Tabellen werden automatisch angelegt
 3. **Standarddaten werden angelegt:**
    - Admin-Benutzer: `admin@transcribeops.local` / `admin`
-   - Standard-Sprachmodell: Lokales Whisper unter `http://whisper:8080/v1/audio/transcriptions`
+   - Standard-Sprachmodell: Lokales Whisper unter `http://whisper:8000/v1/audio/transcriptions`
    - Standard-Textmodell: Lokales Ollama unter `http://ollama:11434`
    - Standardgruppe: „Standard"
    - Zeitzone: `Europe/Berlin`
@@ -163,7 +163,7 @@ Beim ersten Start passiert Folgendes automatisch:
 Nach dem Login empfehlen sich folgende Schritte:
 
 1. **Admin-Passwort ändern** — Im Admin-Portal unter Benutzer
-2. **Sprachmodell prüfen** — Das Standard-Whisper-Modell zeigt auf `http://whisper:8080/v1/audio/transcriptions`. Falls der Whisper-Service auf einem anderen Port läuft, die URL anpassen.
+2. **Sprachmodell prüfen** — Das Standard-Whisper-Modell zeigt auf `http://whisper:8000/v1/audio/transcriptions`. Falls der Whisper-Service auf einem anderen Port läuft, die URL anpassen.
 3. **Textmodell konfigurieren** — Falls Ollama nicht verfügbar ist, ein alternatives Textmodell einrichten (OpenAI, Azure)
 4. **Zeitzone einstellen** — Unter Admin > Global die gewünschte Zeitzone auswählen
 5. **Benutzer anlegen** — Weitere Benutzer im Admin-Portal erstellen

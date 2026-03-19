@@ -1,6 +1,6 @@
 # Whisper API Service
 
-Der Whisper API Service ist ein eigenständiger Flask-Server, der eine **OpenAI-kompatible** Transkriptions-API bereitstellt. Er verwendet [faster-whisper](https://github.com/SYSTRAN/faster-whisper), eine optimierte Implementierung von OpenAI Whisper, für lokale Spracherkennung.
+Der Whisper API Service ist ein eigenständiger Flask-Server, der eine **OpenAI-kompatible** Transkriptions-API bereitstellt. Er verwendet [WhisperX](https://github.com/m-bain/whisperX) (basierend auf faster-whisper) mit Word-Level-Alignment und optionaler Speaker Diarization.
 
 ## Inhaltsverzeichnis
 
@@ -21,7 +21,7 @@ Der Whisper API Service ist ein eigenständiger Flask-Server, der eine **OpenAI-
 | Eigenschaft | Wert |
 |------------|------|
 | **Framework** | Flask + Gunicorn |
-| **Engine** | faster-whisper 1.1.1 (CTranslate2) |
+| **Engine** | WhisperX (faster-whisper + Alignment + Diarization) |
 | **API-Kompatibilität** | OpenAI Whisper API (`/v1/audio/transcriptions`) |
 | **Standard-Port** | 8000 (intern), 8090 (extern) |
 | **Standard-Modell** | `medium` |

@@ -28,9 +28,22 @@ _diarize_pipeline = None
 
 # Async task tracking
 _tasks = {}
+_tasks_lock = threading.Lock()
+_TASK_TTL_SECS = 3600  # Clean up completed tasks after 1 hour
 
 # Lock to ensure only one transcription runs at a time (models are not thread-safe)
 _transcription_lock = threading.Lock()
+
+
+def _cleanup_stale_tasks():
+    """Remove completed/failed tasks older than TTL."""
+    now = time.time()
+    with _tasks_lock:
+        stale = [tid for tid, t in _tasks.items()
+                 if t.get("status") in ("completed", "failed")
+                 and now - t.get("completed_at", now) > _TASK_TTL_SECS]
+        for tid in stale:
+            del _tasks[tid]
 
 
 def get_model(model_size):
@@ -89,7 +102,7 @@ _default_model = get_model(DEFAULT_MODEL_SIZE)
 logger.info("WhisperX API ready.")
 
 
-def _process_transcription(tmp_path, model_size, language, response_format, enable_diarize, filename, task_id=None):
+def _process_transcription(tmp_path, model_size, language, response_format, enable_diarize, filename, task_id=None, prompt=None):
     """Core transcription logic. If task_id is provided, updates _tasks with progress."""
     def _update(progress=None, step=None):
         if task_id and task_id in _tasks:
@@ -103,6 +116,8 @@ def _process_transcription(tmp_path, model_size, language, response_format, enab
     transcribe_kwargs = {"batch_size": BATCH_SIZE}
     if language:
         transcribe_kwargs["language"] = language
+    if prompt:
+        transcribe_kwargs["initial_prompt"] = prompt
 
     logger.info(f"Transcribing '{filename}' with model '{model_size}', language={language}")
     start_time = time.time()
@@ -190,18 +205,22 @@ def _process_transcription(tmp_path, model_size, language, response_format, enab
         return {"text": full_text}
 
 
-def _run_async_task(task_id, tmp_path, model_size, language, response_format, enable_diarize, filename):
+def _run_async_task(task_id, tmp_path, model_size, language, response_format, enable_diarize, filename, prompt=None):
     """Background thread wrapper for async transcription."""
     try:
         with _transcription_lock:
-            result = _process_transcription(tmp_path, model_size, language, response_format, enable_diarize, filename, task_id=task_id)
-        _tasks[task_id]["status"] = "completed"
-        _tasks[task_id]["progress"] = 100
-        _tasks[task_id]["result"] = result
+            result = _process_transcription(tmp_path, model_size, language, response_format, enable_diarize, filename, task_id=task_id, prompt=prompt)
+        with _tasks_lock:
+            _tasks[task_id]["status"] = "completed"
+            _tasks[task_id]["progress"] = 100
+            _tasks[task_id]["result"] = result
+            _tasks[task_id]["completed_at"] = time.time()
     except Exception as e:
         logger.error(f"Async transcription failed: {e}", exc_info=True)
-        _tasks[task_id]["status"] = "failed"
-        _tasks[task_id]["error"] = str(e)
+        with _tasks_lock:
+            _tasks[task_id]["status"] = "failed"
+            _tasks[task_id]["error"] = str(e)
+            _tasks[task_id]["completed_at"] = time.time()
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
@@ -243,17 +262,19 @@ def transcribe():
 
     # Async mode: start background thread and return task_id
     if async_mode:
+        _cleanup_stale_tasks()
         task_id = uuid.uuid4().hex
-        _tasks[task_id] = {
-            "status": "processing",
-            "progress": 0,
-            "progress_step": "",
-            "result": None,
-            "error": None,
-        }
+        with _tasks_lock:
+            _tasks[task_id] = {
+                "status": "processing",
+                "progress": 0,
+                "progress_step": "",
+                "result": None,
+                "error": None,
+            }
         thread = threading.Thread(
             target=_run_async_task,
-            args=(task_id, tmp_path, model_size, language, response_format, enable_diarize, audio_file.filename),
+            args=(task_id, tmp_path, model_size, language, response_format, enable_diarize, audio_file.filename, prompt),
             daemon=True,
         )
         thread.start()
@@ -262,7 +283,7 @@ def transcribe():
     # Synchronous mode (original behavior)
     try:
         with _transcription_lock:
-            result = _process_transcription(tmp_path, model_size, language, response_format, enable_diarize, audio_file.filename)
+            result = _process_transcription(tmp_path, model_size, language, response_format, enable_diarize, audio_file.filename, prompt=prompt)
 
         # Handle raw text responses (text/srt/vtt)
         if "_raw_text" in result:
