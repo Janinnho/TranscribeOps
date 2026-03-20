@@ -315,7 +315,9 @@ def create_text_task():
     db.session.commit()
 
     from app.tasks import process_text_tool
-    process_text_tool.delay(task.id)
+    celery_result = process_text_tool.delay(task.id)
+    task.celery_task_id = celery_result.id
+    db.session.commit()
 
     return jsonify({'id': task.public_id, 'status': 'pending'})
 

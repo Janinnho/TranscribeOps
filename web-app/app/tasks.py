@@ -372,6 +372,11 @@ def process_summary(self, record_id, text_model_id, model_type='job'):
             if not record or not text_model:
                 return {'error': 'Record or model not found'}
 
+            # Check if cancelled while queued, before overwriting status
+            db.session.refresh(record)
+            if record.summary_status == 'cancelled':
+                return {'status': 'cancelled', 'record_id': record_id}
+
             record.summary_status = 'processing'
             db.session.commit()
 
@@ -1240,6 +1245,11 @@ def process_chat_message(self, chat_message_id, text_model_id):
             if not msg or not text_model:
                 return {'error': 'Message or model not found'}
 
+            # Check if already cancelled by admin before starting
+            db.session.refresh(msg)
+            if msg.status in ('failed', 'cancelled'):
+                return {'status': msg.status, 'chat_message_id': chat_message_id}
+
             msg.status = 'processing'
             db.session.commit()
 
@@ -1281,6 +1291,12 @@ def process_chat_message(self, chat_message_id, text_model_id):
                     messages.append({'role': h.role, 'content': h.content})
 
                 result = _call_chat_api(text_model, messages)
+
+                # Check if cancelled by admin during LLM call
+                db.session.refresh(msg)
+                if msg.status in ('failed', 'cancelled'):
+                    return {'status': msg.status, 'chat_message_id': chat_message_id}
+
                 msg.content = result
                 msg.status = 'completed'
             except Exception as e:

@@ -77,9 +77,18 @@ def dashboard():
     sso_settings = get_all_sso_settings()
 
     # Global job list: recent jobs/meetings/dictations across all users
-    from sqlalchemy import union_all, literal, text
+    from sqlalchemy import union_all, literal, text, func
     from app.utils import format_dt
     from app.routes.api import _compute_eta_seconds
+
+    # Precompute chat processing counts to avoid N+1 queries
+    _chat_counts_raw = (
+        db.session.query(ChatMessage.record_type, ChatMessage.record_id, func.count())
+        .filter_by(status='processing')
+        .group_by(ChatMessage.record_type, ChatMessage.record_id)
+        .all()
+    )
+    _chat_counts = {(rt, rid): cnt for rt, rid, cnt in _chat_counts_raw}
 
     ACTION_LABELS = {
         'rewrite': 'Umschreiben',
@@ -90,7 +99,10 @@ def dashboard():
 
     def _build_record(record, rtype, record_type_str):
         user = db.session.get(User, record.user_id)
-        eta = _compute_eta_seconds(record) if record.status in ('pending', 'processing') else None
+        # TextTasks have no audio_duration_secs/speech_model — skip ETA for them
+        eta = (_compute_eta_seconds(record)
+               if record.status in ('pending', 'processing') and record_type_str not in ('text_task',)
+               else None)
         started = getattr(record, 'processing_started_at', None)
         if started and started.tzinfo is None:
             from datetime import timezone as tz
@@ -121,9 +133,7 @@ def dashboard():
             'summary_status': getattr(record, 'summary_status', None),
             'title_status': getattr(record, 'title_status', None),
             'speaker_identify_status': getattr(record, 'speaker_identify_status', None),
-            'chat_processing_count': ChatMessage.query.filter_by(
-                record_type=record_type_str, record_id=record.id, status='processing'
-            ).count() if record_type_str in ('job', 'meeting') else 0,
+            'chat_processing_count': _chat_counts.get((record_type_str, record.id), 0),
         }
 
     all_records = []
