@@ -364,6 +364,8 @@ class TextTask(db.Model):
     target_language = db.Column(db.String(50))
     text_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'))
     error_message = db.Column(db.Text)
+    processing_started_at = db.Column(db.DateTime)
+    celery_task_id = db.Column(db.String(155))
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     completed_at = db.Column(db.DateTime)
 

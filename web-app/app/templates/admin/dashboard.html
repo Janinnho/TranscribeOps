@@ -225,6 +225,7 @@
                     <option value="Transkription">Transkription</option>
                     <option value="Meeting">Meeting</option>
                     <option value="Diktat">Diktat</option>
+                    <option value="Textverarbeitung">Textverarbeitung</option>
                 </select>
                 <small class="text-muted">Letzte 100</small>
             </div>
@@ -262,7 +263,59 @@
                             {% endif %}
                         </td>
                         <td><span class="badge bg-secondary">{{ r.type }}</span></td>
-                        <td class="text-truncate" style="max-width: 250px;" title="{{ r.title or '-' }}">{{ r.title or '-' }}</td>
+                        <td style="max-width: 280px;">
+                            <div class="text-truncate" title="{{ r.title or '-' }}">{{ r.title or '-' }}</div>
+                            {% if r.summary_status or r.title_status or r.speaker_identify_status or r.chat_processing_count %}
+                            <div class="mt-1 d-flex flex-wrap gap-1 align-items-center">
+                                {% if r.title_status %}
+                                <span class="badge bg-{{ 'success' if r.title_status == 'completed' else 'info' if r.title_status == 'processing' else 'danger' if r.title_status == 'failed' else 'secondary' }} bg-opacity-75" style="font-size:.6em">
+                                    {% if r.title_status == 'processing' %}<span class="spinner-grow spinner-grow-sm" style="width:.5em;height:.5em"></span>{% else %}<i class="bi bi-{{ 'check' if r.title_status == 'completed' else 'x' if r.title_status == 'failed' else 'dash' }}"></i>{% endif %} Titel
+                                </span>
+                                {% if r.title_status == 'processing' %}
+                                <form method="POST" action="{{ url_for('admin.cancel_subtask', record_type=r.record_type, record_id=r.record_id) }}" style="display:inline" onsubmit="return confirm('Titelgenerierung abbrechen?')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="subtask" value="title">
+                                    <button type="submit" class="btn btn-link btn-sm text-danger p-0" style="font-size:.65em" title="Abbrechen"><i class="bi bi-x-circle"></i></button>
+                                </form>
+                                {% endif %}
+                                {% endif %}
+                                {% if r.summary_status %}
+                                <span class="badge bg-{{ 'success' if r.summary_status == 'completed' else 'info' if r.summary_status == 'processing' else 'danger' if r.summary_status == 'failed' else 'secondary' }} bg-opacity-75" style="font-size:.6em">
+                                    {% if r.summary_status == 'processing' %}<span class="spinner-grow spinner-grow-sm" style="width:.5em;height:.5em"></span>{% else %}<i class="bi bi-{{ 'check' if r.summary_status == 'completed' else 'x' if r.summary_status == 'failed' else 'dash' }}"></i>{% endif %} Zusammenfassung
+                                </span>
+                                {% if r.summary_status == 'processing' %}
+                                <form method="POST" action="{{ url_for('admin.cancel_subtask', record_type=r.record_type, record_id=r.record_id) }}" style="display:inline" onsubmit="return confirm('Zusammenfassung abbrechen?')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="subtask" value="summary">
+                                    <button type="submit" class="btn btn-link btn-sm text-danger p-0" style="font-size:.65em" title="Abbrechen"><i class="bi bi-x-circle"></i></button>
+                                </form>
+                                {% endif %}
+                                {% endif %}
+                                {% if r.speaker_identify_status %}
+                                <span class="badge bg-{{ 'success' if r.speaker_identify_status == 'completed' else 'info' if r.speaker_identify_status == 'processing' else 'danger' if r.speaker_identify_status == 'failed' else 'secondary' }} bg-opacity-75" style="font-size:.6em">
+                                    {% if r.speaker_identify_status == 'processing' %}<span class="spinner-grow spinner-grow-sm" style="width:.5em;height:.5em"></span>{% else %}<i class="bi bi-{{ 'check' if r.speaker_identify_status == 'completed' else 'x' if r.speaker_identify_status == 'failed' else 'dash' }}"></i>{% endif %} Sprecher
+                                </span>
+                                {% if r.speaker_identify_status == 'processing' %}
+                                <form method="POST" action="{{ url_for('admin.cancel_subtask', record_type=r.record_type, record_id=r.record_id) }}" style="display:inline" onsubmit="return confirm('Sprechererkennung abbrechen?')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="subtask" value="speaker">
+                                    <button type="submit" class="btn btn-link btn-sm text-danger p-0" style="font-size:.65em" title="Abbrechen"><i class="bi bi-x-circle"></i></button>
+                                </form>
+                                {% endif %}
+                                {% endif %}
+                                {% if r.chat_processing_count %}
+                                <span class="badge bg-info bg-opacity-75" style="font-size:.6em">
+                                    <span class="spinner-grow spinner-grow-sm" style="width:.5em;height:.5em"></span> Chat ({{ r.chat_processing_count }})
+                                </span>
+                                <form method="POST" action="{{ url_for('admin.cancel_subtask', record_type=r.record_type, record_id=r.record_id) }}" style="display:inline" onsubmit="return confirm('Chat-Verarbeitung abbrechen?')">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <input type="hidden" name="subtask" value="chat">
+                                    <button type="submit" class="btn btn-link btn-sm text-danger p-0" style="font-size:.65em" title="Abbrechen"><i class="bi bi-x-circle"></i></button>
+                                </form>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </td>
                         <td title="{{ r.user_email }}">{{ r.user_name }}</td>
                         <td><small>{{ r.speech_model }}</small></td>
                         <td>
