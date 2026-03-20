@@ -250,6 +250,13 @@ def _apply_migrations():
             if _has_table(tbl) and not _has_column(tbl, 'processing_started_at'):
                 _safe_execute(conn, f"ALTER TABLE {tbl} ADD COLUMN processing_started_at DATETIME")
 
+        # TextTasks: celery_task_id and processing_started_at for admin cancel/ETA
+        if _has_table('text_tasks'):
+            if not _has_column('text_tasks', 'celery_task_id'):
+                _safe_execute(conn, "ALTER TABLE text_tasks ADD COLUMN celery_task_id VARCHAR(155)")
+            if not _has_column('text_tasks', 'processing_started_at'):
+                _safe_execute(conn, "ALTER TABLE text_tasks ADD COLUMN processing_started_at DATETIME")
+
         # Per-function model restrictions
         if not _has_table('group_speech_model_functions'):
             from app.models import group_speech_model_functions

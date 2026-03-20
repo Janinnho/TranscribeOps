@@ -5,7 +5,7 @@ import os
 from flask import current_app
 from app import db
 from app.models import (User, Group, SpeechModel, TextModel, SystemSetting, Job, Meeting, Dictation, TextTask,
-                        group_speech_model_functions, group_text_model_functions)
+                        ChatMessage, group_speech_model_functions, group_text_model_functions)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -77,31 +77,63 @@ def dashboard():
     sso_settings = get_all_sso_settings()
 
     # Global job list: recent jobs/meetings/dictations across all users
-    from sqlalchemy import union_all, literal, text
+    from sqlalchemy import union_all, literal, text, func
     from app.utils import format_dt
     from app.routes.api import _compute_eta_seconds
 
+    # Precompute chat processing counts to avoid N+1 queries
+    _chat_counts_raw = (
+        db.session.query(ChatMessage.record_type, ChatMessage.record_id, func.count())
+        .filter_by(status='processing')
+        .group_by(ChatMessage.record_type, ChatMessage.record_id)
+        .all()
+    )
+    _chat_counts = {(rt, rid): cnt for rt, rid, cnt in _chat_counts_raw}
+
+    ACTION_LABELS = {
+        'rewrite': 'Umschreiben',
+        'grammar': 'Grammatik',
+        'translate': 'Übersetzen',
+        'summarize': 'Zusammenfassen',
+    }
+
     def _build_record(record, rtype, record_type_str):
         user = db.session.get(User, record.user_id)
-        eta = _compute_eta_seconds(record) if record.status in ('pending', 'processing') else None
+        # TextTasks have no audio_duration_secs/speech_model — skip ETA for them
+        eta = (_compute_eta_seconds(record)
+               if record.status in ('pending', 'processing') and record_type_str not in ('text_task',)
+               else None)
         started = getattr(record, 'processing_started_at', None)
         if started and started.tzinfo is None:
             from datetime import timezone as tz
             started = started.replace(tzinfo=tz.utc)
+        # TextTask has no speech_model; use text_model instead
+        speech_model = getattr(record, 'speech_model', None)
+        text_model = getattr(record, 'text_model', None)
+        model_name = (speech_model.display_name if speech_model else
+                      text_model.display_name if text_model else '-')
+        # TextTask has no title; use action label
+        title = getattr(record, 'title', None)
+        if not title and hasattr(record, 'action'):
+            title = ACTION_LABELS.get(record.action, record.action)
         return {
             'type': rtype,
             'record_type': record_type_str,
             'record_id': record.id,
-            'title': record.title,
+            'title': title,
             'status': record.status,
             'user_name': user.display_name if user else '?',
             'user_email': user.email if user else '',
             'error_message': record.error_message,
             'created_at': format_dt(record.created_at),
             'created_at_raw': record.created_at,
-            'speech_model': record.speech_model.display_name if record.speech_model else '-',
+            'speech_model': model_name,
             'eta_seconds': eta,
             'processing_started_at': started.isoformat() if started else None,
+            'summary_status': getattr(record, 'summary_status', None),
+            'title_status': getattr(record, 'title_status', None),
+            'speaker_identify_status': getattr(record, 'speaker_identify_status', None),
+            'chat_processing_count': _chat_counts.get((record_type_str, record.id), 0),
         }
 
     all_records = []
@@ -111,6 +143,8 @@ def dashboard():
         all_records.append(_build_record(record, 'Meeting', 'meeting'))
     for record in Dictation.query.order_by(Dictation.created_at.desc()).limit(100).all():
         all_records.append(_build_record(record, 'Diktat', 'dictation'))
+    for record in TextTask.query.order_by(TextTask.created_at.desc()).limit(100).all():
+        all_records.append(_build_record(record, 'Textverarbeitung', 'text_task'))
     all_records.sort(key=lambda r: r['created_at_raw'] or '', reverse=True)
     all_records = all_records[:100]
 
@@ -558,7 +592,7 @@ def update_global():
 @admin_bp.route('/job/<record_type>/<int:record_id>/cancel', methods=['POST'])
 @admin_required
 def cancel_job(record_type, record_id):
-    model_map = {'job': Job, 'meeting': Meeting, 'dictation': Dictation}
+    model_map = {'job': Job, 'meeting': Meeting, 'dictation': Dictation, 'text_task': TextTask}
     model_cls = model_map.get(record_type)
     if not model_cls:
         flash('Ungültiger Typ.', 'danger')
@@ -577,6 +611,50 @@ def cancel_job(record_type, record_id):
     record.error_message = 'Vom Administrator abgebrochen'
     db.session.commit()
     flash('Job abgebrochen.', 'success')
+    return redirect(url_for('admin.dashboard'))
+
+
+# --- Sub-Task Cancellation ---
+
+@admin_bp.route('/job/<record_type>/<int:record_id>/cancel-subtask', methods=['POST'])
+@admin_required
+def cancel_subtask(record_type, record_id):
+    model_map = {'job': Job, 'meeting': Meeting}
+    model_cls = model_map.get(record_type)
+    subtask = request.form.get('subtask')
+    if not model_cls or subtask not in ('title', 'summary', 'speaker', 'chat'):
+        flash('Ungültiger Typ oder Sub-Task.', 'danger')
+        return redirect(url_for('admin.dashboard'))
+
+    record = db.session.get(model_cls, record_id)
+    if not record:
+        flash('Job nicht gefunden.', 'warning')
+        return redirect(url_for('admin.dashboard'))
+
+    if subtask == 'title' and record.title_status == 'processing':
+        record.title_status = 'cancelled'
+        db.session.commit()
+        flash('Titelgenerierung abgebrochen.', 'success')
+    elif subtask == 'summary' and record.summary_status == 'processing':
+        record.summary_status = 'cancelled'
+        db.session.commit()
+        flash('Zusammenfassung abgebrochen.', 'success')
+    elif subtask == 'speaker' and record.speaker_identify_status == 'processing':
+        record.speaker_identify_status = 'cancelled'
+        db.session.commit()
+        flash('Sprechererkennung abgebrochen.', 'success')
+    elif subtask == 'chat':
+        processing_msgs = ChatMessage.query.filter_by(
+            record_type=record_type, record_id=record_id, status='processing'
+        ).all()
+        for msg in processing_msgs:
+            msg.status = 'failed'
+            msg.content = 'Vom Administrator abgebrochen'
+        db.session.commit()
+        flash(f'{len(processing_msgs)} Chat-Nachricht(en) abgebrochen.', 'success')
+    else:
+        flash('Sub-Task läuft nicht oder bereits abgeschlossen.', 'warning')
+
     return redirect(url_for('admin.dashboard'))
 
 
