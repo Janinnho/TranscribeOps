@@ -202,39 +202,47 @@ async function startMeetingRecord() {
             activeStreams.push(desktopStream);
             recordStream = desktopStream;
         } else {
-            const [micStream, desktopStream] = await Promise.all([
-                navigator.mediaDevices.getUserMedia({audio: true}),
-                getDesktopAudioStream()
-            ]);
-            activeStreams.push(micStream, desktopStream);
+            const micStream = await navigator.mediaDevices.getUserMedia({audio: true});
+            activeStreams.push(micStream);
+            const desktopStream = await getDesktopAudioStream();
+            activeStreams.push(desktopStream);
             const mixed = mixStreams(micStream, desktopStream);
             await mixed.audioCtx.resume();
             activeAudioCtx = mixed.audioCtx;
             recordStream = mixed.stream;
         }
+
+        mediaRecorder = new MediaRecorder(recordStream);
     } catch (err) {
         activeStreams.forEach(s => s.getTracks().forEach(t => t.stop()));
         activeStreams = [];
         if (activeAudioCtx) { activeAudioCtx.close(); activeAudioCtx = null; }
-        if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
-            alert(source === 'mic'
-                ? 'Mikrofon-Zugriff nicht möglich: ' + err.message
-                : 'Desktop-Audio-Freigabe abgebrochen.');
+        const msg = err && err.message ? ': ' + err.message : '';
+        if (source === 'mic' && err.name === 'NotAllowedError') {
+            alert('Mikrofon-Zugriff nicht möglich' + msg);
+        } else if (err.name === 'AbortError') {
+            alert('Desktop-Audio-Freigabe abgebrochen' + msg);
+        } else if (err.name === 'NotAllowedError') {
+            alert('Desktop-Audio-Zugriff verweigert' + msg);
         } else {
-            alert('Aufnahme konnte nicht gestartet werden: ' + err.message);
+            alert('Aufnahme konnte nicht gestartet werden' + msg);
         }
         return;
     }
 
-    mediaRecorder = new MediaRecorder(recordStream);
     audioChunks = [];
     recordingSeconds = 0;
+    const sessionStreams = activeStreams;
+    const sessionAudioCtx = activeAudioCtx;
 
     mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
     mediaRecorder.onstop = () => {
-        activeStreams.forEach(s => s.getTracks().forEach(t => t.stop()));
-        activeStreams = [];
-        if (activeAudioCtx) { activeAudioCtx.close(); activeAudioCtx = null; }
+        sessionStreams.forEach(s => s.getTracks().forEach(t => t.stop()));
+        if (activeStreams === sessionStreams) activeStreams = [];
+        if (sessionAudioCtx) {
+            sessionAudioCtx.close();
+            if (activeAudioCtx === sessionAudioCtx) activeAudioCtx = null;
+        }
         const blob = new Blob(audioChunks, {type: 'audio/webm'});
         uploadRecording(blob);
     };
@@ -300,8 +308,8 @@ document.addEventListener('DOMContentLoaded', () => {
     loadJobs('/api/meetings', '/api/meeting', '/meeting-job');
     setInterval(() => loadJobs('/api/meetings', '/api/meeting', '/meeting-job'), 5000);
 
+    const sel = document.getElementById('audioSource');
     if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-        const sel = document.getElementById('audioSource');
         for (const opt of sel.options) {
             if (opt.value === 'desktop' || opt.value === 'both') {
                 opt.disabled = true;
@@ -309,6 +317,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
+    if (sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].disabled) {
+        sel.value = 'mic';
+    }
+    updateAudioSourceHint();
 });
 </script>
 {% endblock %}
