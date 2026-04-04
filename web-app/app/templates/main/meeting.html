@@ -11,7 +11,7 @@
 
                 <div class="row g-3 mb-4">
                     {% if not (hide_single_model and speech_models|length <= 1) %}
-                    <div class="col-md-6">
+                    <div class="col-md-4">
                         <label class="form-label">Modell</label>
                         <select class="form-select" id="speechModel" onchange="updateUploadLimits()">
                             {% for m in speech_models %}
@@ -22,7 +22,7 @@
                     {% else %}
                     <select class="d-none" id="speechModel">{% for m in speech_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}</select>
                     {% endif %}
-                    <div class="{{ 'col-md-6' if not (hide_single_model and speech_models|length <= 1) else 'col-md-12' }}">
+                    <div class="{{ 'col-md-4' if not (hide_single_model and speech_models|length <= 1) else 'col-md-6' }}">
                         <label class="form-label">Sprache (optional)</label>
                         <select class="form-select" id="language">
                             <option value="">Automatisch</option>
@@ -31,6 +31,15 @@
                             <option value="fr">Französisch</option>
                             <option value="es">Spanisch</option>
                         </select>
+                    </div>
+                    <div class="{{ 'col-md-4' if not (hide_single_model and speech_models|length <= 1) else 'col-md-6' }}">
+                        <label class="form-label">Audioquelle</label>
+                        <select class="form-select" id="audioSource" onchange="updateAudioSourceHint()">
+                            <option value="mic">Mikrofon</option>
+                            <option value="desktop">Desktop-Audio</option>
+                            <option value="both">Mikrofon + Desktop-Audio</option>
+                        </select>
+                        <small class="text-muted d-none" id="audioSourceHint">Desktop-Audio funktioniert am besten in Chrome/Edge.</small>
                     </div>
                 </div>
 
@@ -133,6 +142,41 @@ let mediaRecorder = null;
 let audioChunks = [];
 let recordingTimer = null;
 let recordingSeconds = 0;
+let activeStreams = [];
+let activeAudioCtx = null;
+
+function updateAudioSourceHint() {
+    const val = document.getElementById('audioSource').value;
+    const hint = document.getElementById('audioSourceHint');
+    if (val === 'mic') {
+        hint.classList.add('d-none');
+    } else {
+        hint.classList.remove('d-none');
+    }
+}
+
+async function getDesktopAudioStream() {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: true
+    });
+    stream.getVideoTracks().forEach(t => t.stop());
+    if (stream.getAudioTracks().length === 0) {
+        stream.getTracks().forEach(t => t.stop());
+        throw new Error('Desktop-Audio wurde nicht freigegeben. Bitte aktivieren Sie "Audio teilen" im Dialog.');
+    }
+    return stream;
+}
+
+function mixStreams(micStream, desktopStream) {
+    const audioCtx = new AudioContext();
+    const micSource = audioCtx.createMediaStreamSource(micStream);
+    const desktopSource = audioCtx.createMediaStreamSource(desktopStream);
+    const destination = audioCtx.createMediaStreamDestination();
+    micSource.connect(destination);
+    desktopSource.connect(destination);
+    return { stream: destination.stream, audioCtx: audioCtx };
+}
 
 function toggleMeetingRecord() {
     if (!mediaRecorder || mediaRecorder.state === 'inactive') {
@@ -143,41 +187,80 @@ function toggleMeetingRecord() {
 }
 
 async function startMeetingRecord() {
+    const source = document.getElementById('audioSource').value;
+    let recordStream;
+    activeStreams = [];
+    activeAudioCtx = null;
+
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({audio: true});
-        mediaRecorder = new MediaRecorder(stream);
-        audioChunks = [];
-        recordingSeconds = 0;
-
-        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
-        mediaRecorder.onstop = () => {
-            stream.getTracks().forEach(t => t.stop());
-            const blob = new Blob(audioChunks, {type: 'audio/webm'});
-            uploadRecording(blob);
-        };
-
-        mediaRecorder.start();
-        document.getElementById('recordBtn').classList.replace('btn-outline-danger', 'btn-danger');
-        document.getElementById('recordIcon').classList.replace('bi-mic-fill', 'bi-stop-fill');
-        document.getElementById('recordStatus').textContent = 'Aufnahme läuft... Klicken zum Stoppen';
-        const timer = document.getElementById('recordTimer');
-        timer.classList.remove('d-none');
-        recordingTimer = setInterval(() => {
-            recordingSeconds++;
-            const h = String(Math.floor(recordingSeconds / 3600)).padStart(2, '0');
-            const m = String(Math.floor((recordingSeconds % 3600) / 60)).padStart(2, '0');
-            const s = String(recordingSeconds % 60).padStart(2, '0');
-            timer.textContent = `${h}:${m}:${s}`;
-        }, 1000);
+        if (source === 'mic') {
+            const micStream = await navigator.mediaDevices.getUserMedia({audio: true});
+            activeStreams.push(micStream);
+            recordStream = micStream;
+        } else if (source === 'desktop') {
+            const desktopStream = await getDesktopAudioStream();
+            activeStreams.push(desktopStream);
+            recordStream = desktopStream;
+        } else {
+            const [micStream, desktopStream] = await Promise.all([
+                navigator.mediaDevices.getUserMedia({audio: true}),
+                getDesktopAudioStream()
+            ]);
+            activeStreams.push(micStream, desktopStream);
+            const mixed = mixStreams(micStream, desktopStream);
+            await mixed.audioCtx.resume();
+            activeAudioCtx = mixed.audioCtx;
+            recordStream = mixed.stream;
+        }
     } catch (err) {
-        alert('Mikrofon-Zugriff nicht möglich: ' + err.message);
+        activeStreams.forEach(s => s.getTracks().forEach(t => t.stop()));
+        activeStreams = [];
+        if (activeAudioCtx) { activeAudioCtx.close(); activeAudioCtx = null; }
+        if (err.name === 'NotAllowedError' || err.name === 'AbortError') {
+            alert(source === 'mic'
+                ? 'Mikrofon-Zugriff nicht möglich: ' + err.message
+                : 'Desktop-Audio-Freigabe abgebrochen.');
+        } else {
+            alert('Aufnahme konnte nicht gestartet werden: ' + err.message);
+        }
+        return;
     }
+
+    mediaRecorder = new MediaRecorder(recordStream);
+    audioChunks = [];
+    recordingSeconds = 0;
+
+    mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+    mediaRecorder.onstop = () => {
+        activeStreams.forEach(s => s.getTracks().forEach(t => t.stop()));
+        activeStreams = [];
+        if (activeAudioCtx) { activeAudioCtx.close(); activeAudioCtx = null; }
+        const blob = new Blob(audioChunks, {type: 'audio/webm'});
+        uploadRecording(blob);
+    };
+
+    mediaRecorder.start();
+    document.getElementById('audioSource').disabled = true;
+    document.getElementById('recordBtn').classList.replace('btn-outline-danger', 'btn-danger');
+    document.getElementById('recordIcon').classList.replace('bi-mic-fill', 'bi-stop-fill');
+    const sourceLabels = {mic: 'Mikrofon', desktop: 'Desktop-Audio', both: 'Mikrofon + Desktop'};
+    document.getElementById('recordStatus').textContent = `Aufnahme läuft (${sourceLabels[source]})... Klicken zum Stoppen`;
+    const timer = document.getElementById('recordTimer');
+    timer.classList.remove('d-none');
+    recordingTimer = setInterval(() => {
+        recordingSeconds++;
+        const h = String(Math.floor(recordingSeconds / 3600)).padStart(2, '0');
+        const m = String(Math.floor((recordingSeconds % 3600) / 60)).padStart(2, '0');
+        const s = String(recordingSeconds % 60).padStart(2, '0');
+        timer.textContent = `${h}:${m}:${s}`;
+    }, 1000);
 }
 
 function stopMeetingRecord() {
     if (mediaRecorder && mediaRecorder.state === 'recording') {
         mediaRecorder.stop();
         clearInterval(recordingTimer);
+        document.getElementById('audioSource').disabled = false;
         document.getElementById('recordBtn').classList.replace('btn-danger', 'btn-outline-danger');
         document.getElementById('recordIcon').classList.replace('bi-stop-fill', 'bi-mic-fill');
         document.getElementById('recordStatus').textContent = 'Aufnahme wird verarbeitet...';
@@ -216,6 +299,16 @@ document.addEventListener('DOMContentLoaded', () => {
                'removeFile', 'uploadBtn', 'uploadProgress', JOB_TYPE);
     loadJobs('/api/meetings', '/api/meeting', '/meeting-job');
     setInterval(() => loadJobs('/api/meetings', '/api/meeting', '/meeting-job'), 5000);
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        const sel = document.getElementById('audioSource');
+        for (const opt of sel.options) {
+            if (opt.value === 'desktop' || opt.value === 'both') {
+                opt.disabled = true;
+                opt.textContent += ' (nicht unterstützt)';
+            }
+        }
+    }
 });
 </script>
 {% endblock %}
