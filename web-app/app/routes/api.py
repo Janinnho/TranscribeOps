@@ -1168,6 +1168,8 @@ def update_conversation(public_id):
         return jsonify({'error': 'Nicht gefunden'}), 404
     data = request.get_json(silent=True) or {}
     if 'title' in data:
+        if not isinstance(data['title'], str):
+            return jsonify({'error': 'Titel muss ein String sein'}), 400
         conv.title = data['title'][:255]
     if 'text_model_id' in data:
         try:
