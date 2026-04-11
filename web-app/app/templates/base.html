@@ -61,6 +61,13 @@
                     </a>
                 </li>
                 {% endif %}
+                {% if current_user.has_chat_access() %}
+                <li class="nav-item">
+                    <a href="{{ url_for('main.chat') }}" class="nav-link {% if request.endpoint == 'main.chat' %}active{% endif %}">
+                        <i class="bi bi-chat-dots me-2"></i>Chat
+                    </a>
+                </li>
+                {% endif %}
                 {% if current_user.has_dictionary_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.dictionary') }}" class="nav-link {% if request.endpoint == 'main.dictionary' %}active{% endif %}">

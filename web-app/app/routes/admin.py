@@ -280,6 +280,7 @@ def create_group():
     group.meeting_enabled = request.form.get('meeting_enabled') == 'on'
     group.dictation_enabled = request.form.get('dictation_enabled') == 'on'
     group.text_tools_enabled = request.form.get('text_tools_enabled') == 'on'
+    group.chat_enabled = request.form.get('chat_enabled') == 'on'
 
     # Auto-title / auto-summary
     group.auto_title_enabled = request.form.get('auto_title_enabled') == 'on'
@@ -361,6 +362,7 @@ def update_group(group_id):
     group.meeting_enabled = request.form.get('meeting_enabled') == 'on'
     group.dictation_enabled = request.form.get('dictation_enabled') == 'on'
     group.text_tools_enabled = request.form.get('text_tools_enabled') == 'on'
+    group.chat_enabled = request.form.get('chat_enabled') == 'on'
 
     # Auto-title / auto-summary
     group.auto_title_enabled = request.form.get('auto_title_enabled') == 'on'

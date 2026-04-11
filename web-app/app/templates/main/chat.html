@@ -1,0 +1,401 @@
+{% extends "base.html" %}
+{% block title %}Chat - TranscribeOps{% endblock %}
+{% block page_title %}Chat{% endblock %}
+{% block content %}
+<div class="d-flex h-100" style="min-height: 0;">
+
+    <!-- Chat sidebar: conversation list -->
+    <div class="chat-sidebar d-flex flex-column border-end">
+        <div class="p-3 border-bottom">
+            <button class="btn btn-primary w-100" onclick="createConversation()">
+                <i class="bi bi-plus-lg me-1"></i>Neuer Chat
+            </button>
+        </div>
+        <div class="flex-grow-1 overflow-auto" id="convList">
+            <div class="text-center text-muted py-4"><small>Keine Chats vorhanden</small></div>
+        </div>
+    </div>
+
+    <!-- Main chat area -->
+    <div class="flex-grow-1 d-flex flex-column" style="min-width: 0;">
+
+        <!-- Top bar: model selector -->
+        <div class="chat-topbar d-flex align-items-center gap-2 p-2 px-3 border-bottom">
+            {% if not (hide_single_model and text_models|length <= 1) %}
+            <label class="form-label mb-0 text-nowrap fw-medium"><i class="bi bi-cpu me-1"></i>Modell:</label>
+            <select class="form-select form-select-sm" id="textModel" style="max-width: 260px;">
+                {% for m in text_models %}
+                <option value="{{ m.id }}">{{ m.display_name }}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <select class="d-none" id="textModel">{% for m in text_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}</select>
+            {% endif %}
+            <div class="ms-auto" id="convTitleArea">
+                <span class="text-muted" id="convTitleDisplay"></span>
+            </div>
+        </div>
+
+        <!-- Messages area -->
+        <div class="chat-messages flex-grow-1 overflow-auto p-3" id="messagesArea">
+            <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted" id="emptyState">
+                <i class="bi bi-chat-dots" style="font-size: 3rem;"></i>
+                <p class="mt-2">Nachricht eingeben, um einen Chat zu starten</p>
+            </div>
+        </div>
+
+        <!-- Input area -->
+        <div class="chat-input border-top p-3">
+            <div class="d-flex gap-2 align-items-end">
+                <textarea class="form-control" id="msgInput" rows="1" placeholder="Nachricht eingeben..." style="resize: none; max-height: 150px;"></textarea>
+                <button class="btn btn-primary" id="sendBtn" onclick="sendMessage()">
+                    <i class="bi bi-send"></i>
+                </button>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+let currentConvId = null;
+let pollTimer = null;
+
+// ── Conversations ────────────────────────────────────────────────
+
+async function loadConversations() {
+    try {
+        const resp = await fetch('/api/conversations');
+        const convs = await resp.json();
+        const container = document.getElementById('convList');
+        if (!convs.length) {
+            container.innerHTML = '<div class="text-center text-muted py-4"><small>Keine Chats vorhanden</small></div>';
+            return;
+        }
+        container.innerHTML = convs.map(c => `
+            <div class="conv-item d-flex align-items-center px-3 py-2 border-bottom ${c.id === currentConvId ? 'active' : ''}"
+                 data-conv-id="${c.id}" onclick="selectConversation('${c.id}')" role="button">
+                <div class="flex-grow-1 min-width-0 me-2" style="min-width:0">
+                    <div class="text-truncate fw-medium conv-title-text">${escapeHtml(c.title)}</div>
+                    <small class="text-muted">${c.updated_at}</small>
+                </div>
+                <div class="d-flex gap-1 flex-shrink-0">
+                    <button class="btn btn-sm btn-link text-muted p-0 conv-action-btn"
+                            onclick="event.stopPropagation(); startEditTitle('${c.id}', this)" title="Umbenennen">
+                        <i class="bi bi-pencil"></i>
+                    </button>
+                    <button class="btn btn-sm btn-link text-danger p-0 conv-action-btn"
+                            onclick="event.stopPropagation(); deleteConversation('${c.id}')" title="Löschen">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `).join('');
+    } catch (err) {
+        console.error('Failed to load conversations:', err);
+    }
+}
+
+async function createConversation() {
+    // If current chat is empty, just reset the view instead of creating another
+    if (currentConvId) {
+        try {
+            const check = await fetch(`/api/conversations/${currentConvId}/messages`);
+            const data = await check.json();
+            if (!data.messages || data.messages.length === 0) {
+                document.getElementById('messagesArea').innerHTML = '';
+                document.getElementById('msgInput').focus();
+                return;
+            }
+        } catch (err) { /* proceed to create */ }
+    }
+
+    const modelId = parseInt(document.getElementById('textModel').value);
+    try {
+        const resp = await fetch('/api/conversations', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+            body: JSON.stringify({text_model_id: modelId})
+        });
+        const conv = await resp.json();
+        currentConvId = conv.id;
+        await loadConversations();
+        openConversation(conv);
+        document.getElementById('messagesArea').innerHTML = '';
+    } catch (err) {
+        console.error('Failed to create conversation:', err);
+    }
+}
+
+async function selectConversation(publicId) {
+    currentConvId = publicId;
+    stopPolling();
+    try {
+        const resp = await fetch(`/api/conversations/${publicId}`);
+        const data = await resp.json();
+        openConversation(data.conversation);
+        renderMessages(data.messages);
+        if (data.has_pending) startPolling();
+        highlightActiveConv();
+    } catch (err) {
+        console.error('Failed to load conversation:', err);
+    }
+}
+
+async function deleteConversation(publicId) {
+    if (!confirm('Chat löschen?')) return;
+    try {
+        await fetch(`/api/conversations/${publicId}`, {
+            method: 'DELETE',
+            headers: {'X-CSRFToken': csrfToken}
+        });
+        if (currentConvId === publicId) {
+            currentConvId = null;
+            resetChatArea();
+        }
+        loadConversations();
+    } catch (err) {
+        console.error('Failed to delete conversation:', err);
+    }
+}
+
+function openConversation(conv) {
+    const emptyState = document.getElementById('emptyState');
+    if (emptyState) emptyState.classList.add('d-none');
+    document.getElementById('convTitleDisplay').textContent = conv.title;
+    if (conv.text_model_id) {
+        const sel = document.getElementById('textModel');
+        if (sel.querySelector(`option[value="${conv.text_model_id}"]`)) {
+            sel.value = conv.text_model_id;
+        }
+    }
+}
+
+function resetChatArea() {
+    document.getElementById('messagesArea').innerHTML = `
+        <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted" id="emptyState">
+            <i class="bi bi-chat-dots" style="font-size: 3rem;"></i>
+            <p class="mt-2">Nachricht eingeben, um einen Chat zu starten</p>
+        </div>`;
+    document.getElementById('convTitleDisplay').textContent = '';
+}
+
+function highlightActiveConv() {
+    document.querySelectorAll('.conv-item').forEach(el => {
+        el.classList.toggle('active', el.getAttribute('onclick')?.includes(currentConvId));
+    });
+}
+
+// ── Messages ─────────────────────────────────────────────────────
+
+function renderMessages(messages) {
+    const area = document.getElementById('messagesArea');
+    if (!messages.length) {
+        area.innerHTML = '';
+        document.getElementById('emptyState')?.classList?.remove('d-none');
+        return;
+    }
+    area.innerHTML = messages.map(m => {
+        const isUser = m.role === 'user';
+        const bubbleClass = isUser ? 'chat-bubble-user' : 'chat-bubble-assistant';
+        const roleLabel = isUser
+            ? '<div class="chat-role-label text-end"><i class="bi bi-person-fill me-1"></i>Du</div>'
+            : '<div class="chat-role-label"><i class="bi bi-robot me-1"></i>Assistent</div>';
+        let content;
+        if (m.status === 'processing' || m.status === 'pending') {
+            content = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Laden...</span></div>';
+        } else if (m.status === 'failed') {
+            content = `<span class="text-danger">${escapeHtml(m.content || 'Fehler')}</span>`;
+        } else if (isUser) {
+            content = escapeHtml(m.content);
+        } else {
+            content = renderMarkdown(m.content);
+        }
+        return `<div class="d-flex flex-column ${isUser ? 'align-items-end' : 'align-items-start'} mb-3">
+            ${roleLabel}
+            <div class="chat-bubble ${bubbleClass}">${content}</div>
+        </div>`;
+    }).join('');
+    scrollToBottom();
+}
+
+function renderMarkdown(text) {
+    if (!text) return '';
+    try {
+        return marked.parse(text);
+    } catch (e) {
+        return escapeHtml(text);
+    }
+}
+
+function scrollToBottom() {
+    const area = document.getElementById('messagesArea');
+    area.scrollTop = area.scrollHeight;
+}
+
+async function sendMessage() {
+    const input = document.getElementById('msgInput');
+    const content = input.value.trim();
+    if (!content) return;
+
+    // Auto-create conversation if none exists
+    if (!currentConvId) {
+        const modelId = parseInt(document.getElementById('textModel').value);
+        try {
+            const resp = await fetch('/api/conversations', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+                body: JSON.stringify({text_model_id: modelId})
+            });
+            const conv = await resp.json();
+            currentConvId = conv.id;
+            openConversation(conv);
+            loadConversations();
+        } catch (err) {
+            console.error('Failed to create conversation:', err);
+            return;
+        }
+    }
+
+    const modelId = parseInt(document.getElementById('textModel').value);
+    input.value = '';
+    autoResizeInput();
+
+    // Optimistic: add user message immediately
+    const area = document.getElementById('messagesArea');
+    area.innerHTML += `<div class="d-flex flex-column align-items-end mb-3">
+        <div class="chat-role-label text-end"><i class="bi bi-person-fill me-1"></i>Du</div>
+        <div class="chat-bubble chat-bubble-user">${escapeHtml(content)}</div>
+    </div>`;
+    area.innerHTML += `<div class="d-flex flex-column align-items-start mb-3">
+        <div class="chat-role-label"><i class="bi bi-robot me-1"></i>Assistent</div>
+        <div class="chat-bubble chat-bubble-assistant"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Laden...</span></div></div>
+    </div>`;
+    scrollToBottom();
+
+    try {
+        const resp = await fetch(`/api/conversations/${currentConvId}/messages`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+            body: JSON.stringify({content, text_model_id: modelId})
+        });
+        if (resp.ok) {
+            startPolling();
+        }
+    } catch (err) {
+        console.error('Failed to send message:', err);
+    }
+}
+
+// ── Polling ──────────────────────────────────────────────────────
+
+function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(pollMessages, 1500);
+}
+
+function stopPolling() {
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+    }
+}
+
+async function pollMessages() {
+    if (!currentConvId) { stopPolling(); return; }
+    try {
+        const resp = await fetch(`/api/conversations/${currentConvId}/messages`);
+        const data = await resp.json();
+        renderMessages(data.messages);
+        // Update title if changed
+        if (data.title) {
+            document.getElementById('convTitleDisplay').textContent = data.title;
+        }
+        if (!data.has_pending) {
+            stopPolling();
+            loadConversations();
+        }
+    } catch (err) {
+        console.error('Polling error:', err);
+        stopPolling();
+    }
+}
+
+// ── Title editing ────────────────────────────────────────────────
+
+function startEditTitle(convId, btn) {
+    const item = btn.closest('.conv-item');
+    const titleEl = item.querySelector('.conv-title-text');
+    const currentTitle = titleEl.textContent;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentTitle;
+    input.className = 'conv-title-input';
+    input.maxLength = 255;
+    titleEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    const save = async () => {
+        const newTitle = input.value.trim() || currentTitle;
+        await saveTitle(convId, newTitle);
+    };
+
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+        if (e.key === 'Escape') { input.value = currentTitle; input.blur(); }
+    });
+}
+
+async function saveTitle(convId, title) {
+    try {
+        await fetch(`/api/conversations/${convId}`, {
+            method: 'PATCH',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
+            body: JSON.stringify({title})
+        });
+        if (convId === currentConvId) {
+            document.getElementById('convTitleDisplay').textContent = title;
+        }
+        loadConversations();
+    } catch (err) {
+        console.error('Failed to save title:', err);
+        loadConversations();
+    }
+}
+
+// ── Helpers ──────────────────────────────────────────────────────
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function autoResizeInput() {
+    const el = document.getElementById('msgInput');
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 150) + 'px';
+}
+
+// ── Init ─────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', () => {
+    loadConversations();
+
+    const input = document.getElementById('msgInput');
+    input.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+    input.addEventListener('input', autoResizeInput);
+});
+</script>
+{% endblock %}
