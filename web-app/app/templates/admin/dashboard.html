@@ -103,6 +103,7 @@
                             {% if group.meeting_enabled %}<span class="badge bg-success me-1" title="Meeting">Meeting</span>{% endif %}
                             {% if group.dictation_enabled %}<span class="badge bg-success me-1" title="Diktieren">Diktat</span>{% endif %}
                             {% if group.text_tools_enabled %}<span class="badge bg-success me-1" title="Text Tools">Text</span>{% endif %}
+                            {% if group.chat_enabled %}<span class="badge bg-success me-1" title="Chat">Chat</span>{% endif %}
                             {% if group.dictionary_enabled %}<span class="badge bg-success me-1" title="Wörterbuch">Wörtb.</span>{% endif %}
                         </td>
                         <td>
@@ -226,6 +227,7 @@
                     <option value="Meeting">Meeting</option>
                     <option value="Diktat">Diktat</option>
                     <option value="Textverarbeitung">Textverarbeitung</option>
+                    <option value="Chat">Chat</option>
                 </select>
                 <small class="text-muted">Letzte 100</small>
             </div>
@@ -711,6 +713,7 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="meeting_enabled" id="newGroupMeeting" checked><label class="form-check-label" for="newGroupMeeting">Meeting</label></div>
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="dictation_enabled" id="newGroupDict2" checked><label class="form-check-label" for="newGroupDict2">Diktieren</label></div>
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="text_tools_enabled" id="newGroupText" checked><label class="form-check-label" for="newGroupText">Text Tools</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="chat_enabled" id="newGroupChat" checked><label class="form-check-label" for="newGroupChat">Chat</label></div>
                     <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" id="newGroupDict" checked><label class="form-check-label" for="newGroupDict">Wörterbuch</label></div>
                     <hr>
                     <label class="form-label fw-medium">Automatisierung</label>
@@ -823,6 +826,7 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="meeting_enabled" {{ 'checked' if group.meeting_enabled }}><label class="form-check-label">Meeting</label></div>
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="dictation_enabled" {{ 'checked' if group.dictation_enabled }}><label class="form-check-label">Diktieren</label></div>
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="text_tools_enabled" {{ 'checked' if group.text_tools_enabled }}><label class="form-check-label">Text Tools</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="chat_enabled" {{ 'checked' if group.chat_enabled }}><label class="form-check-label">Chat</label></div>
                     <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" {{ 'checked' if group.dictionary_enabled }}><label class="form-check-label">Wörterbuch</label></div>
                     <hr>
                     <label class="form-label fw-medium">Automatisierung</label>

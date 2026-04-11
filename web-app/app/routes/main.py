@@ -76,6 +76,19 @@ def text_tools():
                            hide_single_model=hide_single_model)
 
 
+@main_bp.route('/chat')
+@login_required
+def chat():
+    if not current_user.has_chat_access():
+        flash('Kein Zugriff auf Chat.', 'danger')
+        return redirect(url_for('main.settings'))
+    text_models = current_user.get_available_text_models(function='chat')
+    hide_single_model = current_user.get_hide_single_model()
+    return render_template('main/chat.html',
+                           text_models=text_models,
+                           hide_single_model=hide_single_model)
+
+
 @main_bp.route('/transcription-job/<string:public_id>')
 @login_required
 def transcription_job_detail(public_id):

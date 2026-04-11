@@ -138,6 +138,11 @@ class User(UserMixin, db.Model):
             return True
         return any(g.text_tools_enabled for g in self.groups)
 
+    def has_chat_access(self):
+        if self.is_admin:
+            return True
+        return any(g.chat_enabled for g in self.groups)
+
     def get_auto_title_settings(self):
         """Return (enabled, model_id) from user's groups."""
         for g in self.groups:
@@ -195,6 +200,7 @@ class Group(db.Model):
     meeting_enabled = db.Column(db.Boolean, default=True)
     dictation_enabled = db.Column(db.Boolean, default=True)
     text_tools_enabled = db.Column(db.Boolean, default=True)
+    chat_enabled = db.Column(db.Boolean, default=True)
     auto_title_enabled = db.Column(db.Boolean, default=False)
     auto_title_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
     auto_summary_enabled = db.Column(db.Boolean, default=False)
@@ -402,4 +408,32 @@ class ChatMessage(db.Model):
     text_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
-    text_model = db.relationship('TextModel')
+    chat_text_model = db.relationship('TextModel')
+
+
+class Conversation(db.Model):
+    __tablename__ = 'conversations'
+    id = db.Column(db.Integer, primary_key=True)
+    public_id = db.Column(db.String(32), unique=True, nullable=False, default=_gen_uid)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    title = db.Column(db.String(255), default='Neuer Chat')
+    text_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc),
+                           onupdate=lambda: datetime.now(timezone.utc))
+
+    user = db.relationship('User', backref=db.backref('conversations', lazy='dynamic'))
+    conv_text_model = db.relationship('TextModel')
+    messages = db.relationship('ConversationMessage', backref='conversation',
+                               lazy='dynamic', cascade='all, delete-orphan')
+
+
+class ConversationMessage(db.Model):
+    __tablename__ = 'conversation_messages'
+    id = db.Column(db.Integer, primary_key=True)
+    public_id = db.Column(db.String(32), unique=True, nullable=False, default=_gen_uid)
+    conversation_id = db.Column(db.Integer, db.ForeignKey('conversations.id'), nullable=False)
+    role = db.Column(db.String(20), nullable=False)           # 'user' or 'assistant'
+    content = db.Column(db.Text, nullable=False, default='')
+    status = db.Column(db.String(20), default='completed')    # 'completed', 'processing', 'failed'
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))

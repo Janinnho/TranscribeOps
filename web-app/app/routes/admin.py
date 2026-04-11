@@ -5,7 +5,8 @@ import os
 from flask import current_app
 from app import db
 from app.models import (User, Group, SpeechModel, TextModel, SystemSetting, Job, Meeting, Dictation, TextTask,
-                        ChatMessage, group_speech_model_functions, group_text_model_functions)
+                        ChatMessage, Conversation, ConversationMessage,
+                        group_speech_model_functions, group_text_model_functions)
 
 admin_bp = Blueprint('admin', __name__)
 
@@ -145,6 +146,48 @@ def dashboard():
         all_records.append(_build_record(record, 'Diktat', 'dictation'))
     for record in TextTask.query.order_by(TextTask.created_at.desc()).limit(100).all():
         all_records.append(_build_record(record, 'Textverarbeitung', 'text_task'))
+
+    # Chat conversations — derive status from messages
+    for conv in Conversation.query.order_by(Conversation.created_at.desc()).limit(100).all():
+        user = db.session.get(User, conv.user_id)
+        msgs = conv.messages.order_by(ConversationMessage.created_at.desc()).all()
+        # Derive status from messages
+        statuses = [m.status for m in msgs if m.role == 'assistant']
+        if any(s == 'processing' for s in statuses):
+            status = 'processing'
+        elif any(s == 'pending' for s in statuses):
+            status = 'pending'
+        elif any(s == 'failed' for s in statuses):
+            status = 'failed'
+        elif statuses:
+            status = 'completed'
+        else:
+            status = 'completed'
+        # Get error from latest failed message
+        failed_msg = next((m for m in msgs if m.role == 'assistant' and m.status == 'failed'), None)
+        error_message = failed_msg.content if failed_msg and failed_msg.content else None
+        text_model = db.session.get(TextModel, conv.text_model_id) if conv.text_model_id else None
+        processing_count = sum(1 for s in statuses if s in ('processing', 'pending'))
+        all_records.append({
+            'type': 'Chat',
+            'record_type': 'conversation',
+            'record_id': conv.id,
+            'title': conv.title,
+            'status': status,
+            'user_name': user.display_name if user else '?',
+            'user_email': user.email if user else '',
+            'error_message': error_message,
+            'created_at': format_dt(conv.created_at),
+            'created_at_raw': conv.created_at,
+            'speech_model': text_model.display_name if text_model else '-',
+            'eta_seconds': None,
+            'processing_started_at': None,
+            'summary_status': None,
+            'title_status': None,
+            'speaker_identify_status': None,
+            'chat_processing_count': processing_count,
+        })
+
     all_records.sort(key=lambda r: r['created_at_raw'] or '', reverse=True)
     all_records = all_records[:100]
 
@@ -280,6 +323,7 @@ def create_group():
     group.meeting_enabled = request.form.get('meeting_enabled') == 'on'
     group.dictation_enabled = request.form.get('dictation_enabled') == 'on'
     group.text_tools_enabled = request.form.get('text_tools_enabled') == 'on'
+    group.chat_enabled = request.form.get('chat_enabled') == 'on'
 
     # Auto-title / auto-summary
     group.auto_title_enabled = request.form.get('auto_title_enabled') == 'on'
@@ -361,6 +405,7 @@ def update_group(group_id):
     group.meeting_enabled = request.form.get('meeting_enabled') == 'on'
     group.dictation_enabled = request.form.get('dictation_enabled') == 'on'
     group.text_tools_enabled = request.form.get('text_tools_enabled') == 'on'
+    group.chat_enabled = request.form.get('chat_enabled') == 'on'
 
     # Auto-title / auto-summary
     group.auto_title_enabled = request.form.get('auto_title_enabled') == 'on'
@@ -592,6 +637,23 @@ def update_global():
 @admin_bp.route('/job/<record_type>/<int:record_id>/cancel', methods=['POST'])
 @admin_required
 def cancel_job(record_type, record_id):
+    # Special handling for chat conversations
+    if record_type == 'conversation':
+        conv = db.session.get(Conversation, record_id)
+        if not conv:
+            flash('Chat nicht gefunden.', 'warning')
+            return redirect(url_for('admin.dashboard'))
+        processing_msgs = ConversationMessage.query.filter(
+            ConversationMessage.conversation_id == conv.id,
+            ConversationMessage.status.in_(['processing', 'pending'])
+        ).all()
+        for msg in processing_msgs:
+            msg.status = 'failed'
+            msg.content = 'Vom Administrator abgebrochen'
+        db.session.commit()
+        flash(f'{len(processing_msgs)} Chat-Nachricht(en) abgebrochen.', 'success')
+        return redirect(url_for('admin.dashboard'))
+
     model_map = {'job': Job, 'meeting': Meeting, 'dictation': Dictation, 'text_task': TextTask}
     model_cls = model_map.get(record_type)
     if not model_cls:

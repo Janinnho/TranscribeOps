@@ -6,7 +6,7 @@ from flask import Blueprint, request, jsonify, current_app, Response, send_file
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from app import db
-from app.models import Job, Meeting, Dictation, TextTask, DictionaryEntry, ChatMessage, SpeechModel
+from app.models import Job, Meeting, Dictation, TextTask, DictionaryEntry, ChatMessage, SpeechModel, Conversation, ConversationMessage, TextModel
 from app.utils import format_dt, now_local
 
 api_bp = Blueprint('api', __name__)
@@ -1085,3 +1085,186 @@ def clear_chat(record_type, public_id):
     ).delete()
     db.session.commit()
     return jsonify({'status': 'cleared'})
+
+
+# ── Standalone Conversations ─────────────────────────────────────────
+
+def _conv_to_dict(conv):
+    return {
+        'id': conv.public_id,
+        'title': conv.title,
+        'text_model_id': conv.text_model_id,
+        'created_at': format_dt(conv.created_at),
+        'updated_at': format_dt(conv.updated_at),
+    }
+
+
+def _conv_msg_to_dict(m):
+    return {
+        'id': m.public_id,
+        'role': m.role,
+        'content': m.content,
+        'status': m.status,
+        'created_at': format_dt(m.created_at),
+    }
+
+
+@api_bp.route('/conversations', methods=['GET'])
+@login_required
+def list_conversations():
+    if not current_user.has_chat_access():
+        return jsonify({'error': 'Kein Zugriff'}), 403
+    convs = Conversation.query.filter_by(user_id=current_user.id).order_by(
+        Conversation.updated_at.desc()).all()
+    return jsonify([_conv_to_dict(c) for c in convs])
+
+
+@api_bp.route('/conversations', methods=['POST'])
+@login_required
+def create_conversation():
+    if not current_user.has_chat_access():
+        return jsonify({'error': 'Kein Zugriff'}), 403
+    data = request.get_json(silent=True) or {}
+    text_model_id = data.get('text_model_id')
+    if text_model_id:
+        try:
+            text_model_id = int(text_model_id)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Ungültige text_model_id'}), 400
+        allowed_ids = {m.id for m in current_user.get_available_text_models(function='chat')}
+        if text_model_id not in allowed_ids:
+            return jsonify({'error': 'Kein Zugriff auf dieses Modell'}), 403
+    conv = Conversation(user_id=current_user.id, text_model_id=text_model_id)
+    db.session.add(conv)
+    db.session.commit()
+    return jsonify(_conv_to_dict(conv)), 201
+
+
+@api_bp.route('/conversations/<string:public_id>', methods=['GET'])
+@login_required
+def get_conversation(public_id):
+    if not current_user.has_chat_access():
+        return jsonify({'error': 'Kein Zugriff'}), 403
+    conv = Conversation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not conv:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    msgs = ConversationMessage.query.filter_by(conversation_id=conv.id).order_by(
+        ConversationMessage.created_at).all()
+    has_pending = any(m.status in ('processing', 'pending') for m in msgs)
+    return jsonify({
+        'conversation': _conv_to_dict(conv),
+        'messages': [_conv_msg_to_dict(m) for m in msgs],
+        'has_pending': has_pending,
+    })
+
+
+@api_bp.route('/conversations/<string:public_id>', methods=['PATCH'])
+@login_required
+def update_conversation(public_id):
+    if not current_user.has_chat_access():
+        return jsonify({'error': 'Kein Zugriff'}), 403
+    conv = Conversation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not conv:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    data = request.get_json(silent=True) or {}
+    if 'title' in data:
+        if not isinstance(data['title'], str):
+            return jsonify({'error': 'Titel muss ein String sein'}), 400
+        conv.title = data['title'][:255]
+    if 'text_model_id' in data:
+        try:
+            tid = int(data['text_model_id'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Ungültige text_model_id'}), 400
+        allowed_ids = {m.id for m in current_user.get_available_text_models(function='chat')}
+        if tid not in allowed_ids:
+            return jsonify({'error': 'Kein Zugriff auf dieses Modell'}), 403
+        conv.text_model_id = tid
+    db.session.commit()
+    return jsonify(_conv_to_dict(conv))
+
+
+@api_bp.route('/conversations/<string:public_id>', methods=['DELETE'])
+@login_required
+def delete_conversation(public_id):
+    if not current_user.has_chat_access():
+        return jsonify({'error': 'Kein Zugriff'}), 403
+    conv = Conversation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not conv:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    db.session.delete(conv)
+    db.session.commit()
+    return jsonify({'status': 'deleted'})
+
+
+@api_bp.route('/conversations/<string:public_id>/messages', methods=['POST'])
+@login_required
+def send_conversation_message(public_id):
+    if not current_user.has_chat_access():
+        return jsonify({'error': 'Kein Zugriff'}), 403
+    conv = Conversation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not conv:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    data = request.get_json(silent=True) or {}
+    content = (data.get('content') or '').strip()
+    if not content:
+        return jsonify({'error': 'Nachricht darf nicht leer sein'}), 400
+
+    text_model_id = data.get('text_model_id') or conv.text_model_id
+    if not text_model_id:
+        return jsonify({'error': 'Kein Textmodell ausgewählt'}), 400
+
+    # Validate model access
+    try:
+        text_model_id = int(text_model_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Ungültige text_model_id'}), 400
+    allowed_ids = {m.id for m in current_user.get_available_text_models(function='chat')}
+    if text_model_id not in allowed_ids:
+        return jsonify({'error': 'Kein Zugriff auf dieses Modell'}), 403
+
+    # Update conversation model if changed
+    if text_model_id != conv.text_model_id:
+        conv.text_model_id = text_model_id
+
+    # Create user message
+    user_msg = ConversationMessage(
+        conversation_id=conv.id, role='user', content=content, status='completed')
+    db.session.add(user_msg)
+    db.session.flush()
+
+    # Create assistant placeholder
+    assistant_msg = ConversationMessage(
+        conversation_id=conv.id, role='assistant', content='', status='pending')
+    db.session.add(assistant_msg)
+    db.session.flush()
+
+    conv.updated_at = datetime.now(timezone.utc)
+    db.session.commit()
+
+    # Dispatch Celery task
+    from app.tasks import process_conversation_message
+    process_conversation_message.delay(assistant_msg.id, text_model_id)
+
+    return jsonify({
+        'user_message': _conv_msg_to_dict(user_msg),
+        'assistant_message': _conv_msg_to_dict(assistant_msg),
+    }), 201
+
+
+@api_bp.route('/conversations/<string:public_id>/messages', methods=['GET'])
+@login_required
+def poll_conversation_messages(public_id):
+    if not current_user.has_chat_access():
+        return jsonify({'error': 'Kein Zugriff'}), 403
+    conv = Conversation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
+    if not conv:
+        return jsonify({'error': 'Nicht gefunden'}), 404
+    msgs = ConversationMessage.query.filter_by(conversation_id=conv.id).order_by(
+        ConversationMessage.created_at).all()
+    has_pending = any(m.status in ('processing', 'pending') for m in msgs)
+    return jsonify({
+        'messages': [_conv_msg_to_dict(m) for m in msgs],
+        'has_pending': has_pending,
+        'title': conv.title,
+    })
