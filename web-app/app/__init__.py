@@ -265,6 +265,18 @@ def _apply_migrations():
             from app.models import group_text_model_functions
             group_text_model_functions.create(bind=db.engine, checkfirst=True)
 
+        # Standalone chat: conversations + conversation_messages tables
+        if not _has_table('conversations'):
+            from app.models import Conversation
+            Conversation.__table__.create(db.engine)
+        if not _has_table('conversation_messages'):
+            from app.models import ConversationMessage
+            ConversationMessage.__table__.create(db.engine)
+
+        # Groups: chat feature toggle
+        if _has_table('groups') and not _has_column('groups', 'chat_enabled'):
+            _safe_execute(conn, "ALTER TABLE groups ADD COLUMN chat_enabled BOOLEAN DEFAULT 1")
+
 
 def _seed_defaults(app):
     from app.models import User, Group, SpeechModel, TextModel, SystemSetting

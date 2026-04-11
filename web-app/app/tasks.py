@@ -1308,3 +1308,94 @@ def process_chat_message(self, chat_message_id, text_model_id):
         _release_slot('text', text_model_id)
 
     return {'status': msg.status if msg else 'failed', 'chat_message_id': chat_message_id}
+
+
+# ── Standalone conversation Celery task ──────────────────────────────
+
+@celery.task(bind=True, max_retries=None)
+def process_conversation_message(self, message_id, text_model_id):
+    if not _acquire_slot('text', text_model_id):
+        raise self.retry(countdown=5)
+    try:
+        app = get_app()
+        with app.app_context():
+            from app import db
+            from app.models import ConversationMessage, Conversation, TextModel
+
+            msg = db.session.get(ConversationMessage, message_id)
+            text_model = db.session.get(TextModel, text_model_id)
+            if not msg or not text_model:
+                return {'error': 'Message or model not found'}
+
+            db.session.refresh(msg)
+            if msg.status in ('failed', 'cancelled'):
+                return {'status': msg.status, 'message_id': message_id}
+
+            msg.status = 'processing'
+            db.session.commit()
+
+            try:
+                conversation = db.session.get(Conversation, msg.conversation_id)
+
+                # Build messages array from conversation history
+                history = ConversationMessage.query.filter_by(
+                    conversation_id=msg.conversation_id
+                ).filter(
+                    ConversationMessage.id < msg.id,
+                    ConversationMessage.status == 'completed'
+                ).order_by(ConversationMessage.created_at).all()
+
+                system_msg = {
+                    'role': 'system',
+                    'content': 'Du bist ein hilfreicher Assistent. Antworte auf Deutsch, es sei denn, der Benutzer fragt in einer anderen Sprache.'
+                }
+                messages = [system_msg]
+                for h in history:
+                    messages.append({'role': h.role, 'content': h.content})
+
+                # Add the current user message (the one before this assistant placeholder)
+                user_msg = ConversationMessage.query.filter_by(
+                    conversation_id=msg.conversation_id,
+                    role='user',
+                    status='completed'
+                ).filter(ConversationMessage.id < msg.id).order_by(
+                    ConversationMessage.created_at.desc()
+                ).first()
+                if user_msg and user_msg.id not in [h.id for h in history]:
+                    messages.append({'role': 'user', 'content': user_msg.content})
+
+                result = _call_chat_api(text_model, messages)
+
+                db.session.refresh(msg)
+                if msg.status in ('failed', 'cancelled'):
+                    return {'status': msg.status, 'message_id': message_id}
+
+                msg.content = result
+                msg.status = 'completed'
+                db.session.commit()
+
+                # Auto-generate title from first exchange (after commit so answer is visible)
+                if conversation and conversation.title == 'Neuer Chat':
+                    try:
+                        title_messages = [
+                            {'role': 'system', 'content': 'Erstelle einen sehr kurzen Titel (maximal 6 Worte) fuer das folgende Gespraech. Antworte NUR mit dem Titel, ohne Anfuehrungszeichen und ohne Erklaerung.'},
+                            {'role': 'user', 'content': user_msg.content if user_msg else ''},
+                            {'role': 'assistant', 'content': result[:500]},
+                            {'role': 'user', 'content': 'Gib mir jetzt nur den kurzen Titel fuer dieses Gespraech.'}
+                        ]
+                        title = _call_chat_api(text_model, title_messages)
+                        title = title.strip().strip('"').strip("'").strip('*').splitlines()[0][:100]
+                        if title:
+                            conversation.title = title
+                            db.session.commit()
+                    except Exception:
+                        pass
+
+            except Exception as e:
+                msg.content = f'Fehler: {str(e)}'
+                msg.status = 'failed'
+                db.session.commit()
+    finally:
+        _release_slot('text', text_model_id)
+
+    return {'status': msg.status if msg else 'failed', 'message_id': message_id}
