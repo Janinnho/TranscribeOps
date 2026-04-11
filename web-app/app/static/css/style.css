@@ -513,6 +513,22 @@
     border-radius: 1rem;
 }
 
+/* Streaming cursor animation */
+.streaming-cursor {
+    display: inline-block;
+    width: 6px;
+    height: 1em;
+    background: var(--bs-body-color);
+    margin-left: 2px;
+    vertical-align: text-bottom;
+    animation: blink-cursor 0.8s steps(2) infinite;
+}
+
+@keyframes blink-cursor {
+    0% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
 @media (max-width: 768px) {
     .chat-sidebar {
         width: 100%;
