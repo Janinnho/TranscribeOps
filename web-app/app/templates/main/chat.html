@@ -62,7 +62,6 @@
 <script>
 const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 let currentConvId = null;
-let pollTimer = null;
 
 // ── Conversations ────────────────────────────────────────────────
 
@@ -132,13 +131,12 @@ async function createConversation() {
 
 async function selectConversation(publicId) {
     currentConvId = publicId;
-    stopPolling();
+    if (currentEventSource) { currentEventSource.close(); currentEventSource = null; }
     try {
         const resp = await fetch(`/api/conversations/${publicId}`);
         const data = await resp.json();
         openConversation(data.conversation);
         renderMessages(data.messages);
-        if (data.has_pending) startPolling();
         highlightActiveConv();
     } catch (err) {
         console.error('Failed to load conversation:', err);
@@ -283,45 +281,64 @@ async function sendMessage() {
             body: JSON.stringify({content, text_model_id: modelId})
         });
         if (resp.ok) {
-            startPolling();
+            const data = await resp.json();
+            startStream(data.assistant_message.id);
         }
     } catch (err) {
         console.error('Failed to send message:', err);
     }
 }
 
-// ── Polling ──────────────────────────────────────────────────────
+// ── SSE Streaming ────────────────────────────────────────────────
 
-function startPolling() {
-    stopPolling();
-    pollTimer = setInterval(pollMessages, 1500);
-}
+let currentEventSource = null;
 
-function stopPolling() {
-    if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
+function startStream(msgPublicId) {
+    if (currentEventSource) {
+        currentEventSource.close();
     }
-}
 
-async function pollMessages() {
-    if (!currentConvId) { stopPolling(); return; }
-    try {
-        const resp = await fetch(`/api/conversations/${currentConvId}/messages`);
-        const data = await resp.json();
-        renderMessages(data.messages);
-        // Update title if changed
+    const bubbles = document.querySelectorAll('.chat-bubble-assistant');
+    const lastBubble = bubbles[bubbles.length - 1];
+    let streamedContent = '';
+
+    const es = new EventSource(`/api/conversations/${currentConvId}/stream/${msgPublicId}`);
+    currentEventSource = es;
+
+    es.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+
+        if (data.token) {
+            streamedContent += data.token;
+            lastBubble.innerHTML = renderMarkdown(streamedContent);
+            scrollToBottom();
+        }
+
         if (data.title) {
             document.getElementById('convTitleDisplay').textContent = data.title;
-        }
-        if (!data.has_pending) {
-            stopPolling();
             loadConversations();
         }
-    } catch (err) {
-        console.error('Polling error:', err);
-        stopPolling();
-    }
+
+        if (data.done) {
+            es.close();
+            currentEventSource = null;
+            loadConversations();
+        }
+
+        if (data.error) {
+            lastBubble.innerHTML = `<span class="text-danger">${escapeHtml(data.error)}</span>`;
+            es.close();
+            currentEventSource = null;
+        }
+    };
+
+    es.onerror = function() {
+        es.close();
+        currentEventSource = null;
+        if (!streamedContent) {
+            lastBubble.innerHTML = '<span class="text-danger">Verbindungsfehler</span>';
+        }
+    };
 }
 
 // ── Title editing ────────────────────────────────────────────────
