@@ -60,8 +60,15 @@
 
 {% block scripts %}
 <script>
+// Disable raw HTML in marked to prevent XSS
+marked.setOptions({ breaks: true });
+const renderer = new marked.Renderer();
+renderer.html = function(text) { return ''; };
+marked.use({ renderer: renderer });
+
 const csrfToken = document.querySelector('meta[name="csrf-token"]').content;
 let currentConvId = null;
+let pollTimer = null;
 
 // ── Conversations ────────────────────────────────────────────────
 
@@ -77,7 +84,7 @@ async function loadConversations() {
         container.innerHTML = convs.map(c => `
             <div class="conv-item d-flex align-items-center px-3 py-2 border-bottom ${c.id === currentConvId ? 'active' : ''}"
                  data-conv-id="${c.id}" onclick="selectConversation('${c.id}')" role="button">
-                <div class="flex-grow-1 min-width-0 me-2" style="min-width:0">
+                <div class="flex-grow-1 me-2" style="min-width:0">
                     <div class="text-truncate fw-medium conv-title-text">${escapeHtml(c.title)}</div>
                     <small class="text-muted">${c.updated_at}</small>
                 </div>
@@ -131,12 +138,13 @@ async function createConversation() {
 
 async function selectConversation(publicId) {
     currentConvId = publicId;
-    if (currentEventSource) { currentEventSource.close(); currentEventSource = null; }
+    stopPolling();
     try {
         const resp = await fetch(`/api/conversations/${publicId}`);
         const data = await resp.json();
         openConversation(data.conversation);
         renderMessages(data.messages);
+        if (data.has_pending) startPolling();
         highlightActiveConv();
     } catch (err) {
         console.error('Failed to load conversation:', err);
@@ -152,6 +160,7 @@ async function deleteConversation(publicId) {
         });
         if (currentConvId === publicId) {
             currentConvId = null;
+            stopPolling();
             resetChatArea();
         }
         loadConversations();
@@ -183,7 +192,7 @@ function resetChatArea() {
 
 function highlightActiveConv() {
     document.querySelectorAll('.conv-item').forEach(el => {
-        el.classList.toggle('active', el.getAttribute('onclick')?.includes(currentConvId));
+        el.classList.toggle('active', el.dataset.convId === currentConvId);
     });
 }
 
@@ -203,10 +212,15 @@ function renderMessages(messages) {
             ? '<div class="chat-role-label text-end"><i class="bi bi-person-fill me-1"></i>Du</div>'
             : '<div class="chat-role-label"><i class="bi bi-robot me-1"></i>Assistent</div>';
         let content;
-        if (m.status === 'processing' || m.status === 'pending') {
+        if (m.status === 'pending') {
             content = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Laden...</span></div>';
+        } else if (m.status === 'processing') {
+            // Show partial content while streaming to DB
+            content = m.content
+                ? renderMarkdown(m.content) + '<span class="streaming-cursor"></span>'
+                : '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Laden...</span></div>';
         } else if (m.status === 'failed') {
-            content = `<span class="text-danger">${escapeHtml(m.content || 'Fehler')}</span>`;
+            content = '<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Fehler bei der Verarbeitung</span>';
         } else if (isUser) {
             content = escapeHtml(m.content);
         } else {
@@ -262,16 +276,16 @@ async function sendMessage() {
     input.value = '';
     autoResizeInput();
 
-    // Optimistic: add user message immediately
+    // Optimistic: add user message + spinner immediately
     const area = document.getElementById('messagesArea');
-    area.innerHTML += `<div class="d-flex flex-column align-items-end mb-3">
+    area.insertAdjacentHTML('beforeend', `<div class="d-flex flex-column align-items-end mb-3">
         <div class="chat-role-label text-end"><i class="bi bi-person-fill me-1"></i>Du</div>
         <div class="chat-bubble chat-bubble-user">${escapeHtml(content)}</div>
-    </div>`;
-    area.innerHTML += `<div class="d-flex flex-column align-items-start mb-3">
+    </div>`);
+    area.insertAdjacentHTML('beforeend', `<div class="d-flex flex-column align-items-start mb-3" id="assistantPlaceholder">
         <div class="chat-role-label"><i class="bi bi-robot me-1"></i>Assistent</div>
         <div class="chat-bubble chat-bubble-assistant"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Laden...</span></div></div>
-    </div>`;
+    </div>`);
     scrollToBottom();
 
     try {
@@ -280,65 +294,67 @@ async function sendMessage() {
             headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken},
             body: JSON.stringify({content, text_model_id: modelId})
         });
-        if (resp.ok) {
-            const data = await resp.json();
-            startStream(data.assistant_message.id);
+        if (!resp.ok) {
+            let errorMessage = 'Nachricht konnte nicht gesendet werden.';
+            try {
+                const errData = await resp.json();
+                if (errData.error) errorMessage = errData.error;
+            } catch (e) {}
+            const placeholder = document.getElementById('assistantPlaceholder');
+            if (placeholder) {
+                const bubble = placeholder.querySelector('.chat-bubble');
+                bubble.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>${escapeHtml(errorMessage)}</span>`;
+            }
+            input.value = content;
+            autoResizeInput();
+            return;
         }
+        // Start polling for streaming content
+        startPolling();
     } catch (err) {
         console.error('Failed to send message:', err);
+        const placeholder = document.getElementById('assistantPlaceholder');
+        if (placeholder) {
+            const bubble = placeholder.querySelector('.chat-bubble');
+            bubble.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Netzwerkfehler</span>';
+        }
+        input.value = content;
+        autoResizeInput();
     }
 }
 
-// ── SSE Streaming ────────────────────────────────────────────────
+// ── Polling (fast, for streaming from DB) ────────────────────────
 
-let currentEventSource = null;
+function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(pollMessages, 500);
+}
 
-function startStream(msgPublicId) {
-    if (currentEventSource) {
-        currentEventSource.close();
+function stopPolling() {
+    if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
     }
+}
 
-    const bubbles = document.querySelectorAll('.chat-bubble-assistant');
-    const lastBubble = bubbles[bubbles.length - 1];
-    let streamedContent = '';
-
-    const es = new EventSource(`/api/conversations/${currentConvId}/stream/${msgPublicId}`);
-    currentEventSource = es;
-
-    es.onmessage = function(event) {
-        const data = JSON.parse(event.data);
-
-        if (data.token) {
-            streamedContent += data.token;
-            lastBubble.innerHTML = renderMarkdown(streamedContent);
-            scrollToBottom();
-        }
-
-        if (data.title) {
+async function pollMessages() {
+    if (!currentConvId) { stopPolling(); return; }
+    try {
+        const resp = await fetch(`/api/conversations/${currentConvId}/messages`);
+        const data = await resp.json();
+        renderMessages(data.messages);
+        // Update title if changed
+        if (data.title && data.title !== 'Neuer Chat') {
             document.getElementById('convTitleDisplay').textContent = data.title;
+        }
+        if (!data.has_pending) {
+            stopPolling();
             loadConversations();
         }
-
-        if (data.done) {
-            es.close();
-            currentEventSource = null;
-            loadConversations();
-        }
-
-        if (data.error) {
-            lastBubble.innerHTML = `<span class="text-danger">${escapeHtml(data.error)}</span>`;
-            es.close();
-            currentEventSource = null;
-        }
-    };
-
-    es.onerror = function() {
-        es.close();
-        currentEventSource = null;
-        if (!streamedContent) {
-            lastBubble.innerHTML = '<span class="text-danger">Verbindungsfehler</span>';
-        }
-    };
+    } catch (err) {
+        console.error('Polling error:', err);
+        stopPolling();
+    }
 }
 
 // ── Title editing ────────────────────────────────────────────────

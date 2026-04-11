@@ -2,8 +2,7 @@ import os
 import json
 import uuid
 from datetime import datetime, timezone, timedelta
-import requests as http_requests
-from flask import Blueprint, request, jsonify, current_app, Response, send_file, stream_with_context
+from flask import Blueprint, request, jsonify, current_app, Response, send_file
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 from app import db
@@ -1127,6 +1126,14 @@ def create_conversation():
         return jsonify({'error': 'Kein Zugriff'}), 403
     data = request.get_json(silent=True) or {}
     text_model_id = data.get('text_model_id')
+    if text_model_id:
+        try:
+            text_model_id = int(text_model_id)
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Ungültige text_model_id'}), 400
+        allowed_ids = {m.id for m in current_user.get_available_text_models(function='chat')}
+        if text_model_id not in allowed_ids:
+            return jsonify({'error': 'Kein Zugriff auf dieses Modell'}), 403
     conv = Conversation(user_id=current_user.id, text_model_id=text_model_id)
     db.session.add(conv)
     db.session.commit()
@@ -1143,7 +1150,7 @@ def get_conversation(public_id):
         return jsonify({'error': 'Nicht gefunden'}), 404
     msgs = ConversationMessage.query.filter_by(conversation_id=conv.id).order_by(
         ConversationMessage.created_at).all()
-    has_pending = any(m.status == 'processing' for m in msgs)
+    has_pending = any(m.status in ('processing', 'pending') for m in msgs)
     return jsonify({
         'conversation': _conv_to_dict(conv),
         'messages': [_conv_msg_to_dict(m) for m in msgs],
@@ -1163,7 +1170,14 @@ def update_conversation(public_id):
     if 'title' in data:
         conv.title = data['title'][:255]
     if 'text_model_id' in data:
-        conv.text_model_id = data['text_model_id']
+        try:
+            tid = int(data['text_model_id'])
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Ungültige text_model_id'}), 400
+        allowed_ids = {m.id for m in current_user.get_available_text_models(function='chat')}
+        if tid not in allowed_ids:
+            return jsonify({'error': 'Kein Zugriff auf dieses Modell'}), 403
+        conv.text_model_id = tid
     db.session.commit()
     return jsonify(_conv_to_dict(conv))
 
@@ -1198,6 +1212,15 @@ def send_conversation_message(public_id):
     if not text_model_id:
         return jsonify({'error': 'Kein Textmodell ausgewählt'}), 400
 
+    # Validate model access
+    try:
+        text_model_id = int(text_model_id)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Ungültige text_model_id'}), 400
+    allowed_ids = {m.id for m in current_user.get_available_text_models(function='chat')}
+    if text_model_id not in allowed_ids:
+        return jsonify({'error': 'Kein Zugriff auf dieses Modell'}), 403
+
     # Update conversation model if changed
     if text_model_id != conv.text_model_id:
         conv.text_model_id = text_model_id
@@ -1217,10 +1240,13 @@ def send_conversation_message(public_id):
     conv.updated_at = datetime.now(timezone.utc)
     db.session.commit()
 
+    # Dispatch Celery task
+    from app.tasks import process_conversation_message
+    process_conversation_message.delay(assistant_msg.id, text_model_id)
+
     return jsonify({
         'user_message': _conv_msg_to_dict(user_msg),
         'assistant_message': _conv_msg_to_dict(assistant_msg),
-        'text_model_id': text_model_id,
     }), 201
 
 
@@ -1240,168 +1266,3 @@ def poll_conversation_messages(public_id):
         'has_pending': has_pending,
         'title': conv.title,
     })
-
-
-# ── SSE Streaming for Chat ───────────────────────────────────────
-
-def _stream_chat_ollama(model, messages):
-    url = f"{model.endpoint_url}/api/chat"
-    payload = {'model': model.model_id, 'messages': messages, 'stream': True}
-    timeout = getattr(model, 'request_timeout_secs', 0) or 300
-    with http_requests.post(url, json=payload, timeout=timeout, stream=True) as resp:
-        resp.raise_for_status()
-        for line in resp.iter_lines():
-            if line:
-                data = json.loads(line)
-                token = data.get('message', {}).get('content', '')
-                if token:
-                    yield token
-                if data.get('done'):
-                    break
-
-
-def _stream_chat_openai(model, messages):
-    url = 'https://api.openai.com/v1/chat/completions'
-    payload = {'model': model.model_id, 'messages': messages, 'stream': True}
-    headers = {'Authorization': f'Bearer {model.api_key}', 'Content-Type': 'application/json'}
-    timeout = getattr(model, 'request_timeout_secs', 0) or 300
-    with http_requests.post(url, json=payload, headers=headers, timeout=timeout, stream=True) as resp:
-        resp.raise_for_status()
-        for line in resp.iter_lines():
-            if line:
-                text = line.decode('utf-8', errors='replace')
-                if text.startswith('data: '):
-                    text = text[6:]
-                if text.strip() == '[DONE]':
-                    break
-                try:
-                    data = json.loads(text)
-                    delta = data.get('choices', [{}])[0].get('delta', {})
-                    token = delta.get('content', '')
-                    if token:
-                        yield token
-                except (json.JSONDecodeError, IndexError, KeyError):
-                    pass
-
-
-def _stream_chat_azure(model, messages):
-    api_version = model.azure_api_version or '2024-06-01'
-    deployment = model.azure_deployment or model.model_id
-    url = f"{model.endpoint_url}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
-    payload = {'messages': messages, 'stream': True}
-    headers = {'api-key': model.api_key, 'Content-Type': 'application/json'}
-    timeout = getattr(model, 'request_timeout_secs', 0) or 300
-    with http_requests.post(url, json=payload, headers=headers, timeout=timeout, stream=True) as resp:
-        resp.raise_for_status()
-        for line in resp.iter_lines():
-            if line:
-                text = line.decode('utf-8', errors='replace')
-                if text.startswith('data: '):
-                    text = text[6:]
-                if text.strip() == '[DONE]':
-                    break
-                try:
-                    data = json.loads(text)
-                    delta = data.get('choices', [{}])[0].get('delta', {})
-                    token = delta.get('content', '')
-                    if token:
-                        yield token
-                except (json.JSONDecodeError, IndexError, KeyError):
-                    pass
-
-
-def _stream_chat(model, messages):
-    if model.provider == 'ollama':
-        yield from _stream_chat_ollama(model, messages)
-    elif model.provider == 'openai':
-        yield from _stream_chat_openai(model, messages)
-    elif model.provider == 'azure':
-        yield from _stream_chat_azure(model, messages)
-    else:
-        raise Exception(f'Unbekannter Provider: {model.provider}')
-
-
-@api_bp.route('/conversations/<string:conv_public_id>/stream/<string:msg_public_id>', methods=['GET'])
-@login_required
-def stream_conversation_message(conv_public_id, msg_public_id):
-    if not current_user.has_chat_access():
-        return jsonify({'error': 'Kein Zugriff'}), 403
-
-    conv = Conversation.query.filter_by(public_id=conv_public_id, user_id=current_user.id).first()
-    if not conv:
-        return jsonify({'error': 'Nicht gefunden'}), 404
-
-    assistant_msg = ConversationMessage.query.filter_by(
-        public_id=msg_public_id, conversation_id=conv.id).first()
-    if not assistant_msg:
-        return jsonify({'error': 'Nachricht nicht gefunden'}), 404
-
-    text_model = TextModel.query.get(conv.text_model_id)
-    if not text_model:
-        return jsonify({'error': 'Kein Textmodell konfiguriert'}), 400
-
-    # Build messages array from conversation history
-    history = ConversationMessage.query.filter_by(
-        conversation_id=conv.id
-    ).filter(
-        ConversationMessage.id < assistant_msg.id,
-        ConversationMessage.status == 'completed'
-    ).order_by(ConversationMessage.created_at).all()
-
-    system_msg = {
-        'role': 'system',
-        'content': 'Du bist ein hilfreicher Assistent. Antworte auf Deutsch, es sei denn, der Benutzer fragt in einer anderen Sprache.'
-    }
-    messages = [system_msg]
-    for h in history:
-        messages.append({'role': h.role, 'content': h.content})
-
-    def generate():
-        full_content = []
-        try:
-            assistant_msg.status = 'processing'
-            db.session.commit()
-
-            for token in _stream_chat(text_model, messages):
-                full_content.append(token)
-                yield f"data: {json.dumps({'token': token})}\n\n"
-
-            result = ''.join(full_content)
-            assistant_msg.content = result
-            assistant_msg.status = 'completed'
-            db.session.commit()
-
-            # Auto-generate title from first exchange
-            if conv.title == 'Neuer Chat':
-                try:
-                    from app.tasks import _call_chat_api
-                    user_content = ''
-                    for h in history:
-                        if h.role == 'user':
-                            user_content = h.content
-                    title_messages = [
-                        {'role': 'system', 'content': 'Erstelle einen sehr kurzen Titel (maximal 6 Worte) fuer das folgende Gespraech. Antworte NUR mit dem Titel, ohne Anfuehrungszeichen und ohne Erklaerung.'},
-                        {'role': 'user', 'content': user_content},
-                        {'role': 'assistant', 'content': result[:500]},
-                        {'role': 'user', 'content': 'Gib mir jetzt nur den kurzen Titel fuer dieses Gespraech.'}
-                    ]
-                    title = _call_chat_api(text_model, title_messages)
-                    title = title.strip().strip('"').strip("'").strip('*').splitlines()[0][:100]
-                    if title:
-                        conv.title = title
-                        db.session.commit()
-                        yield f"data: {json.dumps({'title': title})}\n\n"
-                except Exception:
-                    pass
-
-            yield f"data: {json.dumps({'done': True})}\n\n"
-
-        except Exception as e:
-            error_msg = f'Fehler: {str(e)}'
-            assistant_msg.content = error_msg
-            assistant_msg.status = 'failed'
-            db.session.commit()
-            yield f"data: {json.dumps({'error': error_msg})}\n\n"
-
-    return Response(stream_with_context(generate()), mimetype='text/event-stream',
-                    headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'})

@@ -1310,7 +1310,83 @@ def process_chat_message(self, chat_message_id, text_model_id):
     return {'status': msg.status if msg else 'failed', 'chat_message_id': chat_message_id}
 
 
-# ── Standalone conversation Celery task ──────────────────────────────
+# ── Streaming chat helpers (token-by-token from providers) ───────────
+
+def _stream_chat_ollama(model, messages):
+    url = f"{model.endpoint_url}/api/chat"
+    payload = {'model': model.model_id, 'messages': messages, 'stream': True}
+    with requests.post(url, json=payload, timeout=_get_text_timeout(model), stream=True) as resp:
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            if line:
+                data = json.loads(line)
+                token = data.get('message', {}).get('content', '')
+                if token:
+                    yield token
+                if data.get('done'):
+                    break
+
+
+def _stream_chat_openai(model, messages):
+    url = 'https://api.openai.com/v1/chat/completions'
+    payload = {'model': model.model_id, 'messages': messages, 'stream': True}
+    headers = {'Authorization': f'Bearer {model.api_key}', 'Content-Type': 'application/json'}
+    with requests.post(url, json=payload, headers=headers, timeout=_get_text_timeout(model), stream=True) as resp:
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            if line:
+                text = line.decode('utf-8', errors='replace')
+                if text.startswith('data: '):
+                    text = text[6:]
+                if text.strip() == '[DONE]':
+                    break
+                try:
+                    data = json.loads(text)
+                    delta = data.get('choices', [{}])[0].get('delta', {})
+                    token = delta.get('content', '')
+                    if token:
+                        yield token
+                except (json.JSONDecodeError, IndexError, KeyError):
+                    pass
+
+
+def _stream_chat_azure(model, messages):
+    api_version = model.azure_api_version or '2024-06-01'
+    deployment = model.azure_deployment or model.model_id
+    url = f"{model.endpoint_url}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
+    payload = {'messages': messages, 'stream': True}
+    headers = {'api-key': model.api_key, 'Content-Type': 'application/json'}
+    with requests.post(url, json=payload, headers=headers, timeout=_get_text_timeout(model), stream=True) as resp:
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            if line:
+                text = line.decode('utf-8', errors='replace')
+                if text.startswith('data: '):
+                    text = text[6:]
+                if text.strip() == '[DONE]':
+                    break
+                try:
+                    data = json.loads(text)
+                    delta = data.get('choices', [{}])[0].get('delta', {})
+                    token = delta.get('content', '')
+                    if token:
+                        yield token
+                except (json.JSONDecodeError, IndexError, KeyError):
+                    pass
+
+
+def _stream_chat(model, messages):
+    if model.provider == 'ollama':
+        yield from _stream_chat_ollama(model, messages)
+    elif model.provider == 'openai':
+        yield from _stream_chat_openai(model, messages)
+    elif model.provider == 'azure':
+        yield from _stream_chat_azure(model, messages)
+    else:
+        raise Exception(f'Unbekannter Provider: {model.provider}')
+
+
+# ── Standalone conversation Celery task (streams to DB) ──────────────
 
 @celery.task(bind=True, max_retries=None)
 def process_conversation_message(self, message_id, text_model_id):
@@ -1353,18 +1429,21 @@ def process_conversation_message(self, message_id, text_model_id):
                 for h in history:
                     messages.append({'role': h.role, 'content': h.content})
 
-                # Add the current user message (the one before this assistant placeholder)
-                user_msg = ConversationMessage.query.filter_by(
-                    conversation_id=msg.conversation_id,
-                    role='user',
-                    status='completed'
-                ).filter(ConversationMessage.id < msg.id).order_by(
-                    ConversationMessage.created_at.desc()
-                ).first()
-                if user_msg and user_msg.id not in [h.id for h in history]:
-                    messages.append({'role': 'user', 'content': user_msg.content})
+                # Stream from provider, write chunks to DB
+                full_content = []
+                token_count = 0
+                for token in _stream_chat(text_model, messages):
+                    full_content.append(token)
+                    token_count += 1
+                    # Save to DB every 5 tokens so frontend can poll partial content
+                    if token_count % 5 == 0:
+                        db.session.refresh(msg)
+                        if msg.status in ('failed', 'cancelled'):
+                            return {'status': msg.status, 'message_id': message_id}
+                        msg.content = ''.join(full_content)
+                        db.session.commit()
 
-                result = _call_chat_api(text_model, messages)
+                result = ''.join(full_content)
 
                 db.session.refresh(msg)
                 if msg.status in ('failed', 'cancelled'):
@@ -1377,9 +1456,13 @@ def process_conversation_message(self, message_id, text_model_id):
                 # Auto-generate title from first exchange (after commit so answer is visible)
                 if conversation and conversation.title == 'Neuer Chat':
                     try:
+                        user_content = ''
+                        for h in history:
+                            if h.role == 'user':
+                                user_content = h.content
                         title_messages = [
                             {'role': 'system', 'content': 'Erstelle einen sehr kurzen Titel (maximal 6 Worte) fuer das folgende Gespraech. Antworte NUR mit dem Titel, ohne Anfuehrungszeichen und ohne Erklaerung.'},
-                            {'role': 'user', 'content': user_msg.content if user_msg else ''},
+                            {'role': 'user', 'content': user_content},
                             {'role': 'assistant', 'content': result[:500]},
                             {'role': 'user', 'content': 'Gib mir jetzt nur den kurzen Titel fuer dieses Gespraech.'}
                         ]
@@ -1392,7 +1475,7 @@ def process_conversation_message(self, message_id, text_model_id):
                         pass
 
             except Exception as e:
-                msg.content = f'Fehler: {str(e)}'
+                msg.content = str(e)
                 msg.status = 'failed'
                 db.session.commit()
     finally:
