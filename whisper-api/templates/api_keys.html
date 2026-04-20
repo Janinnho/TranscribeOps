@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}API-Keys — Whisper API Admin{% endblock %}
+{% block content %}
+<h1 class="page-title">API-Keys</h1>
+<p class="page-subtitle">Generiere Keys für den <code>Authorization: Bearer</code>-Header der Transkriptions-API.</p>
+
+<section class="card">
+  <h2>Neuen Key generieren</h2>
+  <form id="new-key-form" class="inline-form">
+    <input type="text" name="label" placeholder="Beschriftung (z.B. 'Produktion')" required>
+    <button type="submit" class="btn btn-primary">Generieren</button>
+  </form>
+  <div id="new-key-result" class="hidden">
+    <p><strong>Wichtig:</strong> Dieser Key wird nur ein Mal angezeigt. Jetzt sicher speichern!</p>
+    <pre id="new-key-raw"></pre>
+  </div>
+</section>
+
+<table class="data-table" id="keys-table">
+  <thead>
+    <tr>
+      <th>Label</th><th>Prefix</th><th>Erstellt</th><th>Zuletzt verwendet</th><th>Status</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for k in keys %}
+    <tr data-id="{{ k.id }}">
+      <td>{{ k.label }}</td>
+      <td><code>{{ k.key_prefix }}…</code></td>
+      <td>{{ k.created_at | int }}</td>
+      <td>{{ k.last_used_at or '—' }}</td>
+      <td>
+        {% if k.revoked_at %}
+          <span class="pill pill-red">widerrufen</span>
+        {% else %}
+          <span class="pill pill-green">aktiv</span>
+        {% endif %}
+      </td>
+      <td>
+        {% if not k.revoked_at %}
+        <button class="btn btn-sm btn-danger" data-action="revoke" data-id="{{ k.id }}">Widerrufen</button>
+        {% endif %}
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" class="text-muted text-center">Noch keine Keys angelegt.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  AdminUI.wireKeyActions();
+  AdminUI.wireNewKeyForm();
+</script>
+{% endblock %}

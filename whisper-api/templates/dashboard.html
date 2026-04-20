@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Whisper API Admin{% endblock %}
+{% block content %}
+<h1 class="page-title">Dashboard</h1>
+<p class="page-subtitle">Überblick aller Modelle nach Zweck.</p>
+
+{% for kind, color in [('whisper','blue'),('parakeet','teal'),('diarize','green'),('align','purple')] %}
+  {% if grouped[kind] %}
+    <section class="card-group group-{{ color }}">
+      <h2 class="group-title">
+        <span class="group-dot"></span>
+        {{ kind_labels[kind] }}
+      </h2>
+      <div class="card-grid">
+        {% for e in grouped[kind] %}
+          <article class="model-card {% if e.downloaded %}is-downloaded{% endif %}">
+            <header>
+              <h3>{{ e.display_name }}</h3>
+              <span class="badge badge-{{ color }}">{{ e.engine }}</span>
+            </header>
+            <p class="model-desc">{{ e.description }}</p>
+            <dl class="model-meta">
+              <div><dt>Größe</dt><dd>{% if e.downloaded %}{{ e.disk_size_mb }} MB{% else %}{{ e.size_hint }}{% endif %}</dd></div>
+              <div><dt>Status</dt><dd>{% if e.downloaded %}<span class="dot-green"></span> heruntergeladen{% else %}<span class="dot-gray"></span> nicht geladen{% endif %}</dd></div>
+              {% if e.instances %}
+                <div><dt>Instanzen</dt><dd>
+                  {% for inst in e.instances %}
+                    <span class="pill">:{{ inst.port }} — {{ inst.name }}</span>
+                  {% endfor %}
+                </dd></div>
+              {% endif %}
+            </dl>
+          </article>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+{% endfor %}
+{% endblock %}
