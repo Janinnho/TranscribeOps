@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Admin deaktiviert</title>
+  <link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <h1>Admin-UI nicht aktiviert</h1>
+    <p>
+      Die grafische Admin-Oberfläche ist deaktiviert, weil kein Passwort gesetzt ist.
+      Setze die Umgebungsvariable <code>ADMIN_PASSWORD</code> im Docker-Config
+      und starte den Container neu.
+    </p>
+  </div>
+</body>
+</html>

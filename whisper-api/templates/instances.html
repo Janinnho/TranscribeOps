@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Instanzen — Whisper API Admin{% endblock %}
+{% block content %}
+<h1 class="page-title">Instanzen</h1>
+<p class="page-subtitle">
+  Jede Instanz lädt ein eigenes Modell und lauscht auf einem eigenen Port.
+  Mehrere Instanzen laufen parallel — ideal für Express-Modus ohne separaten Container.
+  Port-Range: <code>{{ port_range }}</code>
+</p>
+
+<section class="card">
+  <h2>Neue Instanz</h2>
+  <form id="new-instance-form" class="form-grid">
+    <label>Name <input type="text" name="name" required placeholder="z.B. express"></label>
+    <label>Engine
+      <select name="engine" id="engine-select">
+        <option value="whisperx">WhisperX</option>
+        <option value="nemo">NeMo (Parakeet)</option>
+      </select>
+    </label>
+    <label>Modell
+      <select name="model" required>
+        {% for m in downloaded_models %}
+          <option value="{{ m.id }}" data-engine="{{ m.engine }}">{{ m.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Device
+      <select name="device">
+        <option value="cpu" {% if default_device == 'cpu' %}selected{% endif %}>CPU</option>
+        <option value="cuda" {% if default_device == 'cuda' %}selected{% endif %}>CUDA (GPU)</option>
+        <option value="mps" {% if default_device == 'mps' %}selected{% endif %}>MPS (Apple)</option>
+      </select>
+    </label>
+    <label>Compute Type
+      <select name="compute_type">
+        <option value="int8" {% if default_compute_type == 'int8' %}selected{% endif %}>int8</option>
+        <option value="int16">int16</option>
+        <option value="float16" {% if default_compute_type == 'float16' %}selected{% endif %}>float16</option>
+        <option value="float32">float32</option>
+      </select>
+    </label>
+    <label>Port (leer = automatisch) <input type="number" name="port" min="1024" max="65535"></label>
+    <label>Zweck
+      <select name="purpose">
+        <option value="transcription">Transkription</option>
+        <option value="diarization">Diarisierung</option>
+        <option value="alignment">Alignment</option>
+      </select>
+    </label>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Instanz anlegen</button>
+    </div>
+  </form>
+  {% if not downloaded_models %}
+  <p class="hint">Noch keine Transkriptionsmodelle heruntergeladen. Bitte erst unter „Modelle" herunterladen.</p>
+  {% endif %}
+</section>
+
+<table class="data-table" id="instances-table">
+  <thead>
+    <tr>
+      <th>Name</th><th>Engine / Modell</th><th>Zweck</th><th>Port</th>
+      <th>Status</th><th>PID</th><th>CPU</th><th>RAM</th><th>Aktionen</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for inst in instances %}
+    <tr data-id="{{ inst.id }}">
+      <td><strong>{{ inst.name }}</strong></td>
+      <td>{{ inst.engine }} / {{ inst.model }}</td>
+      <td>{{ inst.purpose }}</td>
+      <td><code>:{{ inst.port }}</code></td>
+      <td>
+        {% if inst.status == 'running' %}
+          <span class="pill pill-green">läuft</span>
+        {% elif inst.status == 'crashed' %}
+          <span class="pill pill-red">abgestürzt</span>
+        {% else %}
+          <span class="pill pill-gray">gestoppt</span>
+        {% endif %}
+      </td>
+      <td>{{ inst.pid or '—' }}</td>
+      <td>{% if inst.cpu_pct is not none %}{{ inst.cpu_pct }}%{% else %}—{% endif %}</td>
+      <td>{% if inst.rss_mb is not none %}{{ inst.rss_mb }} MB{% else %}—{% endif %}</td>
+      <td class="row-actions">
+        {% if inst.status == 'running' %}
+          <button class="btn btn-sm btn-warning" data-action="stop" data-id="{{ inst.id }}">Stop</button>
+        {% else %}
+          <button class="btn btn-sm btn-primary" data-action="start" data-id="{{ inst.id }}">Start</button>
+        {% endif %}
+        <button class="btn btn-sm btn-danger" data-action="delete" data-id="{{ inst.id }}">Löschen</button>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="9" class="text-muted text-center">Noch keine Instanzen angelegt.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  AdminUI.wireInstanceActions();
+  AdminUI.wireNewInstanceForm();
+</script>
+{% endblock %}

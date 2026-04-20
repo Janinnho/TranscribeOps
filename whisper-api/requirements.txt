@@ -2,3 +2,12 @@ flask==3.1.0
 gunicorn==23.0.0
 requests==2.32.3
 whisperx @ git+https://github.com/m-bain/whisperX.git@646f511e6bb47f8d2f0687e9976f8e7035b1e18d
+
+# Admin UI / infrastructure
+huggingface_hub>=0.28.1,<1.0.0
+psutil==6.0.0
+
+# NeMo (Parakeet ASR engine)
+# nemo_toolkit[asr] pulls in torch/torchaudio (already present via whisperx),
+# plus NeMo core and ASR dependencies. Adds ~2 GB to the image.
+nemo_toolkit[asr]==2.0.0

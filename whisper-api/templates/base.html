@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Whisper API Admin{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">
+</head>
+<body>
+  <nav class="topnav">
+    <div class="brand">
+      <span class="logo">◐</span>
+      <span>Whisper&nbsp;API&nbsp;Admin</span>
+    </div>
+    <ul class="nav-links">
+      <li><a href="{{ url_for('admin.dashboard') }}" {% if request.endpoint == 'admin.dashboard' %}class="active"{% endif %}>Dashboard</a></li>
+      <li><a href="{{ url_for('admin.models') }}" {% if request.endpoint == 'admin.models' %}class="active"{% endif %}>Modelle</a></li>
+      <li><a href="{{ url_for('admin.instances') }}" {% if request.endpoint == 'admin.instances' %}class="active"{% endif %}>Instanzen</a></li>
+      <li><a href="{{ url_for('admin.keys') }}" {% if request.endpoint == 'admin.keys' %}class="active"{% endif %}>API-Keys</a></li>
+    </ul>
+    <form method="post" action="{{ url_for('admin.logout') }}" class="logout-form">
+      <button type="submit" class="btn btn-ghost">Abmelden</button>
+    </form>
+  </nav>
+
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('admin.static', filename='admin.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
