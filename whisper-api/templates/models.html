@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Modelle — Whisper API Admin{% endblock %}
+{% block content %}
+<h1 class="page-title">Modelle verwalten</h1>
+<p class="page-subtitle">Kuratierter Katalog — Modelle bei Bedarf aus HuggingFace herunterladen.</p>
+
+<section class="card">
+  <h2>Eigenes HuggingFace-Repo herunterladen</h2>
+  <form id="custom-dl-form" class="inline-form">
+    <input type="text" name="repo_id" placeholder="z.B. user/custom-model" required>
+    <select name="kind">
+      <option value="whisper">Transkription (Whisper)</option>
+      <option value="parakeet">Transkription (Parakeet)</option>
+    </select>
+    <button type="submit" class="btn btn-primary">Herunterladen</button>
+  </form>
+</section>
+
+<table class="data-table" id="models-table">
+  <thead>
+    <tr>
+      <th>Modell</th><th>Zweck</th><th>Engine</th><th>Größe</th><th>Status</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for e in entries %}
+    <tr data-repo="{{ e.repo_id }}" data-kind="{{ e.kind }}">
+      <td>
+        <strong>{{ e.display_name }}</strong>
+        <small class="text-muted">{{ e.repo_id }}</small>
+      </td>
+      <td><span class="badge badge-{{ kind_colors[e.kind] }}">{{ kind_labels[e.kind] }}</span></td>
+      <td>{{ e.engine }}</td>
+      <td>{% if e.downloaded %}{{ e.disk_size_mb }} MB{% else %}{{ e.size_hint }}{% endif %}</td>
+      <td class="dl-status">
+        {% if e.downloaded %}
+          <span class="dot-green"></span> heruntergeladen
+        {% elif e.active_download %}
+          <progress value="{{ e.active_download.progress }}" max="100"></progress>
+          <span class="progress-label">{{ '%.0f'|format(e.active_download.progress) }}%</span>
+        {% else %}
+          <span class="dot-gray"></span> nicht geladen
+        {% endif %}
+      </td>
+      <td>
+        {% if not e.downloaded and not e.active_download %}
+        <button class="btn btn-primary btn-sm download-btn" data-repo="{{ e.repo_id }}" data-kind="{{ e.kind }}">Download</button>
+        {% endif %}
+        {% if e.requires_hf_token %}
+        <span class="hint">benötigt HF-Token</span>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  AdminUI.wireDownloadButtons();
+  AdminUI.wireCustomDownloadForm();
+</script>
+{% endblock %}

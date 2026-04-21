@@ -7,6 +7,7 @@
 #
 # Alle Services nutzen network_mode: host — die Ports sind direkt auf dem Host erreichbar.
 # Gunicorn (web) lauscht auf Port 5000, Redis auf 6379, Whisper API auf 8000.
+# Whisper-Instanz-Worker (Admin-UI) lauschen im Bereich 8100-8120.
 
 services:
   web:
@@ -67,6 +68,12 @@ services:
       - WHISPER_COMPUTE_TYPE=int8
       - WHISPER_BATCH_SIZE=16
       - HF_TOKEN=${HF_TOKEN:-}
+      # Admin-UI: erreichbar unter http://<host>:8000/admin
+      # Leer lassen = Admin-UI deaktiviert. Passwort beliebig setzen, um zu aktivieren.
+      - ADMIN_PASSWORD=${WHISPER_ADMIN_PASSWORD:-}
+      - ADMIN_SESSION_SECRET=${WHISPER_ADMIN_SESSION_SECRET:-}
+      # Port-Range für Instanz-Worker, die über das Admin-UI verwaltet werden.
+      - INSTANCE_PORT_RANGE=8100-8120
     volumes:
       - transcribeops-whisper-cache:/root/.cache
     restart: always

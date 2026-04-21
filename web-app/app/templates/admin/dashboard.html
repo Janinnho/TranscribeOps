@@ -160,6 +160,7 @@
                         </td>
                         <td><span class="badge {{ 'bg-success' if m.is_active else 'bg-danger' }}">{{ 'Ja' if m.is_active else 'Nein' }}</span></td>
                         <td>
+                            <button class="btn btn-sm btn-outline-secondary test-conn-btn" data-test-url="{{ url_for('admin.test_speech_model', model_id=m.id) }}" title="Verbindung testen"><i class="bi bi-plug"></i></button>
                             <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editSpeech{{ m.id }}"><i class="bi bi-pencil"></i></button>
                             <form method="POST" action="{{ url_for('admin.delete_speech_model', model_id=m.id) }}" class="d-inline" onsubmit="return confirm('Modell löschen?')">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -195,6 +196,7 @@
                         <td><code>{{ m.model_id }}</code></td>
                         <td><span class="badge {{ 'bg-success' if m.is_active else 'bg-danger' }}">{{ 'Ja' if m.is_active else 'Nein' }}</span></td>
                         <td>
+                            <button class="btn btn-sm btn-outline-secondary test-conn-btn" data-test-url="{{ url_for('admin.test_text_model', model_id=m.id) }}" title="Verbindung testen"><i class="bi bi-plug"></i></button>
                             <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#editText{{ m.id }}"><i class="bi bi-pencil"></i></button>
                             <form method="POST" action="{{ url_for('admin.delete_text_model', model_id=m.id) }}" class="d-inline" onsubmit="return confirm('Modell löschen?')">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -1286,5 +1288,35 @@ function showError(btn) {
     tick();
     setInterval(tick, 1000);
 })();
+
+document.querySelectorAll('.test-conn-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const url = btn.dataset.testUrl;
+        const original = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+        try {
+            const csrf = document.querySelector('meta[name="csrf-token"]')?.content || '';
+            const res = await fetch(url, { method: 'POST', headers: { 'X-CSRFToken': csrf, 'Accept': 'application/json' } });
+            const data = await res.json();
+            const variant = data.ok ? 'success' : 'danger';
+            const latency = data.latency_ms ? ` · ${data.latency_ms} ms` : '';
+            const msg = `${data.endpoint || ''}\n${data.message}${latency}`;
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${variant} position-fixed top-0 end-0 m-3 shadow`;
+            toast.style.zIndex = 9999;
+            toast.style.maxWidth = '520px';
+            toast.style.whiteSpace = 'pre-wrap';
+            toast.textContent = msg;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 6000);
+        } catch (e) {
+            alert('Testaufruf fehlgeschlagen: ' + e.message);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        }
+    });
+});
 </script>
 {% endblock %}
