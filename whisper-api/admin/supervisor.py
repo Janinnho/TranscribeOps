@@ -119,11 +119,16 @@ def delete_instance(instance_id: int) -> None:
 def respawn_enabled() -> None:
     if not _config["db_path"]:
         return
+    # Stored PIDs are from the previous container lifecycle — even if a PID
+    # number happens to be "alive" in this new /proc namespace, it's a
+    # different process. Zero them out before the liveness check so we
+    # don't skip instances whose old PID collides with e.g. the gunicorn
+    # master or a sibling we just spawned in this same loop.
     instances = admin_db.list_instances(_config["db_path"], enabled_only=True)
     for row in instances:
-        pid = row.get("pid")
-        if pid and _pid_alive(pid):
-            continue
+        if row.get("pid") is not None:
+            admin_db.update_instance_pid(_config["db_path"], row["id"], None)
+    for row in instances:
         try:
             start_instance(row["id"])
         except Exception as e:

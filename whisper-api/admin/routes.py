@@ -3,7 +3,7 @@ from flask import Blueprint, render_template
 
 from .auth import login_required
 from .catalog import CATALOG, KIND_LABELS, KIND_COLORS
-from .downloads import catalog_status
+from .downloads import catalog_status, bundled_models_status
 from . import db as admin_db
 from . import supervisor
 
@@ -44,6 +44,7 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             kind_labels=KIND_LABELS,
             kind_colors=KIND_COLORS,
             system_info=system_info,
+            bundled_info=bundled_models_status(),
         )
 
     @bp.route("/models")

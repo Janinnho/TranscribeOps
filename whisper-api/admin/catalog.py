@@ -44,26 +44,12 @@ CATALOG: list[CatalogEntry] = [
     CatalogEntry("parakeet-tdt-1.1b", "nvidia/parakeet-tdt-1.1b", "parakeet", "nemo",
                  "Parakeet TDT 1.1B", "Größeres Parakeet-Modell.", "~2.2 GB"),
 
-    # ----- Diarization -----
-    CatalogEntry("pyannote-diarization-3.1", "pyannote/speaker-diarization-3.1", "diarize", "whisperx",
-                 "pyannote Speaker Diarization 3.1",
-                 "Sprechererkennung. Benötigt HF-Token + akzeptierte Lizenz.", "~250 MB", requires_hf_token=True),
-    CatalogEntry("pyannote-segmentation-3.0", "pyannote/segmentation-3.0", "diarize", "whisperx",
-                 "pyannote Segmentation 3.0",
-                 "Wird von Diarization 3.1 intern benötigt.", "~20 MB", requires_hf_token=True),
-
-    # ----- Alignment (wav2vec2 per language) -----
-    # WhisperX lädt sprachabhängige Modelle automatisch. Hier die gängigsten zum Pre-Download.
-    CatalogEntry("align-en", "jonatasgrosman/wav2vec2-large-xlsr-53-english", "align", "whisperx",
-                 "Alignment Englisch", "wav2vec2 für englische Wort-Timings.", "~1.2 GB"),
-    CatalogEntry("align-de", "jonatasgrosman/wav2vec2-large-xlsr-53-german", "align", "whisperx",
-                 "Alignment Deutsch", "wav2vec2 für deutsche Wort-Timings.", "~1.2 GB"),
-    CatalogEntry("align-fr", "jonatasgrosman/wav2vec2-large-xlsr-53-french", "align", "whisperx",
-                 "Alignment Französisch", "wav2vec2 für französische Wort-Timings.", "~1.2 GB"),
-    CatalogEntry("align-es", "jonatasgrosman/wav2vec2-large-xlsr-53-spanish", "align", "whisperx",
-                 "Alignment Spanisch", "wav2vec2 für spanische Wort-Timings.", "~1.2 GB"),
-    CatalogEntry("align-it", "jonatasgrosman/wav2vec2-large-xlsr-53-italian", "align", "whisperx",
-                 "Alignment Italienisch", "wav2vec2 für italienische Wort-Timings.", "~1.2 GB"),
+    # NOTE: Alignment (wav2vec2) and Diarization (pyannote) are intentionally
+    # NOT listed here. Alignment bundles (en/fr/de/es/it) are baked into the
+    # image via prefetch_torch_align.py; pyannote is fetched on first boot by
+    # admin.downloads.ensure_pyannote_models(). Neither is user-configurable.
+    # Admins who need an exotic alignment model can still enter its repo_id
+    # manually via the "Eigenes HuggingFace-Repo"-Formular on /admin/models.
 ]
 
 

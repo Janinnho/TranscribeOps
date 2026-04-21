@@ -22,6 +22,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY patch_nemo_numpy2.py /tmp/patch_nemo_numpy2.py
 RUN python /tmp/patch_nemo_numpy2.py && rm /tmp/patch_nemo_numpy2.py
 
+# Pre-fetch the 5 torchaudio wav2vec2 bundles used by WhisperX for forced
+# alignment (en/fr/de/es/it). Baked into the image so transcriptions with
+# word-timestamps never stall on a first-use download. No HF token needed.
+COPY prefetch_torch_align.py /tmp/prefetch_torch_align.py
+RUN python /tmp/prefetch_torch_align.py && rm /tmp/prefetch_torch_align.py
+
 COPY . .
 
 # Default environment — per-instance settings werden ab jetzt über das Admin-UI verwaltet.

@@ -141,6 +141,105 @@ def _watch_progress(db_path: str, download_id: int, repo_id: str, stop_evt: thre
             return
 
 
+# Pyannote repos that WhisperX loads in-process when a request asks for
+# diarization. They require an HF token and accepted model licenses.
+# We fetch them on first boot rather than at image-build time so the token
+# stays runtime-only (no secret baked into image layers).
+PYANNOTE_REPOS: tuple[str, ...] = (
+    "pyannote/segmentation-3.0",
+    "pyannote/speaker-diarization-3.1",
+)
+
+
+def ensure_pyannote_models(hf_token: str) -> None:
+    """Synchronously download pyannote models if missing.
+
+    Idempotent: if the snapshots are already in the HF cache we return fast.
+    Called from the main process before the engine loads, so diarization is
+    ready to use as soon as the HTTP server accepts requests.
+
+    Never raises: missing token or network failures log a warning and let
+    transcription continue without diarization.
+    """
+    missing = [r for r in PYANNOTE_REPOS if not _model_is_cached(r)]
+    if not missing:
+        return
+
+    if not hf_token:
+        logger.warning(
+            "ensure_pyannote_models: HF_TOKEN not set — skipping pyannote download. "
+            "Diarization will not be available. Missing: %s",
+            ", ".join(missing),
+        )
+        return
+
+    try:
+        from huggingface_hub import snapshot_download
+    except Exception as e:
+        logger.warning("ensure_pyannote_models: huggingface_hub unavailable: %s", e)
+        return
+
+    for repo in missing:
+        try:
+            logger.info("ensure_pyannote_models: downloading %s ...", repo)
+            snapshot_download(repo_id=repo, cache_dir=HF_CACHE_DIR, token=hf_token)
+            logger.info("ensure_pyannote_models: %s ready.", repo)
+        except Exception as e:
+            logger.warning(
+                "ensure_pyannote_models: failed to fetch %s: %s. "
+                "Diarization may not work until this is resolved.",
+                repo, e,
+            )
+
+
+def bundled_models_status() -> dict:
+    """Report runtime presence of container-bundled alignment + diarization models.
+
+    Used by the admin dashboard to show a single static "ships with the
+    container" section instead of the old per-model download tiles.
+
+    - Alignment: five torchaudio wav2vec2 bundles pre-fetched at image build
+      time. We detect them by scanning `~/.cache/torch/hub/checkpoints/` for
+      any `.pt` file — torchaudio's exact filename varies by version/bundle
+      so we just report presence + count rather than a per-language match.
+    - Diarization: the two pyannote repos in PYANNOTE_REPOS. Fetched on
+      first boot by ensure_pyannote_models() iff HF_TOKEN is set.
+    """
+    import pathlib
+
+    torch_ckpt_dir = pathlib.Path.home() / ".cache" / "torch" / "hub" / "checkpoints"
+    # torchaudio saves wav2vec2 checkpoints with both `.pt` (voxpopuli bundles)
+    # and `.pth` (fairseq base_960h) extensions — match either.
+    try:
+        torch_files = sorted(
+            p.name for p in torch_ckpt_dir.iterdir()
+            if p.is_file() and p.suffix in (".pt", ".pth")
+        ) if torch_ckpt_dir.exists() else []
+    except OSError:
+        torch_files = []
+
+    pyannote = [
+        {"repo_id": r, "cached": _model_is_cached(r)}
+        for r in PYANNOTE_REPOS
+    ]
+
+    return {
+        "align": {
+            "dir": str(torch_ckpt_dir),
+            "files": torch_files,
+            "count": len(torch_files),
+            # We expect exactly 5 bundles from prefetch_torch_align.py.
+            # Fewer means the build step missed something or the cache volume
+            # was mounted over /root/.cache (clobbering the bundled files).
+            "all_present": len(torch_files) >= 5,
+        },
+        "diarize": {
+            "repos": pyannote,
+            "all_present": all(p["cached"] for p in pyannote),
+        },
+    }
+
+
 def catalog_status(db_path: str) -> list[dict]:
     """Return enriched catalog entries with download status + in-flight download id."""
     from .catalog import CATALOG

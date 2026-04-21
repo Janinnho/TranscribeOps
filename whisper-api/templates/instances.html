@@ -41,17 +41,16 @@
       </select>
     </label>
     <label>Port (leer = automatisch) <input type="number" name="port" min="1024" max="65535"></label>
-    <label>Zweck
-      <select name="purpose">
-        <option value="transcription">Transkription</option>
-        <option value="diarization">Diarisierung</option>
-        <option value="alignment">Alignment</option>
-      </select>
-    </label>
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">Instanz anlegen</button>
     </div>
   </form>
+  <p class="hint" style="margin-top: 12px;">
+    Hinweis: Instanzen sind immer Transkriptionsdienste. Diarisierung (pyannote) und
+    Alignment (wav2vec2) laufen als Komponenten <em>innerhalb</em> der WhisperX-Engine,
+    wenn ein Transkriptions-Request <code>diarize=true</code> oder Wort-Timestamps anfordert —
+    nicht als eigene Instanzen.
+  </p>
   {% if not downloaded_models %}
   <p class="hint">Noch keine Transkriptionsmodelle heruntergeladen. Bitte erst unter „Modelle" herunterladen.</p>
   {% endif %}
@@ -60,7 +59,7 @@
 <table class="data-table" id="instances-table">
   <thead>
     <tr>
-      <th>Name</th><th>Engine / Modell</th><th>Zweck</th><th>Port</th>
+      <th>Name</th><th>Engine / Modell</th><th>Port</th>
       <th>Status</th><th>PID</th><th>CPU</th><th>RAM</th><th>Aktionen</th>
     </tr>
   </thead>
@@ -69,7 +68,6 @@
     <tr data-id="{{ inst.id }}">
       <td><strong>{{ inst.name }}</strong></td>
       <td>{{ inst.engine }} / {{ inst.model }}</td>
-      <td>{{ inst.purpose }}</td>
       <td><code>:{{ inst.port }}</code></td>
       <td>
         {% if inst.status == 'running' %}
@@ -93,7 +91,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="9" class="text-muted text-center">Noch keine Instanzen angelegt.</td></tr>
+    <tr><td colspan="8" class="text-muted text-center">Noch keine Instanzen angelegt.</td></tr>
     {% endfor %}
   </tbody>
 </table>
