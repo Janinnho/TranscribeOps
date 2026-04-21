@@ -3,8 +3,27 @@ import hmac
 import time
 from functools import wraps
 from collections import defaultdict, deque
+from urllib.parse import urlparse
 
 from flask import Blueprint, session, redirect, url_for, request, render_template, abort
+
+
+def _safe_next_url(nxt: str | None) -> str | None:
+    """Return `nxt` only if it's a safe relative path on this host.
+
+    Blocks open-redirect via `?next=https://evil.com` by rejecting any value
+    with a scheme, netloc, or that doesn't start with a single '/'. Protocol-
+    relative URLs (`//evil.com/x`) also get filtered.
+    """
+    if not nxt:
+        return None
+    # Reject anything that isn't a plain absolute path on our own origin.
+    if not nxt.startswith("/") or nxt.startswith("//"):
+        return None
+    parsed = urlparse(nxt)
+    if parsed.scheme or parsed.netloc:
+        return None
+    return nxt
 
 
 _LOGIN_ATTEMPTS: dict[str, deque] = defaultdict(lambda: deque(maxlen=10))
@@ -65,13 +84,13 @@ def register_auth_routes(bp: Blueprint, config: dict) -> None:
                 if admin_password and hmac.compare_digest(submitted, admin_password):
                     session["admin"] = True
                     session.permanent = True
-                    nxt = request.args.get("next") or url_for("admin.dashboard")
+                    nxt = _safe_next_url(request.args.get("next")) or url_for("admin.dashboard")
                     return redirect(nxt)
                 _record_attempt(ip)
                 error = "Falsches Passwort."
         return render_template("login.html", error=error)
 
-    @bp.route("/logout", methods=["POST", "GET"])
+    @bp.route("/logout", methods=["POST"])
     def logout():
         session.pop("admin", None)
         return redirect(url_for("admin.login"))

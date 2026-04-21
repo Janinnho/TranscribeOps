@@ -59,11 +59,22 @@ def check_auth() -> bool:
 
 
 def _has_active_db_keys() -> bool:
+    """Return True iff the admin DB has at least one active key.
+
+    On DB failure we fail-closed (return True, pretending keys exist) so the
+    no-auth-configured fallback in check_auth() stays disabled and we never
+    accidentally serve requests without credentials during a transient DB
+    hiccup.
+    """
     from admin.db import count_active_keys
     try:
         return count_active_keys(ADMIN_DB_PATH) > 0
-    except Exception:
-        return False
+    except Exception as e:
+        logger.warning(
+            "count_active_keys failed (%s) — assuming keys exist to stay fail-closed.",
+            e,
+        )
+        return True
 
 
 # --- Engine + routes ---------------------------------------------------------

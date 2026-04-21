@@ -77,7 +77,6 @@ def _run_download(db_path: str, download_id: int, repo_id: str, hf_token: str) -
             return
 
         from huggingface_hub import snapshot_download
-        from huggingface_hub.utils import HfHubHTTPError
 
         # Progress: sample after calling snapshot_download blocks. Since snapshot_download
         # doesn't provide a granular Python callback without hf_transfer, we poll bytes on disk
