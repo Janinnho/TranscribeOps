@@ -25,11 +25,25 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             e["instances"] = model_to_instances.get(e["id"], [])
             grouped.setdefault(e["kind"], []).append(e)
 
+        system_info = {
+            "default_model": config["default_model"],
+            "default_device": config["default_device"],
+            "default_compute_type": config["default_compute_type"],
+            "default_batch_size": config["default_batch_size"],
+            "port_range": config["port_range"],
+            "hf_token_set": config["hf_token_set"],
+            "api_key_env_set": config["api_key_env_set"],
+            "main_engine_disabled": config["main_engine_disabled"],
+            "main_engine_loaded": config["main_engine_loaded"](),
+            "main_port": 8000,
+        }
+
         return render_template(
             "dashboard.html",
             grouped=grouped,
             kind_labels=KIND_LABELS,
             kind_colors=KIND_COLORS,
+            system_info=system_info,
         )
 
     @bp.route("/models")

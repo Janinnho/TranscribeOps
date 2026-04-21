@@ -57,11 +57,32 @@ class NeMoEngine(Engine):
                 progress_cb(p, s)
 
         _prog(5, "transcribe")
-        outputs = self._model.transcribe([audio_path], timestamps=True)
+        # Not every NeMo ASR architecture supports the `timestamps` kwarg
+        # (e.g. plain EncDecRNNTModel vs. EncDecCTCModel). Try with,
+        # fall back to without so the call still returns a text-only result.
+        try:
+            outputs = self._model.transcribe([audio_path], timestamps=True)
+        except TypeError as e:
+            if "timestamps" in str(e):
+                logger.info(
+                    "NeMo model does not accept 'timestamps' kwarg — "
+                    "falling back to text-only transcription."
+                )
+                outputs = self._model.transcribe([audio_path])
+            else:
+                raise
         _prog(95, "postprocess")
 
-        # NeMo returns either a list of Hypothesis objects or a list of strings.
-        # With timestamps=True it returns objects with .timestamp and .text attrs.
+        # Normalise NeMo's wildly inconsistent return shape.
+        # Observed forms across engines/versions:
+        #   [hyp1, hyp2, ...]                      (CTC models, plain list)
+        #   ([hyp1, hyp2, ...], [all_hyps_per_sample])  (RNNT models, tuple)
+        #   [[hyp1], [hyp2]]                       (nested per sample)
+        # Always end up with `hyp` = one Hypothesis or str for our single input.
+        if isinstance(outputs, tuple):
+            outputs = outputs[0] if outputs else None
+        if outputs and isinstance(outputs, list) and outputs and isinstance(outputs[0], list):
+            outputs = outputs[0]
         segments: list[dict] = []
         text = ""
         hyp = outputs[0] if outputs else None

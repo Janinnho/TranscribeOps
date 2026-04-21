@@ -2,6 +2,9 @@ from functools import wraps
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
 from flask_login import login_required, current_user
 import os
+import time
+from urllib.parse import urlparse, urlunparse
+import requests
 from flask import current_app
 from app import db
 from app.models import (User, Group, SpeechModel, TextModel, SystemSetting, Job, Meeting, Dictation, TextTask,
@@ -524,6 +527,107 @@ def update_speech_model(model_id):
     db.session.commit()
     flash(f'Sprachmodell "{model.name}" aktualisiert.', 'success')
     return redirect(url_for('admin.dashboard'))
+
+
+def _derive_openai_base(endpoint_url: str) -> str:
+    """Derive the OpenAI-style base (ending at /v1) from any endpoint like
+    http://host/v1/audio/transcriptions → http://host/v1.
+    Falls back to the host root if no /v1 is found."""
+    if not endpoint_url:
+        return ''
+    p = urlparse(endpoint_url)
+    parts = [seg for seg in p.path.split('/') if seg]
+    if 'v1' in parts:
+        idx = parts.index('v1')
+        new_path = '/' + '/'.join(parts[:idx + 1])
+    else:
+        new_path = '/v1'
+    return urlunparse((p.scheme, p.netloc, new_path, '', '', ''))
+
+
+def _test_speech_connection(model):
+    if not model.endpoint_url:
+        return False, 'Keine Endpoint-URL konfiguriert.', 0
+    start = time.time()
+    try:
+        if model.provider == 'azure':
+            if not model.azure_api_version:
+                return False, 'azure_api_version fehlt.', 0
+            url = f"{model.endpoint_url.rstrip('/')}/openai/deployments?api-version={model.azure_api_version}"
+            headers = {'api-key': model.api_key} if model.api_key else {}
+            r = requests.get(url, headers=headers, timeout=8)
+        else:
+            base = _derive_openai_base(model.endpoint_url)
+            url = f"{base}/models"
+            headers = {'Authorization': f'Bearer {model.api_key}'} if model.api_key else {}
+            r = requests.get(url, headers=headers, timeout=8)
+        latency = int((time.time() - start) * 1000)
+        if r.status_code == 200:
+            return True, f'OK ({r.status_code})', latency
+        if r.status_code in (401, 403):
+            return False, f'Erreichbar, aber Auth-Fehler ({r.status_code}). API-Key prüfen.', latency
+        return False, f'HTTP {r.status_code}: {r.text[:200]}', latency
+    except requests.exceptions.ConnectTimeout:
+        return False, 'Timeout beim Verbindungsaufbau.', int((time.time() - start) * 1000)
+    except requests.exceptions.ConnectionError as e:
+        return False, f'Verbindung fehlgeschlagen: {str(e)[:200]}', int((time.time() - start) * 1000)
+    except Exception as e:
+        return False, f'Fehler: {str(e)[:200]}', int((time.time() - start) * 1000)
+
+
+def _test_text_connection(model):
+    if not model.endpoint_url:
+        return False, 'Keine Endpoint-URL konfiguriert.', 0
+    start = time.time()
+    try:
+        if model.provider == 'azure':
+            if not model.azure_api_version:
+                return False, 'azure_api_version fehlt.', 0
+            url = f"{model.endpoint_url.rstrip('/')}/openai/deployments?api-version={model.azure_api_version}"
+            headers = {'api-key': model.api_key} if model.api_key else {}
+            r = requests.get(url, headers=headers, timeout=8)
+        elif model.provider == 'ollama':
+            url = f"{model.endpoint_url.rstrip('/')}/api/tags"
+            r = requests.get(url, timeout=8)
+        else:  # openai-compatible
+            base = _derive_openai_base(model.endpoint_url)
+            url = f"{base}/models"
+            headers = {'Authorization': f'Bearer {model.api_key}'} if model.api_key else {}
+            r = requests.get(url, headers=headers, timeout=8)
+        latency = int((time.time() - start) * 1000)
+        if r.status_code == 200:
+            return True, f'OK ({r.status_code})', latency
+        if r.status_code in (401, 403):
+            return False, f'Erreichbar, aber Auth-Fehler ({r.status_code}). API-Key prüfen.', latency
+        return False, f'HTTP {r.status_code}: {r.text[:200]}', latency
+    except requests.exceptions.ConnectTimeout:
+        return False, 'Timeout beim Verbindungsaufbau.', int((time.time() - start) * 1000)
+    except requests.exceptions.ConnectionError as e:
+        return False, f'Verbindung fehlgeschlagen: {str(e)[:200]}', int((time.time() - start) * 1000)
+    except Exception as e:
+        return False, f'Fehler: {str(e)[:200]}', int((time.time() - start) * 1000)
+
+
+@admin_bp.route('/speech-model/<int:model_id>/test', methods=['POST'])
+@admin_required
+def test_speech_model(model_id):
+    model = db.session.get(SpeechModel, model_id)
+    if not model:
+        return jsonify({'ok': False, 'message': 'Modell nicht gefunden.'}), 404
+    ok, msg, latency = _test_speech_connection(model)
+    return jsonify({'ok': ok, 'message': msg, 'latency_ms': latency,
+                    'endpoint': model.endpoint_url, 'provider': model.provider})
+
+
+@admin_bp.route('/text-model/<int:model_id>/test', methods=['POST'])
+@admin_required
+def test_text_model(model_id):
+    model = db.session.get(TextModel, model_id)
+    if not model:
+        return jsonify({'ok': False, 'message': 'Modell nicht gefunden.'}), 404
+    ok, msg, latency = _test_text_connection(model)
+    return jsonify({'ok': ok, 'message': msg, 'latency_ms': latency,
+                    'endpoint': model.endpoint_url, 'provider': model.provider})
 
 
 @admin_bp.route('/speech-model/<int:model_id>/delete', methods=['POST'])
