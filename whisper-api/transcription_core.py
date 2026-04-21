@@ -85,11 +85,19 @@ def register_routes(app: Flask, engine, auth_fn: Callable[[], bool], model_alias
 
     def _run(tmp_path, language, response_format, enable_diarize, filename, task_id=None):
         def _update(progress=None, step=None):
-            if task_id and task_id in tasks:
+            # Called from the engine thread via progress_cb; the reader side
+            # (task_status) runs on the request thread. Guard every touch of
+            # the shared `tasks` dict so a cleanup pop() can't race a write.
+            if not task_id:
+                return
+            with tasks_lock:
+                entry = tasks.get(task_id)
+                if entry is None:
+                    return
                 if progress is not None:
-                    tasks[task_id]["progress"] = progress
+                    entry["progress"] = progress
                 if step is not None:
-                    tasks[task_id]["progress_step"] = step
+                    entry["progress_step"] = step
 
         logger.info(f"Transcribing '{filename}' (engine={engine.name} model={engine.model} lang={language})")
         start = time.time()
@@ -180,16 +188,25 @@ def register_routes(app: Flask, engine, auth_fn: Callable[[], bool], model_alias
     def task_status(task_id):
         if not auth_fn():
             return jsonify({"error": {"message": "Invalid API key.", "type": "auth_error"}}), 401
-        task = tasks.get(task_id)
-        if not task:
-            return jsonify({"error": "Task not found"}), 404
-        resp = {"status": task["status"], "progress": task["progress"], "progress_step": task["progress_step"]}
-        if task["status"] == "completed":
-            resp["result"] = task["result"]
-            tasks.pop(task_id, None)
-        elif task["status"] == "failed":
-            resp["error"] = task["error"]
-            tasks.pop(task_id, None)
+        # Snapshot under the lock so a concurrent _update or a terminal pop()
+        # can't tear a partial view. We build the response from the snapshot
+        # (not the live dict) before releasing the lock, and only pop once
+        # we've captured what we need.
+        with tasks_lock:
+            task = tasks.get(task_id)
+            if not task:
+                return jsonify({"error": "Task not found"}), 404
+            resp = {
+                "status": task["status"],
+                "progress": task["progress"],
+                "progress_step": task["progress_step"],
+            }
+            if task["status"] == "completed":
+                resp["result"] = task["result"]
+                tasks.pop(task_id, None)
+            elif task["status"] == "failed":
+                resp["error"] = task["error"]
+                tasks.pop(task_id, None)
         return jsonify(resp)
 
     @app.route("/v1/models", methods=["GET"])

@@ -3,10 +3,11 @@
 Spawned by admin/supervisor.py as a subprocess.
 """
 import argparse
+import hmac
 import logging
 import os
 
-from flask import Flask, request, jsonify
+from flask import Flask, request
 
 from engines import get_engine
 from transcription_core import register_routes
@@ -41,7 +42,7 @@ def _build_app(args) -> Flask:
                 return True
             return False
         token = auth[7:]
-        if api_key_env and token == api_key_env:
+        if api_key_env and hmac.compare_digest(token, api_key_env):
             return True
         if key_is_active(db_path, token):
             touch_api_key_last_used(db_path, token)
