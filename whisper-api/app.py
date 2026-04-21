@@ -71,26 +71,20 @@ _main_engine = None
 
 
 def _start_main_engine():
-    """Preload the default engine only if no instances are configured.
+    """Preload the default engine on the main process.
 
-    When the user has configured instance workers, the main process doesn't need
-    to keep a model in memory — it just serves the admin UI. Clients talk to
-    instance ports directly.
+    Port 8000 always serves transcription using WHISPER_MODEL so existing clients
+    keep working. Instances configured through the admin UI are additional
+    parallel workers on their own ports.
+
+    Set DISABLE_MAIN_ENGINE=1 to run the main process in admin-only mode.
     """
     global _main_engine
-    try:
-        from admin.db import list_instances
-        configured = list_instances(ADMIN_DB_PATH, enabled_only=True)
-    except Exception:
-        configured = []
-
-    if configured:
-        logger.info(
-            f"{len(configured)} instance(s) configured — main process will not preload a model."
-        )
+    if os.environ.get("DISABLE_MAIN_ENGINE", "0") == "1":
+        logger.info("DISABLE_MAIN_ENGINE=1 — main process will not preload a model.")
         return
 
-    logger.info(f"No instances configured — preloading default engine ({DEFAULT_MODEL_SIZE}) on main process.")
+    logger.info(f"Preloading default engine ({DEFAULT_MODEL_SIZE}) on main process.")
     _main_engine = WhisperXEngine(
         model=DEFAULT_MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE,
         hf_token=HF_TOKEN, batch_size=BATCH_SIZE,
@@ -132,9 +126,14 @@ app.register_blueprint(
         db_path=ADMIN_DB_PATH,
         admin_password=ADMIN_PASSWORD,
         hf_token=HF_TOKEN,
+        default_model=DEFAULT_MODEL_SIZE,
         default_device=DEVICE,
         default_compute_type=COMPUTE_TYPE,
+        default_batch_size=BATCH_SIZE,
         port_range=INSTANCE_PORT_RANGE,
+        main_engine_loaded=lambda: _main_engine is not None,
+        main_engine_disabled=os.environ.get("DISABLE_MAIN_ENGINE", "0") == "1",
+        api_key_env_set=bool(API_KEY),
     ),
     url_prefix="/admin",
 )

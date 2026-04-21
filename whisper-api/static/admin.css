@@ -72,9 +72,18 @@ a:hover { text-decoration: underline; }
 .pill-red   { background: rgba(239,68,68,0.18);  color: var(--red); }
 .pill-gray  { background: rgba(107,114,128,0.2); color: var(--gray); }
 
-.dot-green, .dot-gray { width: 8px; height: 8px; border-radius: 50%; display: inline-block; vertical-align: middle; margin-right: 6px; }
+.dot-green, .dot-gray, .dot-red { width: 8px; height: 8px; border-radius: 50%; display: inline-block; vertical-align: middle; margin-right: 6px; }
 .dot-green { background: var(--green); }
 .dot-gray  { background: var(--gray); }
+.dot-red   { background: var(--red); }
+
+.group-gray .group-dot { background: var(--gray); }
+.group-note { margin: -8px 0 14px; font-size: 13px; color: var(--text-muted); }
+.sys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.sys-item { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; background: var(--bg-elev); border-radius: 8px; }
+.sys-item dt { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; margin: 0; }
+.sys-item dd { margin: 0; font-size: 14px; color: var(--text); }
+.sys-item code { font-size: 13px; background: transparent; padding: 0; color: var(--text); }
 
 /* ---- Tables ---- */
 .data-table { width: 100%; border-collapse: collapse; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }

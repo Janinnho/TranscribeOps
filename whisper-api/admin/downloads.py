@@ -10,22 +10,31 @@ from .catalog import by_repo_id
 
 logger = logging.getLogger("whisper-api.downloads")
 
-HF_CACHE_DIR = os.environ.get("HF_HOME", "/root/.cache/huggingface")
+HF_HOME_DIR = os.environ.get("HF_HOME", "/root/.cache/huggingface")
+# huggingface_hub's snapshot_download expects the "hub" subdirectory as cache_dir
+# to stay consistent with the default HF layout used by whisperx/pyannote.
+HF_CACHE_DIR = os.path.join(HF_HOME_DIR, "hub")
+
+
+def _snapshot_dirs(repo_id: str) -> list[Path]:
+    """Return all candidate directories where a given repo's snapshot may live.
+
+    Covers both the canonical `$HF_HOME/hub/models--…` layout and the legacy
+    `$HF_HOME/models--…` layout (older versions of this code called
+    snapshot_download with cache_dir=$HF_HOME directly).
+    """
+    slug = "models--" + repo_id.replace("/", "--")
+    return [Path(HF_CACHE_DIR) / slug, Path(HF_HOME_DIR) / slug]
 
 
 def _model_is_cached(repo_id: str) -> bool:
-    """Cheap heuristic: look for a snapshot directory under ~/.cache/huggingface/hub."""
-    root = Path(HF_CACHE_DIR) / "hub"
-    if not root.exists():
-        return False
-    slug = "models--" + repo_id.replace("/", "--")
-    target = root / slug / "snapshots"
-    if not target.exists():
-        return False
-    # A snapshot must have at least one file.
-    for snap in target.iterdir():
-        if snap.is_dir() and any(snap.iterdir()):
-            return True
+    for base in _snapshot_dirs(repo_id):
+        snaps = base / "snapshots"
+        if not snaps.exists():
+            continue
+        for snap in snaps.iterdir():
+            if snap.is_dir() and any(snap.iterdir()):
+                return True
     return False
 
 
@@ -34,18 +43,16 @@ def is_downloaded(repo_id: str) -> bool:
 
 
 def disk_size_mb(repo_id: str) -> float:
-    root = Path(HF_CACHE_DIR) / "hub"
-    slug = "models--" + repo_id.replace("/", "--")
-    base = root / slug
-    if not base.exists():
-        return 0.0
     total = 0
-    for p in base.rglob("*"):
-        try:
-            if p.is_file() and not p.is_symlink():
-                total += p.stat().st_size
-        except OSError:
+    for base in _snapshot_dirs(repo_id):
+        if not base.exists():
             continue
+        for p in base.rglob("*"):
+            try:
+                if p.is_file() and not p.is_symlink():
+                    total += p.stat().st_size
+            except OSError:
+                continue
     return round(total / (1024 * 1024), 1)
 
 
@@ -108,11 +115,13 @@ def _run_download(db_path: str, download_id: int, repo_id: str, hf_token: str) -
 
 def _watch_progress(db_path: str, download_id: int, repo_id: str, stop_evt: threading.Event):
     """Poll the model's on-disk size while the download runs."""
-    target_dir = Path(HF_CACHE_DIR) / "hub" / ("models--" + repo_id.replace("/", "--"))
+    target_dirs = _snapshot_dirs(repo_id)
     last_bytes = 0
     while not stop_evt.is_set():
         bytes_done = 0
-        if target_dir.exists():
+        for target_dir in target_dirs:
+            if not target_dir.exists():
+                continue
             for p in target_dir.rglob("*"):
                 try:
                     if p.is_file() and not p.is_symlink():

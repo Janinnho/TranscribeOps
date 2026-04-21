@@ -17,6 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# NumPy 2.0 removed `np.sctypes`, but NeMo 2.0.0 still references it in
+# preprocessing/segment.py. Patch it in-place to use explicit dtype lists.
+COPY patch_nemo_numpy2.py /tmp/patch_nemo_numpy2.py
+RUN python /tmp/patch_nemo_numpy2.py && rm /tmp/patch_nemo_numpy2.py
+
 COPY . .
 
 # Default environment — per-instance settings werden ab jetzt über das Admin-UI verwaltet.

@@ -4,6 +4,34 @@
 <h1 class="page-title">Dashboard</h1>
 <p class="page-subtitle">Überblick aller Modelle nach Zweck.</p>
 
+<section class="card-group group-gray">
+  <h2 class="group-title">
+    <span class="group-dot"></span>
+    System (Hauptprozess)
+  </h2>
+  <p class="group-note">Wird über Docker-Umgebungsvariablen konfiguriert — nicht im UI änderbar. Transkription, Diarisierung und Alignment laufen innerhalb desselben Prozesses.</p>
+  <div class="sys-grid">
+    <div class="sys-item"><dt>Port</dt><dd>:{{ system_info.main_port }}</dd></div>
+    <div class="sys-item"><dt>Status</dt><dd>
+      {% if system_info.main_engine_disabled %}
+        <span class="dot-gray"></span> deaktiviert (DISABLE_MAIN_ENGINE=1)
+      {% elif system_info.main_engine_loaded %}
+        <span class="dot-green"></span> Engine geladen
+      {% else %}
+        <span class="dot-red"></span> Engine nicht geladen
+      {% endif %}
+    </dd></div>
+    <div class="sys-item"><dt>Engine</dt><dd>whisperx</dd></div>
+    <div class="sys-item"><dt>Modell (WHISPER_MODEL)</dt><dd><code>{{ system_info.default_model }}</code></dd></div>
+    <div class="sys-item"><dt>Device (WHISPER_DEVICE)</dt><dd><code>{{ system_info.default_device }}</code></dd></div>
+    <div class="sys-item"><dt>Compute type</dt><dd><code>{{ system_info.default_compute_type }}</code></dd></div>
+    <div class="sys-item"><dt>Batch size</dt><dd><code>{{ system_info.default_batch_size }}</code></dd></div>
+    <div class="sys-item"><dt>Instanz-Ports</dt><dd><code>{{ system_info.port_range }}</code></dd></div>
+    <div class="sys-item"><dt>HF_TOKEN</dt><dd>{% if system_info.hf_token_set %}<span class="dot-green"></span> gesetzt (erforderlich für Diarisierung){% else %}<span class="dot-red"></span> nicht gesetzt — pyannote nicht nutzbar{% endif %}</dd></div>
+    <div class="sys-item"><dt>WHISPER_API_KEY</dt><dd>{% if system_info.api_key_env_set %}<span class="dot-green"></span> gesetzt (Env){% else %}<span class="dot-gray"></span> leer — nur DB-Keys aktiv{% endif %}</dd></div>
+  </div>
+</section>
+
 {% for kind, color in [('whisper','blue'),('parakeet','teal'),('diarize','green'),('align','purple')] %}
   {% if grouped[kind] %}
     <section class="card-group group-{{ color }}">
