@@ -162,7 +162,6 @@ const AdminUI = (() => {
         device: form.device.value,
         compute_type: form.compute_type.value,
         port: form.port.value ? parseInt(form.port.value, 10) : null,
-        purpose: form.purpose.value,
       };
       try {
         await api("/admin/api/instances", {

@@ -32,6 +32,69 @@
   </div>
 </section>
 
+<section class="card-group group-green">
+  <h2 class="group-title">
+    <span class="group-dot"></span>
+    Mit Container ausgeliefert
+  </h2>
+  <p class="group-note">
+    Alignment- und Diarisierungs-Modelle werden nicht einzeln heruntergeladen — sie sind
+    entweder direkt im Image enthalten oder werden beim ersten Start automatisch nachgeladen.
+    Keine UI-Konfiguration nötig.
+  </p>
+  <div class="card-grid">
+    <article class="model-card {% if bundled_info.align.all_present %}is-downloaded{% endif %}">
+      <header>
+        <h3>Wort-Alignment (wav2vec2)</h3>
+        <span class="badge badge-purple">bundled</span>
+      </header>
+      <p class="model-desc">
+        Torchaudio-Bundles für Englisch, Französisch, Deutsch, Spanisch und Italienisch —
+        im Image beim Build vorgeladen. Liefern millisekundengenaue Wort-Timestamps,
+        werden in-process von WhisperX verwendet.
+      </p>
+      <dl class="model-meta">
+        <div><dt>Quelle</dt><dd><code>torchaudio.pipelines</code></dd></div>
+        <div><dt>Cache</dt><dd><code>{{ bundled_info.align.dir }}</code></dd></div>
+        <div><dt>Status</dt><dd>
+          {% if bundled_info.align.all_present %}
+            <span class="dot-green"></span> {{ bundled_info.align.count }} Checkpoints vorhanden
+          {% elif bundled_info.align.count > 0 %}
+            <span class="dot-gray"></span> nur {{ bundled_info.align.count }} Checkpoints (erwartet: 5) — evtl. Volume-Mount überlagert?
+          {% else %}
+            <span class="dot-red"></span> keine Checkpoints — Image-Build prüfen
+          {% endif %}
+        </dd></div>
+      </dl>
+    </article>
+
+    <article class="model-card {% if bundled_info.diarize.all_present %}is-downloaded{% endif %}">
+      <header>
+        <h3>Sprechererkennung (pyannote)</h3>
+        <span class="badge badge-green">auto-download</span>
+      </header>
+      <p class="model-desc">
+        pyannote/segmentation-3.0 + pyannote/speaker-diarization-3.1 werden beim ersten
+        Containerstart mit dem Runtime-<code>HF_TOKEN</code> heruntergeladen und
+        anschließend dauerhaft im Volume abgelegt.
+      </p>
+      <dl class="model-meta">
+        {% for r in bundled_info.diarize.repos %}
+        <div><dt>{{ r.repo_id }}</dt><dd>
+          {% if r.cached %}
+            <span class="dot-green"></span> im Cache
+          {% elif system_info.hf_token_set %}
+            <span class="dot-gray"></span> wird beim nächsten Start geladen
+          {% else %}
+            <span class="dot-red"></span> fehlt — HF_TOKEN nicht gesetzt
+          {% endif %}
+        </dd></div>
+        {% endfor %}
+      </dl>
+    </article>
+  </div>
+</section>
+
 {% for kind, color in [('whisper','blue'),('parakeet','teal'),('diarize','green'),('align','purple')] %}
   {% if grouped[kind] %}
     <section class="card-group group-{{ color }}">

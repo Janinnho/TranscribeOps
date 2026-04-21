@@ -84,6 +84,16 @@ def _start_main_engine():
         logger.info("DISABLE_MAIN_ENGINE=1 — main process will not preload a model.")
         return
 
+    # Ensure pyannote diarization models are present before the engine loads.
+    # Torchaudio alignment bundles come with the image; pyannote needs a
+    # runtime HF_TOKEN so we fetch it on first boot. Never fatal: missing
+    # models just disable diarization, transcription keeps working.
+    try:
+        from admin.downloads import ensure_pyannote_models
+        ensure_pyannote_models(HF_TOKEN)
+    except Exception as e:
+        logger.warning(f"ensure_pyannote_models failed unexpectedly: {e}", exc_info=True)
+
     logger.info(f"Preloading default engine ({DEFAULT_MODEL_SIZE}) on main process.")
     _main_engine = WhisperXEngine(
         model=DEFAULT_MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE,
