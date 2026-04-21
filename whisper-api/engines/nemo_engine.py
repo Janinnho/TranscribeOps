@@ -1,9 +1,49 @@
 import logging
+import os
+import subprocess
+import tempfile
 from typing import Optional, Callable
 
 from .base import Engine, TranscriptionResult
 
 logger = logging.getLogger("whisper-api.engine.nemo")
+
+
+def _to_mono_wav(src_path: str) -> tuple[str, bool]:
+    """Convert src_path to a mono 16 kHz PCM-WAV in a tempfile.
+
+    NeMo's AudioToBPEDataset expects `(batch, time)` tensors — stereo inputs
+    come back as `(batch, time, 2)` and the model rejects them. WhisperX
+    sidesteps this by resampling with ffmpeg internally; for NeMo we have
+    to do it ourselves. Returns `(path, is_tempfile)` — caller unlinks when
+    the second value is True.
+    """
+    fd, dst = tempfile.mkstemp(suffix=".wav", prefix="nemo_mono_")
+    os.close(fd)
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-nostdin", "-y", "-loglevel", "error",
+                "-i", src_path,
+                "-ac", "1",        # downmix to mono
+                "-ar", "16000",    # resample to 16 kHz (NeMo standard)
+                "-c:a", "pcm_s16le",
+                dst,
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+    except subprocess.CalledProcessError as e:
+        try:
+            os.unlink(dst)
+        except OSError:
+            pass
+        stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
+        raise RuntimeError(
+            f"ffmpeg failed to convert {src_path} to mono WAV: {stderr.strip()}"
+        ) from e
+    return dst, True
 
 
 class NeMoEngine(Engine):
@@ -57,20 +97,34 @@ class NeMoEngine(Engine):
                 progress_cb(p, s)
 
         _prog(5, "transcribe")
-        # Not every NeMo ASR architecture supports the `timestamps` kwarg
-        # (e.g. plain EncDecRNNTModel vs. EncDecCTCModel). Try with,
-        # fall back to without so the call still returns a text-only result.
+
+        # NeMo chokes on stereo input with:
+        #   "Output shape mismatch occured for audio_signal in module
+        #    AudioToBPEDataset : Output shape found : torch.Size([1, N, 2])"
+        # Pre-convert to mono 16 kHz WAV via ffmpeg so the shape is always
+        # (batch, time). Cheap and format-agnostic — any container works.
+        mono_path, is_tmp = _to_mono_wav(audio_path)
         try:
-            outputs = self._model.transcribe([audio_path], timestamps=True)
-        except TypeError as e:
-            if "timestamps" in str(e):
-                logger.info(
-                    "NeMo model does not accept 'timestamps' kwarg — "
-                    "falling back to text-only transcription."
-                )
-                outputs = self._model.transcribe([audio_path])
-            else:
-                raise
+            # Not every NeMo ASR architecture supports the `timestamps` kwarg
+            # (e.g. plain EncDecRNNTModel vs. EncDecCTCModel). Try with,
+            # fall back to without so the call still returns a text-only result.
+            try:
+                outputs = self._model.transcribe([mono_path], timestamps=True)
+            except TypeError as e:
+                if "timestamps" in str(e):
+                    logger.info(
+                        "NeMo model does not accept 'timestamps' kwarg — "
+                        "falling back to text-only transcription."
+                    )
+                    outputs = self._model.transcribe([mono_path])
+                else:
+                    raise
+        finally:
+            if is_tmp:
+                try:
+                    os.unlink(mono_path)
+                except OSError:
+                    pass
         _prog(95, "postprocess")
 
         # Normalise NeMo's wildly inconsistent return shape.
