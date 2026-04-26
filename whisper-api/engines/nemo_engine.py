@@ -2,11 +2,140 @@ import logging
 import os
 import subprocess
 import tempfile
+import unicodedata
+from difflib import SequenceMatcher
 from typing import Optional, Callable
 
 from .base import Engine, TranscriptionResult
 
 logger = logging.getLogger("whisper-api.engine.nemo")
+
+_DICT_MIN_LEN = 4
+_DICT_MIN_RATIO = 0.78
+_DICT_LEN_TOLERANCE = 0.30
+_PUNCT_CHARS = ",.!?:;\"'„""—–-…()[]{}«»‚'"
+
+
+def _normalize_for_match(s: str) -> str:
+    """Lowercase + strip diacritics + ß→ss for fuzzy comparison."""
+    s = unicodedata.normalize("NFKD", s).lower().replace("ß", "ss")
+    return "".join(c for c in s if not unicodedata.combining(c))
+
+
+def _split_punct(token: str) -> tuple[str, str, str]:
+    """Split (leading_punct, core, trailing_punct)."""
+    i = 0
+    while i < len(token) and token[i] in _PUNCT_CHARS:
+        i += 1
+    j = len(token)
+    while j > i and token[j - 1] in _PUNCT_CHARS:
+        j -= 1
+    return token[:i], token[i:j], token[j:]
+
+
+def _parse_prompt(prompt: str) -> list[str]:
+    """Split a comma-separated dictionary prompt into clean entries."""
+    if not prompt:
+        return []
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in prompt.split(","):
+        w = raw.strip()
+        if len(w) < _DICT_MIN_LEN:
+            continue
+        key = w.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(w)
+    return out
+
+
+def _apply_dictionary(words: list[dict], dict_words: list[str]) -> int:
+    """Replace ASR'd words with phonetically-similar dictionary entries.
+
+    Mutates `words` in place. Multi-token entries (e.g. "Erika Mustermann")
+    are matched against sliding N-word windows of the transcript and
+    replaced token-for-token so that timestamps stay aligned. Single-token
+    entries match individual words. Each transcript word is replaced at
+    most once; longer entries take precedence (greedy). Preserves outer
+    punctuation. Returns total number of replacements.
+    """
+    if not words or not dict_words:
+        return 0
+
+    multi: list[tuple[list[str], list[str]]] = []  # (tokens_orig, tokens_norm)
+    single: list[tuple[str, str]] = []             # (orig, norm)
+    for entry in dict_words:
+        toks = entry.split()
+        if len(toks) >= 2:
+            multi.append((toks, [_normalize_for_match(t) for t in toks]))
+        elif toks:
+            single.append((toks[0], _normalize_for_match(toks[0])))
+
+    replaced: set[int] = set()
+    n_repl = 0
+
+    # Multi-word pass first, longer entries first (greedy: a 3-token entry
+    # mustn't be blocked by a 2-token entry consuming the first two words).
+    multi.sort(key=lambda x: -len(x[0]))
+    for tokens_orig, tokens_norm in multi:
+        m = len(tokens_orig)
+        cand_joined = " ".join(tokens_norm)
+        cand_len = len(cand_joined)
+        max_diff = max(1, _DICT_LEN_TOLERANCE * cand_len)
+        for i in range(0, len(words) - m + 1):
+            if any((i + k) in replaced for k in range(m)):
+                continue
+            cores: list[str] = []
+            ok = True
+            for k in range(m):
+                _, core, _ = _split_punct(words[i + k]["word"])
+                if not core:
+                    ok = False
+                    break
+                cores.append(core)
+            if not ok:
+                continue
+            joined_core = " ".join(_normalize_for_match(c) for c in cores)
+            if abs(len(joined_core) - cand_len) > max_diff:
+                continue
+            if joined_core == cand_joined:
+                continue  # already correct
+            score = SequenceMatcher(a=joined_core, b=cand_joined).ratio()
+            if score >= _DICT_MIN_RATIO:
+                for k in range(m):
+                    leading, _, trailing = _split_punct(words[i + k]["word"])
+                    words[i + k]["word"] = leading + tokens_orig[k] + trailing
+                    replaced.add(i + k)
+                n_repl += m
+
+    # Single-word pass — skip indices already touched by the multi-word pass.
+    for idx, word_obj in enumerate(words):
+        if idx in replaced:
+            continue
+        leading, core, trailing = _split_punct(word_obj["word"])
+        if len(core) < _DICT_MIN_LEN:
+            continue
+        core_norm = _normalize_for_match(core)
+        best_orig = None
+        best_score = 0.0
+        for orig, cand_norm in single:
+            if abs(len(core_norm) - len(cand_norm)) > max(1, _DICT_LEN_TOLERANCE * len(cand_norm)):
+                continue
+            if cand_norm == core_norm:
+                if orig != core:
+                    best_orig, best_score = orig, 1.0
+                break
+            score = SequenceMatcher(a=core_norm, b=cand_norm).ratio()
+            if score > best_score:
+                best_score = score
+                best_orig = orig
+        if best_orig is not None and best_score >= _DICT_MIN_RATIO and best_orig != core:
+            word_obj["word"] = leading + best_orig + trailing
+            n_repl += 1
+
+    return n_repl
 
 
 def _to_mono_wav(src_path: str) -> tuple[str, bool]:
@@ -234,6 +363,7 @@ class NeMoEngine(Engine):
         audio_path: str,
         language: Optional[str] = None,
         enable_diarize: bool = False,
+        prompt: Optional[str] = None,
         progress_cb: Optional[Callable[[int, str], None]] = None,
     ) -> TranscriptionResult:
         if self._model is None:
@@ -274,6 +404,13 @@ class NeMoEngine(Engine):
             else:
                 text = getattr(hyp, "text", "") or ""
                 words = _words_from_hypothesis(hyp, self._model.tokenizer, self._frame_time_s or 0.08)
+
+            dict_words = _parse_prompt(prompt) if prompt else []
+            if dict_words and words:
+                replacements = _apply_dictionary(words, dict_words)
+                if replacements:
+                    logger.info(f"Applied {replacements} dictionary replacement(s).")
+                    text = " ".join(w["word"] for w in words)
 
             with_speaker = False
             if enable_diarize and words:

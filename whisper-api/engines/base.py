@@ -32,6 +32,9 @@ class Engine(ABC):
         audio_path: str,
         language: Optional[str] = None,
         enable_diarize: bool = False,
+        prompt: Optional[str] = None,
         progress_cb: Optional[Callable[[int, str], None]] = None,
     ) -> TranscriptionResult:
-        """Run transcription. progress_cb(percent, step) is optional."""
+        """Run transcription. progress_cb(percent, step) is optional.
+        `prompt` is a comma-separated list of dictionary terms; engines that
+        don't support prompting may ignore it."""
