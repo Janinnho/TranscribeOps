@@ -67,18 +67,18 @@ def _words_from_hypothesis(hyp, tokenizer, frame_time_s: float) -> list[dict]:
     try:
         ids = [int(t) for t in y_seq]
         frames = [int(t) for t in timestep]
+        pieces = tokenizer.ids_to_tokens(ids)
     except Exception:
         return []
-    if not ids or len(ids) != len(frames):
+    if not ids or len(ids) != len(frames) or len(pieces) != len(ids):
         return []
 
     words: list[dict] = []
     cur: Optional[dict] = None
-    for i, tid in enumerate(ids):
-        piece = tokenizer.ids_to_tokens([tid])[0]
+    for piece, frame in zip(pieces, frames):
         starts_word = piece.startswith(_WORD_BOUNDARY) or cur is None
         text = piece[1:] if piece.startswith(_WORD_BOUNDARY) else piece
-        t = frames[i] * frame_time_s
+        t = frame * frame_time_s
         if starts_word:
             cur = {"word": text, "start": t, "end": t}
             words.append(cur)
@@ -116,9 +116,13 @@ def _diarize_words(words: list[dict], diarize_df) -> None:
                 best_ov = ov
                 best_idx = j
         if best_idx < 0:
-            # No overlap — pick the nearest turn that starts after the word
+            # No overlap — prefer the nearest future turn; otherwise the
+            # nearest prior turn (for words drifting past the last segment).
             future = [j for j in range(len(starts)) if starts[j] >= ws]
-            best_idx = future[0] if future else int(starts.argmin())
+            if future:
+                best_idx = future[0]
+            else:
+                best_idx = min(range(len(ends)), key=lambda j: ws - ends[j])
         w["speaker"] = speakers[best_idx]
 
 
