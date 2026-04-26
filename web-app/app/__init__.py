@@ -200,13 +200,25 @@ def _apply_migrations():
             if not _has_column('users', 'external_id'):
                 _safe_execute(conn, "ALTER TABLE users ADD COLUMN external_id VARCHAR(255)")
 
-        # Jobs/Meetings/Dictations: audio_saved flag
-        if _has_table('jobs') and not _has_column('jobs', 'audio_saved'):
-            _safe_execute(conn, "ALTER TABLE jobs ADD COLUMN audio_saved BOOLEAN DEFAULT 0")
-        if _has_table('meetings') and not _has_column('meetings', 'audio_saved'):
-            _safe_execute(conn, "ALTER TABLE meetings ADD COLUMN audio_saved BOOLEAN DEFAULT 0")
-        if _has_table('dictations') and not _has_column('dictations', 'audio_saved'):
-            _safe_execute(conn, "ALTER TABLE dictations ADD COLUMN audio_saved BOOLEAN DEFAULT 0")
+        # Jobs/Meetings/Dictations: audio_saved flag.
+        for table in ('jobs', 'meetings', 'dictations'):
+            if _has_table(table) and not _has_column(table, 'audio_saved'):
+                _safe_execute(conn, f"ALTER TABLE {table} ADD COLUMN audio_saved BOOLEAN DEFAULT 0")
+
+        # One-shot backfill: pre-flag records with a file_path are saved on disk
+        # but ended up with audio_saved=0 from the column's DEFAULT. Mark them
+        # so the audio player stops 404-ing. Gated by SystemSetting so it
+        # only runs once.
+        try:
+            from app.models import SystemSetting
+            if _has_table('system_settings') and not SystemSetting.query.get('audio_saved_backfilled'):
+                for table in ('jobs', 'meetings', 'dictations'):
+                    if _has_table(table) and _has_column(table, 'audio_saved'):
+                        _safe_execute(conn, f"UPDATE {table} SET audio_saved = 1 WHERE audio_saved = 0 AND file_path IS NOT NULL AND file_path != ''")
+                db.session.add(SystemSetting(key='audio_saved_backfilled', value='1'))
+                db.session.commit()
+        except Exception:
+            db.session.rollback()
 
         # Text models: request_timeout_secs
         if _has_table('text_models') and not _has_column('text_models', 'request_timeout_secs'):
