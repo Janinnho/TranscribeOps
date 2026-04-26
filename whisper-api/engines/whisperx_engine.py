@@ -50,8 +50,12 @@ class WhisperXEngine(Engine):
         audio_path: str,
         language: Optional[str] = None,
         enable_diarize: bool = False,
+        prompt: Optional[str] = None,
         progress_cb: Optional[Callable[[int, str], None]] = None,
     ) -> TranscriptionResult:
+        # `prompt` is accepted for API parity but ignored — Whisper-style
+        # prompt biasing happens via the OpenAI/Azure paths in the web-app,
+        # not against the local whisperx model.
         import whisperx
         if self._model is None:
             self.load()
