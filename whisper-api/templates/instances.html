@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Instanzen — Whisper API Admin{% endblock %}
+{% block title %}Instanzen — TranscribeOps Modell API{% endblock %}
 {% block content %}
 <h1 class="page-title">Instanzen</h1>
 <p class="page-subtitle">
@@ -65,13 +65,22 @@
   </thead>
   <tbody>
     {% for inst in instances %}
-    <tr data-id="{{ inst.id }}">
-      <td><strong>{{ inst.name }}</strong></td>
-      <td>{{ inst.engine }} / {{ inst.model }}</td>
+    <tr data-id="{{ inst.id }}"{% if inst.is_main %} class="row-main"{% endif %}>
+      <td>
+        <strong>{{ inst.name }}</strong>
+        {% if inst.is_main %}<br><span class="pill pill-blue" title="Hauptprozess auf Port 8000 — durch Gunicorn verwaltet">Default</span>{% endif %}
+      </td>
+      <td>{{ inst.engine }} / {{ inst.model or '—' }}</td>
       <td><code>:{{ inst.port }}</code></td>
       <td>
         {% if inst.status == 'running' %}
           <span class="pill pill-green">läuft</span>
+        {% elif inst.status == 'loading' %}
+          <span class="pill pill-gray">lädt…</span>
+        {% elif inst.status == 'failed' %}
+          <span class="pill pill-red" title="{{ inst.reload_error or '' }}">Reload fehlgeschlagen</span>
+        {% elif inst.status == 'disabled' %}
+          <span class="pill pill-gray">deaktiviert</span>
         {% elif inst.status == 'crashed' %}
           <span class="pill pill-red">abgestürzt</span>
         {% else %}
@@ -82,12 +91,25 @@
       <td>{% if inst.cpu_pct is not none %}{{ inst.cpu_pct }}%{% else %}—{% endif %}</td>
       <td>{% if inst.rss_mb is not none %}{{ inst.rss_mb }} MB{% else %}—{% endif %}</td>
       <td class="row-actions">
-        {% if inst.status == 'running' %}
-          <button class="btn btn-sm btn-warning" data-action="stop" data-id="{{ inst.id }}">Stop</button>
+        {% if inst.is_main %}
+          {% if not main_disabled %}
+            <button class="btn btn-sm btn-primary" data-action="edit-main"
+                    data-engine="{{ inst.engine }}"
+                    data-model="{{ inst.model }}"
+                    data-device="{{ inst.device }}"
+                    data-compute-type="{{ inst.compute_type }}">Bearbeiten</button>
+            <button class="btn btn-sm" data-action="reload-main">Neu laden</button>
+          {% else %}
+            <span class="text-muted">via <code>DISABLE_MAIN_ENGINE=1</code> deaktiviert</span>
+          {% endif %}
         {% else %}
-          <button class="btn btn-sm btn-primary" data-action="start" data-id="{{ inst.id }}">Start</button>
+          {% if inst.status == 'running' %}
+            <button class="btn btn-sm btn-warning" data-action="stop" data-id="{{ inst.id }}">Stop</button>
+          {% else %}
+            <button class="btn btn-sm btn-primary" data-action="start" data-id="{{ inst.id }}">Start</button>
+          {% endif %}
+          <button class="btn btn-sm btn-danger" data-action="delete" data-id="{{ inst.id }}">Löschen</button>
         {% endif %}
-        <button class="btn btn-sm btn-danger" data-action="delete" data-id="{{ inst.id }}">Löschen</button>
       </td>
     </tr>
     {% else %}
@@ -95,11 +117,60 @@
     {% endfor %}
   </tbody>
 </table>
+
+<!-- Edit modal for the main engine -->
+<dialog id="edit-main-dialog" class="modal">
+  <form id="edit-main-form" class="form-grid" method="dialog">
+    <h2 style="grid-column: 1 / -1;">Main Engine bearbeiten</h2>
+    <p class="hint" style="grid-column: 1 / -1;">
+      Änderungen werden persistiert (überleben Container-Neustarts) und laden das Modell sofort neu.
+      Während des Reloads beantwortet Port 8000 keine Transkriptionen — bestehende Anfragen schlagen fehl.
+    </p>
+    <label>Engine
+      <select name="engine" id="edit-main-engine">
+        <option value="whisperx">WhisperX</option>
+        <option value="nemo">NeMo (Parakeet)</option>
+      </select>
+    </label>
+    <label>Modell
+      <select name="model" id="edit-main-model" required>
+        {% for m in downloaded_models %}
+          <option value="{{ m.id }}" data-engine="{{ m.engine }}">{{ m.display_name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Device
+      <select name="device">
+        <option value="cpu">CPU</option>
+        <option value="cuda">CUDA (GPU)</option>
+        <option value="mps">MPS (Apple)</option>
+      </select>
+    </label>
+    <label>Compute Type
+      <select name="compute_type">
+        <option value="int8">int8</option>
+        <option value="int16">int16</option>
+        <option value="float16">float16</option>
+        <option value="float32">float32</option>
+      </select>
+    </label>
+    {% if not downloaded_models %}
+    <p class="hint" style="grid-column: 1 / -1;">
+      Noch keine Modelle heruntergeladen — bitte erst unter „Modelle" eines laden.
+    </p>
+    {% endif %}
+    <div class="form-actions" style="grid-column: 1 / -1;">
+      <button type="button" class="btn" data-action="cancel-edit-main">Abbrechen</button>
+      <button type="submit" class="btn btn-primary">Speichern &amp; neu laden</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
 <script>
   AdminUI.wireInstanceActions();
   AdminUI.wireNewInstanceForm();
+  AdminUI.wireMainEngineActions();
 </script>
 {% endblock %}

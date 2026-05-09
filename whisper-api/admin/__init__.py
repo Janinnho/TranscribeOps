@@ -17,6 +17,9 @@ def create_admin_blueprint(
     port_range: str,
     main_engine_loaded=None,
     main_engine_disabled: bool = False,
+    main_engine_state=None,
+    update_main_engine=None,
+    reload_main_engine=None,
     api_key_env_set: bool = False,
 ) -> Blueprint:
     bp = Blueprint(
@@ -38,6 +41,12 @@ def create_admin_blueprint(
         "port_range": port_range,
         "main_engine_loaded": main_engine_loaded or (lambda: False),
         "main_engine_disabled": main_engine_disabled,
+        "main_engine_state": main_engine_state or (lambda: {
+            "loaded": False, "config": {}, "reload": {"status": "idle", "error": None},
+            "disabled": main_engine_disabled, "port": 8000,
+        }),
+        "update_main_engine": update_main_engine,
+        "reload_main_engine": reload_main_engine,
         "api_key_env_set": api_key_env_set,
         "hf_token_set": bool(hf_token),
     }

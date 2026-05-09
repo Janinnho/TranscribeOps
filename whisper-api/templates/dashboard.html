@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — Whisper API Admin{% endblock %}
+{% block title %}Dashboard — TranscribeOps Modell API{% endblock %}
 {% block content %}
 <h1 class="page-title">Dashboard</h1>
 <p class="page-subtitle">Überblick aller Modelle nach Zweck.</p>
@@ -9,22 +9,30 @@
     <span class="group-dot"></span>
     System (Hauptprozess)
   </h2>
-  <p class="group-note">Wird über Docker-Umgebungsvariablen konfiguriert — nicht im UI änderbar. Transkription, Diarisierung und Alignment laufen innerhalb desselben Prozesses.</p>
+  <p class="group-note">
+    Engine, Modell und Device können unter <a href="{{ url_for('admin.instances') }}">Instanzen</a> bearbeitet werden.
+    Initialwerte kommen aus den Docker-Env-Vars (<code>WHISPER_MODEL</code>, <code>WHISPER_DEVICE</code>, …);
+    Änderungen werden in der Admin-DB persistiert. Diarisierung und Alignment laufen innerhalb desselben Prozesses.
+  </p>
   <div class="sys-grid">
     <div class="sys-item"><dt>Port</dt><dd>:{{ system_info.main_port }}</dd></div>
     <div class="sys-item"><dt>Status</dt><dd>
       {% if system_info.main_engine_disabled %}
         <span class="dot-gray"></span> deaktiviert (DISABLE_MAIN_ENGINE=1)
+      {% elif system_info.main_reload_status == 'loading' %}
+        <span class="dot-gray"></span> lädt neu…
+      {% elif system_info.main_reload_status == 'failed' %}
+        <span class="dot-red"></span> Reload fehlgeschlagen{% if system_info.main_reload_error %}: {{ system_info.main_reload_error }}{% endif %}
       {% elif system_info.main_engine_loaded %}
         <span class="dot-green"></span> Engine geladen
       {% else %}
         <span class="dot-red"></span> Engine nicht geladen
       {% endif %}
     </dd></div>
-    <div class="sys-item"><dt>Engine</dt><dd>whisperx</dd></div>
-    <div class="sys-item"><dt>Modell (WHISPER_MODEL)</dt><dd><code>{{ system_info.default_model }}</code></dd></div>
-    <div class="sys-item"><dt>Device (WHISPER_DEVICE)</dt><dd><code>{{ system_info.default_device }}</code></dd></div>
-    <div class="sys-item"><dt>Compute type</dt><dd><code>{{ system_info.default_compute_type }}</code></dd></div>
+    <div class="sys-item"><dt>Engine</dt><dd><code>{{ system_info.main_engine }}</code></dd></div>
+    <div class="sys-item"><dt>Modell</dt><dd><code>{{ system_info.main_model }}</code></dd></div>
+    <div class="sys-item"><dt>Device</dt><dd><code>{{ system_info.main_device }}</code></dd></div>
+    <div class="sys-item"><dt>Compute type</dt><dd><code>{{ system_info.main_compute_type }}</code></dd></div>
     <div class="sys-item"><dt>Batch size</dt><dd><code>{{ system_info.default_batch_size }}</code></dd></div>
     <div class="sys-item"><dt>Instanz-Ports</dt><dd><code>{{ system_info.port_range }}</code></dd></div>
     <div class="sys-item"><dt>HF_TOKEN</dt><dd>{% if system_info.hf_token_set %}<span class="dot-green"></span> gesetzt (erforderlich für Diarisierung){% else %}<span class="dot-red"></span> nicht gesetzt — pyannote nicht nutzbar{% endif %}</dd></div>

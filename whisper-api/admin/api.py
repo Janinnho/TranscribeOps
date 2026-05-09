@@ -155,3 +155,42 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
     @login_required
     def api_engines():
         return jsonify({"engines": engines_choices()})
+
+    # ----- Main engine ----------------------------------------------------
+    @bp.route("/api/main-engine", methods=["GET"])
+    @login_required
+    def api_main_engine_get():
+        get_state = config.get("main_engine_state")
+        if get_state is None:
+            return jsonify({"error": "main engine state unavailable"}), 500
+        return jsonify(get_state())
+
+    @bp.route("/api/main-engine", methods=["POST"])
+    @login_required
+    def api_main_engine_update():
+        if config.get("main_engine_disabled"):
+            return jsonify({"error": "Main engine ist via DISABLE_MAIN_ENGINE deaktiviert."}), 400
+        update = config.get("update_main_engine")
+        if update is None:
+            return jsonify({"error": "update_main_engine handler not configured"}), 500
+
+        data = request.get_json(silent=True) or {}
+        try:
+            reload_state = update(data)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            return jsonify({"error": f"reload failed: {e}"}), 500
+
+        return jsonify({"reload": reload_state, "state": config["main_engine_state"]()})
+
+    @bp.route("/api/main-engine/reload", methods=["POST"])
+    @login_required
+    def api_main_engine_reload():
+        if config.get("main_engine_disabled"):
+            return jsonify({"error": "Main engine ist via DISABLE_MAIN_ENGINE deaktiviert."}), 400
+        do_reload = config.get("reload_main_engine")
+        if do_reload is None:
+            return jsonify({"error": "reload handler not configured"}), 500
+        reload_state = do_reload()
+        return jsonify({"reload": reload_state, "state": config["main_engine_state"]()})

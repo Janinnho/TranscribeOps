@@ -1,5 +1,6 @@
 """SQLite helpers for the whisper-api admin UI."""
 import hashlib
+import json
 import os
 import sqlite3
 import time
@@ -172,6 +173,37 @@ def list_downloads(db_path: str, limit: int = 50) -> list[dict]:
             "SELECT * FROM model_downloads ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
+
+
+# --- key/value (admin_kv) ---------------------------------------------------
+def kv_get(db_path: str, key: str, default: str | None = None) -> str | None:
+    with connect(db_path) as c:
+        row = c.execute("SELECT value FROM admin_kv WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else default
+
+
+def kv_set(db_path: str, key: str, value: str) -> None:
+    with connect(db_path) as c:
+        c.execute(
+            "INSERT INTO admin_kv (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (key, value),
+        )
+        c.commit()
+
+
+def kv_get_json(db_path: str, key: str, default=None):
+    raw = kv_get(db_path, key)
+    if raw is None:
+        return default
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return default
+
+
+def kv_set_json(db_path: str, key: str, value) -> None:
+    kv_set(db_path, key, json.dumps(value))
 
 
 def active_download_for_repo(db_path: str, repo_id: str) -> dict | None:
