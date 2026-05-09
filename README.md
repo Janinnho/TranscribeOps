@@ -4,13 +4,15 @@
 
 # TranscribeOps
 
-**Self-hosted Plattform für Audio-Transkription, Meeting-Protokolle, Diktat und KI-gestützte Textverarbeitung.**
+**Self-hosted platform for audio transcription, meeting minutes, dictation, and AI-powered text processing.**
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Docker](https://img.shields.io/badge/docker-ready-blue.svg)](https://www.docker.com/)
 [![Python](https://img.shields.io/badge/python-3.12-yellow.svg)](https://www.python.org/)
 
-[Features](#-features) · [Schnellstart](#-schnellstart) · [Deployment-Varianten](#-deployment-varianten) · [Konfiguration](#%EF%B8%8F-konfiguration) · [Dokumentation](docs/README.md)
+[Features](#-features) · [Quick Start](#-quick-start) · [Deployment Options](#-deployment-options) · [Configuration](#%EF%B8%8F-configuration) · [Documentation](docs/README.md)
+
+> **Note:** The user interface is currently in German. English UI translation is on the roadmap. The API and configuration are language-neutral.
 
 </div>
 
@@ -18,121 +20,121 @@
 
 ## ✨ Features
 
-- 🎙️ **Transkription** — Audiodateien hochladen und automatisch transkribieren (mit Sprechererkennung)
-- 📝 **Meeting-Protokolle** — Aufnahmen mit Sprechertrennung und automatischer Zusammenfassung
-- 🎤 **Diktat** — Direktaufnahme im Browser mit sofortiger Transkription
-- 🤖 **KI-Textverarbeitung** — Umschreiben, Übersetzen, Grammatik, Zusammenfassen
-- 💬 **KI-Chat** — Multi-Turn-Chat über deine Transkriptionen ("Was wurde zu X gesagt?")
-- 📚 **Wörterbuch** — Eigene Vokabeln zur Verbesserung der Erkennungsgenauigkeit
-- 👥 **Benutzer & Gruppen** — Rollen-basierte Zugriffssteuerung, SSO (Header & OIDC)
-- 🔌 **Multi-Provider** — Lokales Whisper, OpenAI, Azure Speech / OpenAI, Ollama
-- 🐳 **Docker-First** — Komplettes Deployment mit einer Compose-Datei
+- 🎙️ **Transcription** — Upload audio files and transcribe them automatically (with speaker diarization)
+- 📝 **Meeting Minutes** — Recordings with speaker separation and automatic summarization
+- 🎤 **Dictation** — Record directly in the browser with instant transcription
+- 🤖 **AI Text Processing** — Rewrite, translate, grammar check, summarize
+- 💬 **AI Chat** — Multi-turn chat over your transcriptions ("What was said about X?")
+- 📚 **Custom Dictionary** — Add your own vocabulary to improve recognition accuracy
+- 👥 **Users & Groups** — Role-based access control, SSO (header-based & OIDC)
+- 🔌 **Multi-Provider** — Local Whisper, OpenAI, Azure Speech / OpenAI, Ollama
+- 🐳 **Docker-First** — Full deployment with a single Compose file
 
 ---
 
-## 🏗️ Architektur
+## 🏗️ Architecture
 
-TranscribeOps besteht aus zwei **unabhängigen** Komponenten, die einzeln oder zusammen betrieben werden können:
+TranscribeOps consists of two **independent** components that can be run separately or together:
 
 ```
 ┌──────────────────────────┐         ┌────────────────────────────┐
-│      TranscribeOps       │ ──HTTP──▶  TranscribeOps Modell-API  │
-│  (Web-App, Flask+Celery) │         │  (faster-whisper / WhisperX)│
-│                          │         │  OpenAI-kompatibel         │
+│      TranscribeOps       │ ──HTTP──▶  TranscribeOps Model API   │
+│  (Web app, Flask+Celery) │         │ (faster-whisper / WhisperX)│
+│                          │         │  OpenAI-compatible         │
 └────────────┬─────────────┘         └────────────────────────────┘
              │
-             │ optional auch zu:
+             │ optionally also to:
              ▼
    OpenAI · Azure · Ollama
 ```
 
-- **TranscribeOps** (`web-app/`) — Die Web-Anwendung mit UI, Benutzerverwaltung, Job-Queue. Spricht beliebige OpenAI-kompatible Speech- und Text-Endpoints an.
-- **TranscribeOps Modell-API** (`whisper-api/`) — Eigenständiger, OpenAI-kompatibler Whisper-Server mit Admin-UI zur Verwaltung mehrerer Modelle/Worker. Kann auch von anderen Anwendungen genutzt werden.
+- **TranscribeOps** (`web-app/`) — The web application with UI, user management, and job queue. Talks to any OpenAI-compatible speech and text endpoints.
+- **TranscribeOps Model API** (`whisper-api/`) — Standalone, OpenAI-compatible Whisper server with an admin UI for managing multiple models/workers. Can also be used by other applications.
 
 ---
 
-## 🚀 Schnellstart
+## 🚀 Quick Start
 
 ```bash
 git clone https://github.com/Janinnho/TranscribeOps.git
 cd TranscribeOps
 
-# Konfiguration anlegen
+# Create configuration
 cp docker-compose.example.yml docker-compose.yml
 cp .env.example .env
 
-# SECRET_KEY generieren und in .env eintragen
+# Generate a SECRET_KEY and put it in .env
 python3 -c "import secrets; print(secrets.token_hex(32))"
 
-# Stack starten (Web-App + Worker + Redis + Whisper-API)
+# Start the stack (web app + worker + Redis + Whisper API)
 docker compose up -d
 ```
 
-Im Browser öffnen: **http://localhost:5000**
+Open in your browser: **http://localhost:5000**
 
-**Erst-Login:** `admin@transcribeops.local` / `admin` — **bitte sofort ändern!**
+**Initial login:** `admin@transcribeops.local` / `admin` — **change this immediately!**
 
 ---
 
-## 📦 Deployment-Varianten
+## 📦 Deployment Options
 
-Du kannst dir aussuchen, was du brauchst. Alle drei Varianten basieren auf der einen `docker-compose.example.yml` — du kommentierst einfach die Services aus, die du nicht brauchst.
+Pick what you need. All three options share the same `docker-compose.example.yml` — you simply remove the services you don't want.
 
-### 🟦 Variante 1 — Komplettpaket (empfohlen)
+### 🟦 Option 1 — Full Stack (recommended)
 
-> **TranscribeOps + TranscribeOps Modell-API**, alles selbst gehostet, keine externen API-Calls nötig.
+> **TranscribeOps + TranscribeOps Model API**, fully self-hosted, no external API calls required.
 
-Ideal für: Datenschutz-sensible Umgebungen, isolierte Netze, volle Kontrolle.
+Best for: privacy-sensitive environments, isolated networks, full control.
 
 ```bash
 cp docker-compose.example.yml docker-compose.yml
 cp .env.example .env
-# SECRET_KEY in .env setzen
+# Set SECRET_KEY in .env
 docker compose up -d
 ```
 
-Beinhaltet alle Services: `web` + `worker` + `redis` + `whisper`. Standardmäßig ist als Sprachmodell bereits `http://whisper:8000/v1/audio/transcriptions` eingetragen — du musst nichts weiter konfigurieren.
+Includes all services: `web` + `worker` + `redis` + `whisper`. The default speech model is preconfigured to `http://whisper:8000/v1/audio/transcriptions` — no further setup needed.
 
-Für **KI-Textverarbeitung** (Zusammenfassung, Chat etc.) zusätzlich [Ollama](https://ollama.com) lokal installieren oder einen externen Provider (OpenAI/Azure) im Admin-Portal konfigurieren.
+For **AI text processing** (summaries, chat, etc.) install [Ollama](https://ollama.com) locally as well, or configure an external provider (OpenAI/Azure) in the admin portal.
 
-**Ressourcen:** ~6 GB RAM (für `medium`-Modell), ~10 GB Disk.
+**Resources:** ~6 GB RAM (for the `medium` model), ~10 GB disk.
 
 ---
 
-### 🟨 Variante 2 — Nur die Web-App
+### 🟨 Option 2 — Web App only
 
-> **Nur TranscribeOps**, Spracherkennung läuft über externe Provider (OpenAI/Azure) oder eine bereits vorhandene Whisper-Instanz.
+> **Just TranscribeOps**, with speech recognition handled by external providers (OpenAI/Azure) or an existing Whisper instance.
 
-Ideal für: Wenn du bereits einen STT-Endpoint hast oder OpenAI/Azure nutzen willst.
+Best for: when you already have an STT endpoint or want to use OpenAI/Azure.
 
-In `docker-compose.yml` den `whisper`-Service entfernen oder auskommentieren:
+In `docker-compose.yml`, remove or comment out the `whisper` service:
 
 ```yaml
 services:
   web: { ... }
   worker: { ... }
   redis: { ... }
-  # whisper: ...  ← entfernen
+  # whisper: ...  ← remove
 ```
 
 ```bash
 docker compose up -d
 ```
 
-Dann im Admin-Portal (**Admin → Sprachmodelle**) das Standardmodell anpassen — z. B. auf:
+Then in the admin portal (**Admin → Speech Models**) point the default model to e.g.:
 - `https://api.openai.com/v1/audio/transcriptions` (OpenAI)
-- `https://<dein-endpoint>.openai.azure.com/...` (Azure)
-- Beliebige andere OpenAI-kompatible URL
+- `https://<your-endpoint>.openai.azure.com/...` (Azure)
+- Any other OpenAI-compatible URL
 
-**Ressourcen:** ~1 GB RAM, ~2 GB Disk.
+**Resources:** ~1 GB RAM, ~2 GB disk.
 
 ---
 
-### 🟥 Variante 3 — Nur die Modell-API
+### 🟥 Option 3 — Model API only
 
-> **Nur TranscribeOps Modell-API**, als eigenständiger OpenAI-kompatibler Whisper-Server für andere Anwendungen.
+> **Just the TranscribeOps Model API**, as a standalone OpenAI-compatible Whisper server for other applications.
 
-Ideal für: Wenn du nur einen lokalen Whisper-Endpoint brauchst und kein Web-UI willst (z. B. um deinen eigenen Code, n8n, Home-Assistant etc. anzubinden).
+Best for: when you only need a local Whisper endpoint and don't want a web UI (e.g. to integrate with your own code, n8n, Home Assistant, etc.).
 
 ```bash
 cd whisper-api
@@ -142,11 +144,11 @@ docker run -d \
   --name transcribeops-whisper \
   -p 8000:8000 \
   -v whisper-cache:/root/.cache \
-  -e WHISPER_API_KEY=mein-geheimer-schluessel \
+  -e WHISPER_API_KEY=my-secret-key \
   -e WHISPER_MODEL=medium \
   -e WHISPER_DEVICE=cpu \
   -e WHISPER_COMPUTE_TYPE=int8 \
-  -e ADMIN_PASSWORD=ein-admin-passwort \
+  -e ADMIN_PASSWORD=an-admin-password \
   transcribeops-whisper
 ```
 
@@ -155,63 +157,63 @@ Test:
 curl http://localhost:8000/health
 
 curl -X POST http://localhost:8000/v1/audio/transcriptions \
-  -H "Authorization: Bearer mein-geheimer-schluessel" \
+  -H "Authorization: Bearer my-secret-key" \
   -F "file=@audio.mp3" \
   -F "model=whisper-1"
 ```
 
-Admin-UI: **http://localhost:8000/admin** (mit `ADMIN_PASSWORD` einloggen).
+Admin UI: **http://localhost:8000/admin** (sign in with `ADMIN_PASSWORD`).
 
-Mehr Details: [`docs/whisper-api.md`](docs/whisper-api.md)
+More details: [`docs/whisper-api.md`](docs/whisper-api.md)
 
-**Ressourcen:** je nach Modell 1–6 GB RAM.
+**Resources:** 1–6 GB RAM depending on the model.
 
 ---
 
-## ⚙️ Konfiguration
+## ⚙️ Configuration
 
-Die wichtigsten Umgebungsvariablen (siehe [`.env.example`](.env.example)):
+The most important environment variables (see [`.env.example`](.env.example)):
 
-| Variable | Beschreibung | Erforderlich |
+| Variable | Description | Required |
 |---|---|---|
-| `SECRET_KEY` | Flask Session/CSRF Secret (mind. 32 Zeichen) | ✅ Produktion |
-| `WHISPER_API_KEY` | API-Key für Modell-API (leer = kein Auth) | optional |
-| `HF_TOKEN` | Hugging Face Token für Speaker-Diarization | optional |
-| `WHISPER_ADMIN_PASSWORD` | Aktiviert das Whisper-Admin-UI (leer = deaktiviert) | optional |
-| `WHISPER_ADMIN_SESSION_SECRET` | Session-Secret für Admin-UI | optional |
+| `SECRET_KEY` | Flask session/CSRF secret (≥ 32 chars) | ✅ Production |
+| `WHISPER_API_KEY` | API key for the Model API (empty = no auth) | optional |
+| `HF_TOKEN` | Hugging Face token for speaker diarization | optional |
+| `WHISPER_ADMIN_PASSWORD` | Enables the Whisper admin UI (empty = disabled) | optional |
+| `WHISPER_ADMIN_SESSION_SECRET` | Session secret for the admin UI | optional |
 
-**SECRET_KEY generieren:**
+**Generate a SECRET_KEY:**
 ```bash
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-**HF_TOKEN für Diarization:** Konto auf [huggingface.co](https://huggingface.co) erstellen, einen Read-Token generieren, und folgende Modelle akzeptieren:
+**HF_TOKEN for diarization:** Create an account at [huggingface.co](https://huggingface.co), generate a read token, and accept the terms for these models:
 - [pyannote/speaker-diarization-3.1](https://huggingface.co/pyannote/speaker-diarization-3.1)
 - [pyannote/segmentation-3.0](https://huggingface.co/pyannote/segmentation-3.0)
 
-Vollständige Konfigurations-Referenz: [`docs/configuration.md`](docs/configuration.md)
+Full configuration reference: [`docs/configuration.md`](docs/configuration.md)
 
 ---
 
-## 🔒 Produktions-Checkliste
+## 🔒 Production Checklist
 
-Bevor du TranscribeOps öffentlich erreichbar machst:
+Before exposing TranscribeOps publicly:
 
-- [ ] `SECRET_KEY` auf einen sicheren Zufallswert gesetzt
-- [ ] Admin-Passwort geändert (nicht mehr `admin`/`admin`)
-- [ ] `WHISPER_API_KEY` gesetzt, falls die Modell-API von außen erreichbar ist
-- [ ] HTTPS via Reverse Proxy (nginx / Caddy / Traefik) — siehe [`docs/installation.md`](docs/installation.md)
-- [ ] Backup-Strategie für DB-Volume (`transcribeops-db`) und Audio-Storage
-- [ ] Optional: SSO/OIDC einrichten ([`docs/sso-setup.md`](docs/sso-setup.md))
+- [ ] `SECRET_KEY` set to a secure random value
+- [ ] Admin password changed (no longer `admin`/`admin`)
+- [ ] `WHISPER_API_KEY` set if the Model API is reachable from the outside
+- [ ] HTTPS via reverse proxy (nginx / Caddy / Traefik) — see [`docs/installation.md`](docs/installation.md)
+- [ ] Backup strategy for the DB volume (`transcribeops-db`) and audio storage
+- [ ] Optional: configure SSO/OIDC ([`docs/sso-setup.md`](docs/sso-setup.md))
 
 ---
 
-## 🖥️ GPU-Beschleunigung (optional)
+## 🖥️ GPU Acceleration (optional)
 
-Lokales Whisper läuft per Default auf CPU. Für GPU (NVIDIA):
+Local Whisper runs on CPU by default. For GPU (NVIDIA):
 
-1. [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) installieren
-2. In `docker-compose.yml` beim `whisper`-Service:
+1. Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
+2. In `docker-compose.yml` under the `whisper` service:
    ```yaml
    environment:
      - WHISPER_DEVICE=cuda
@@ -227,47 +229,49 @@ Lokales Whisper läuft per Default auf CPU. Für GPU (NVIDIA):
 
 ---
 
-## 📚 Dokumentation
+## 📚 Documentation
 
-| Dokument | Inhalt |
+> Documentation is currently in German.
+
+| Document | Contents |
 |---|---|
-| [Installation & Deployment](docs/installation.md) | Detaillierte Setup-Anleitung |
-| [Konfiguration](docs/configuration.md) | Alle Umgebungsvariablen, Settings |
-| [Architektur](docs/architecture.md) | Technischer Stack, Datenmodell, Tasks |
-| [API-Referenz](docs/api-reference.md) | REST-API-Endpunkte |
-| [Admin-Handbuch](docs/admin-guide.md) | Benutzer, Gruppen, Modelle |
-| [Benutzerhandbuch](docs/user-guide.md) | Bedienung der Features |
-| [Whisper-API](docs/whisper-api.md) | Standalone Modell-API |
-| [SSO-Setup](docs/sso-setup.md) | Header-SSO und OIDC |
+| [Installation & Deployment](docs/installation.md) | Detailed setup guide |
+| [Configuration](docs/configuration.md) | All environment variables and settings |
+| [Architecture](docs/architecture.md) | Tech stack, data model, tasks |
+| [API Reference](docs/api-reference.md) | REST API endpoints |
+| [Admin Guide](docs/admin-guide.md) | Users, groups, models |
+| [User Guide](docs/user-guide.md) | How to use the features |
+| [Whisper API](docs/whisper-api.md) | Standalone Model API |
+| [SSO Setup](docs/sso-setup.md) | Header-based SSO and OIDC |
 
 ---
 
-## 🛠️ Entwicklung
+## 🛠️ Development
 
 ```bash
-# Web-App (Dev-Server)
+# Web app (dev server)
 cd web-app && python run.py
 
-# Celery Worker
+# Celery worker
 cd web-app && celery -A celery_worker.celery worker --loglevel=info
 
-# Whisper-API
+# Whisper API
 cd whisper-api && python app.py
 ```
 
-**Tech-Stack:** Python 3.12, Flask 3.1, SQLAlchemy 2.0, Celery 5.4, Redis 7, faster-whisper / WhisperX, Bootstrap 5.3.
+**Tech stack:** Python 3.12, Flask 3.1, SQLAlchemy 2.0, Celery 5.4, Redis 7, faster-whisper / WhisperX, Bootstrap 5.3.
 
 ---
 
-## 🤝 Beiträge
+## 🤝 Contributing
 
-Issues und Pull Requests sind willkommen. Bitte Code-Style beibehalten (kein `shell=True`, CSRF-geschützte Routen, `current_user.id`-Filter in API-Endpoints).
+Issues and pull requests are welcome. Please follow the existing code style (no `shell=True`, CSRF-protected routes, `current_user.id` filter on API endpoints).
 
 ---
 
-## 📄 Lizenz
+## 📄 License
 
-[MIT](LICENSE) — Nutzung, Modifikation und kommerzielle Verwendung erlaubt.
+[MIT](LICENSE) — use, modification and commercial use are all permitted.
 
 ---
 
