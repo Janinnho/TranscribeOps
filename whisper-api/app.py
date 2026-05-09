@@ -10,7 +10,7 @@ import time
 
 from flask import Flask, request, jsonify
 
-from engines import get_engine
+from engines import get_engine, EngineUnavailable, EngineBusy
 from transcription_core import register_routes
 from admin import create_admin_blueprint
 from admin.db import init_db, touch_api_key_last_used, key_is_active
@@ -157,10 +157,16 @@ class _EngineProxy:
     def transcribe(self, *args, **kwargs):
         with self._lock:
             real = self._real
+            reload_status = self._reload.get("status")
         if real is None:
-            raise RuntimeError(
-                "Main-Engine ist gerade nicht geladen "
-                "(Reload läuft oder Konfiguration ungültig)."
+            # Distinguish transient (reload in flight) from terminal (load
+            # never succeeded). Both map to 503, but the message differs so
+            # clients can log something useful.
+            if reload_status == "loading":
+                raise EngineUnavailable("Main-Engine wird gerade neu geladen.")
+            raise EngineUnavailable(
+                "Main-Engine nicht geladen "
+                "(letzter Reload fehlgeschlagen oder Konfiguration ungültig)."
             )
         return real.transcribe(*args, **kwargs)
 
@@ -229,24 +235,30 @@ def _start_main_engine_blocking() -> None:
         _main_proxy.set_real(None, cfg)
 
 
-def reload_main_engine() -> dict:
-    """Persist current config and reload the main engine in the background.
+def reload_main_engine(_slot_already_reserved: bool = False) -> dict:
+    """Reload the main engine in the background using the persisted config.
 
     Reload sequence: drop the running engine first (free memory), GC, then
     construct + load the new engine. While loading, /v1/audio/transcriptions
-    returns 500/503 — that's expected. On failure we surface the error in
+    returns HTTP 503 — that's expected. On failure we surface the error in
     `_main_proxy.state()['reload']` so the admin UI can show it.
+
+    `_slot_already_reserved=True` is set by `update_main_engine_config()`,
+    which has already flipped the reload state to "loading" under the lock
+    to atomically prevent racing config writes. In that case we skip the
+    coalescing check (it would always trip on our own set).
     """
     if DISABLE_MAIN_ENGINE:
         return {"status": "disabled"}
 
-    state = _main_proxy.state()
-    if state["reload"]["status"] == "loading":
-        return state["reload"]
+    if not _slot_already_reserved:
+        state = _main_proxy.state()
+        if state["reload"]["status"] == "loading":
+            return state["reload"]
+        _main_proxy.set_reload("loading")
 
     cfg = _resolve_main_config()
     _main_proxy.set_real(None, cfg)
-    _main_proxy.set_reload("loading")
 
     def _bg():
         try:
@@ -265,7 +277,15 @@ def reload_main_engine() -> dict:
 
 
 def update_main_engine_config(new_cfg: dict) -> dict:
-    """Validate + persist new config, then reload."""
+    """Validate + persist new config, then reload.
+
+    Refuses to persist while a reload is already in flight. Without this
+    guard, a second update would overwrite `admin_kv` while `reload_main_engine()`
+    coalesces against the still-running thread — the running engine ends up
+    on the *old* config but the DB claims the *new* one, so the next reload
+    or container restart silently switches to a configuration that was
+    never validated.
+    """
     allowed_engines = {"whisperx", "nemo"}
     engine = (new_cfg.get("engine") or "").strip()
     if engine not in allowed_engines:
@@ -279,8 +299,26 @@ def update_main_engine_config(new_cfg: dict) -> dict:
     compute_type = (new_cfg.get("compute_type") or COMPUTE_TYPE).strip()
 
     cfg = {"engine": engine, "model": model, "device": device, "compute_type": compute_type}
-    admin_db.kv_set_json(ADMIN_DB_PATH, MAIN_CFG_KEY, cfg)
-    return reload_main_engine()
+
+    # Reserve the reload slot under the proxy lock *before* persisting. If
+    # another reload is mid-flight, refuse — caller must retry once it ends.
+    # set_reload("loading") is idempotent enough that briefly setting it twice
+    # in the success path (here + inside reload_main_engine) is harmless.
+    with _main_proxy._lock:
+        if _main_proxy._reload.get("status") == "loading":
+            raise EngineBusy(
+                "Ein Reload läuft bereits. Bitte abwarten und erneut versuchen."
+            )
+        _main_proxy._reload = {"status": "loading", "error": None, "started_at": time.time()}
+
+    try:
+        admin_db.kv_set_json(ADMIN_DB_PATH, MAIN_CFG_KEY, cfg)
+    except Exception:
+        # Persist failed — release the slot so a retry is possible.
+        _main_proxy.set_reload("idle")
+        raise
+
+    return reload_main_engine(_slot_already_reserved=True)
 
 
 def get_main_engine_state() -> dict:
