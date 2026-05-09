@@ -1,5 +1,6 @@
 import os
 import atexit
+import gc
 import hashlib
 import hmac
 import logging
@@ -9,10 +10,11 @@ import time
 
 from flask import Flask, request, jsonify
 
-from engines import WhisperXEngine
+from engines import get_engine
 from transcription_core import register_routes
 from admin import create_admin_blueprint
 from admin.db import init_db, touch_api_key_last_used, key_is_active
+from admin import db as admin_db
 from admin import supervisor
 
 logging.basicConfig(level=logging.INFO)
@@ -29,6 +31,9 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 ADMIN_SESSION_SECRET = os.environ.get("ADMIN_SESSION_SECRET", "")
 ADMIN_DB_PATH = os.environ.get("ADMIN_DB_PATH", "/root/.cache/transcribeops/admin.db")
 INSTANCE_PORT_RANGE = os.environ.get("INSTANCE_PORT_RANGE", "8100-8120")
+DISABLE_MAIN_ENGINE = os.environ.get("DISABLE_MAIN_ENGINE", "0") == "1"
+
+MAIN_CFG_KEY = "main_engine_config"
 
 # --- App ---------------------------------------------------------------------
 app = Flask(__name__)
@@ -77,21 +82,129 @@ def _has_active_db_keys() -> bool:
         return True
 
 
-# --- Engine + routes ---------------------------------------------------------
-_main_engine = None
+# --- Main engine: hot-swappable proxy ----------------------------------------
+class _EngineProxy:
+    """Stable handle for the main-process engine, allowing live reload.
+
+    `register_routes()` captures the engine reference once at startup. When the
+    admin UI changes the engine type/model, we can't recreate the closures —
+    so we hand it this proxy instead. Attribute access (`.transcribe`,
+    `.name`, `.model`, `.device`, `.compute_type`, `.supports_*`) is forwarded
+    to the currently loaded `_real` engine. Swap is atomic under `_lock`.
+
+    During reload, `_real` is None: `transcribe()` raises and the metadata
+    properties fall back to the desired config so /health, /v1/models and
+    log lines still render something sane.
+    """
+
+    def __init__(self, initial_config: dict):
+        self._real = None
+        self._config = dict(initial_config)
+        self._reload = {"status": "idle", "error": None, "started_at": None}
+        self._lock = threading.Lock()
+
+    def set_real(self, engine, config: dict | None = None) -> None:
+        with self._lock:
+            self._real = engine
+            if config is not None:
+                self._config = dict(config)
+
+    def set_reload(self, status: str, error: str | None = None) -> None:
+        with self._lock:
+            self._reload = {
+                "status": status,
+                "error": error,
+                "started_at": time.time() if status == "loading" else self._reload.get("started_at"),
+            }
+
+    def state(self) -> dict:
+        with self._lock:
+            return {
+                "loaded": self._real is not None,
+                "config": dict(self._config),
+                "reload": dict(self._reload),
+            }
+
+    # ----- duck-typed Engine surface used by transcription_core -----
+    @property
+    def name(self) -> str:
+        return self._real.name if self._real else self._config.get("engine", "")
+
+    @property
+    def model(self) -> str:
+        return self._real.model if self._real else self._config.get("model", "")
+
+    @property
+    def device(self) -> str:
+        return self._real.device if self._real else self._config.get("device", "")
+
+    @property
+    def compute_type(self) -> str:
+        return self._real.compute_type if self._real else self._config.get("compute_type", "")
+
+    @property
+    def hf_token(self) -> str:
+        return self._real.hf_token if self._real else ""
+
+    @property
+    def supports_alignment(self) -> bool:
+        return bool(self._real.supports_alignment) if self._real else False
+
+    @property
+    def supports_diarization(self) -> bool:
+        return bool(self._real.supports_diarization) if self._real else False
+
+    def transcribe(self, *args, **kwargs):
+        with self._lock:
+            real = self._real
+        if real is None:
+            raise RuntimeError(
+                "Main-Engine ist gerade nicht geladen "
+                "(Reload läuft oder Konfiguration ungültig)."
+            )
+        return real.transcribe(*args, **kwargs)
 
 
-def _start_main_engine():
-    """Preload the default engine on the main process.
+def _resolve_main_config() -> dict:
+    """Merge env defaults with persisted DB overrides."""
+    cfg = {
+        "engine": "whisperx",
+        "model": DEFAULT_MODEL_SIZE,
+        "device": DEVICE,
+        "compute_type": COMPUTE_TYPE,
+    }
+    saved = admin_db.kv_get_json(ADMIN_DB_PATH, MAIN_CFG_KEY)
+    if isinstance(saved, dict):
+        for k in ("engine", "model", "device", "compute_type"):
+            if saved.get(k):
+                cfg[k] = saved[k]
+    return cfg
 
-    Port 8000 always serves transcription using WHISPER_MODEL so existing clients
-    keep working. Instances configured through the admin UI are additional
+
+def _build_engine(cfg: dict):
+    engine_cls = get_engine(cfg["engine"])
+    return engine_cls(
+        model=cfg["model"],
+        device=cfg["device"],
+        compute_type=cfg["compute_type"],
+        hf_token=HF_TOKEN,
+        batch_size=BATCH_SIZE,
+    )
+
+
+_main_proxy = _EngineProxy(_resolve_main_config())
+
+
+def _start_main_engine_blocking() -> None:
+    """Synchronously load the configured main engine on the gunicorn worker.
+
+    Port 8000 always serves transcription using the configured engine so existing
+    clients keep working. Instances configured through the admin UI are additional
     parallel workers on their own ports.
 
     Set DISABLE_MAIN_ENGINE=1 to run the main process in admin-only mode.
     """
-    global _main_engine
-    if os.environ.get("DISABLE_MAIN_ENGINE", "0") == "1":
+    if DISABLE_MAIN_ENGINE:
         logger.info("DISABLE_MAIN_ENGINE=1 — main process will not preload a model.")
         return
 
@@ -105,22 +218,87 @@ def _start_main_engine():
     except Exception as e:
         logger.warning(f"ensure_pyannote_models failed unexpectedly: {e}", exc_info=True)
 
-    logger.info(f"Preloading default engine ({DEFAULT_MODEL_SIZE}) on main process.")
-    _main_engine = WhisperXEngine(
-        model=DEFAULT_MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE,
-        hf_token=HF_TOKEN, batch_size=BATCH_SIZE,
-    )
+    cfg = _resolve_main_config()
+    logger.info(f"Preloading main engine ({cfg['engine']}/{cfg['model']}) on main process.")
     try:
-        _main_engine.load()
+        engine = _build_engine(cfg)
+        engine.load()
+        _main_proxy.set_real(engine, cfg)
     except Exception as e:
-        logger.error(f"Failed to load default engine: {e}", exc_info=True)
-        _main_engine = None
+        logger.error(f"Failed to load main engine: {e}", exc_info=True)
+        _main_proxy.set_real(None, cfg)
 
 
-_start_main_engine()
+def reload_main_engine() -> dict:
+    """Persist current config and reload the main engine in the background.
 
-if _main_engine is not None:
-    register_routes(app, _main_engine, check_auth, model_alias=DEFAULT_MODEL_SIZE)
+    Reload sequence: drop the running engine first (free memory), GC, then
+    construct + load the new engine. While loading, /v1/audio/transcriptions
+    returns 500/503 — that's expected. On failure we surface the error in
+    `_main_proxy.state()['reload']` so the admin UI can show it.
+    """
+    if DISABLE_MAIN_ENGINE:
+        return {"status": "disabled"}
+
+    state = _main_proxy.state()
+    if state["reload"]["status"] == "loading":
+        return state["reload"]
+
+    cfg = _resolve_main_config()
+    _main_proxy.set_real(None, cfg)
+    _main_proxy.set_reload("loading")
+
+    def _bg():
+        try:
+            gc.collect()
+            engine = _build_engine(cfg)
+            engine.load()
+            _main_proxy.set_real(engine, cfg)
+            _main_proxy.set_reload("idle")
+            logger.info(f"Main engine reloaded ({cfg['engine']}/{cfg['model']}).")
+        except Exception as e:
+            logger.exception("Main engine reload failed")
+            _main_proxy.set_reload("failed", str(e))
+
+    threading.Thread(target=_bg, daemon=True, name="main-engine-reload").start()
+    return _main_proxy.state()["reload"]
+
+
+def update_main_engine_config(new_cfg: dict) -> dict:
+    """Validate + persist new config, then reload."""
+    allowed_engines = {"whisperx", "nemo"}
+    engine = (new_cfg.get("engine") or "").strip()
+    if engine not in allowed_engines:
+        raise ValueError(f"Unbekannte Engine '{engine}'. Erlaubt: {sorted(allowed_engines)}")
+
+    model = (new_cfg.get("model") or "").strip()
+    if not model:
+        raise ValueError("Modell darf nicht leer sein.")
+
+    device = (new_cfg.get("device") or DEVICE).strip()
+    compute_type = (new_cfg.get("compute_type") or COMPUTE_TYPE).strip()
+
+    cfg = {"engine": engine, "model": model, "device": device, "compute_type": compute_type}
+    admin_db.kv_set_json(ADMIN_DB_PATH, MAIN_CFG_KEY, cfg)
+    return reload_main_engine()
+
+
+def get_main_engine_state() -> dict:
+    """Snapshot for the admin UI: config, load status, reload state, port."""
+    state = _main_proxy.state()
+    state["disabled"] = DISABLE_MAIN_ENGINE
+    state["port"] = 8000
+    return state
+
+
+# --- Engine + routes ---------------------------------------------------------
+_start_main_engine_blocking()
+
+if not DISABLE_MAIN_ENGINE:
+    # Always register routes against the proxy — even if the initial load
+    # failed. The proxy raises a clear error on transcribe() until a
+    # subsequent reload succeeds.
+    register_routes(app, _main_proxy, check_auth, model_alias=None)
 else:
     @app.route("/v1/audio/transcriptions", methods=["POST"])
     def _no_engine_transcribe():
@@ -152,8 +330,11 @@ app.register_blueprint(
         default_compute_type=COMPUTE_TYPE,
         default_batch_size=BATCH_SIZE,
         port_range=INSTANCE_PORT_RANGE,
-        main_engine_loaded=lambda: _main_engine is not None,
-        main_engine_disabled=os.environ.get("DISABLE_MAIN_ENGINE", "0") == "1",
+        main_engine_loaded=lambda: _main_proxy.state()["loaded"],
+        main_engine_disabled=DISABLE_MAIN_ENGINE,
+        main_engine_state=get_main_engine_state,
+        update_main_engine=update_main_engine_config,
+        reload_main_engine=reload_main_engine,
         api_key_env_set=bool(API_KEY),
     ),
     url_prefix="/admin",
