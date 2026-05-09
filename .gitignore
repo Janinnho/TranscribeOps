@@ -216,4 +216,4 @@ podman-compose.yml
 !.env.example
 
 # Local Claude Code settings
-.claude/settings.local.json
+.claude/
