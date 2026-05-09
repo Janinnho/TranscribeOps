@@ -3,6 +3,22 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable
 
 
+class EngineUnavailable(RuntimeError):
+    """Engine is temporarily unavailable (e.g. mid-reload).
+
+    Routes catch this and return HTTP 503 with a Retry-After hint so clients
+    can distinguish a transient unavailability from a real server error.
+    """
+
+
+class EngineBusy(RuntimeError):
+    """A reload is already in progress and cannot accept a new config.
+
+    The admin API maps this to HTTP 409 Conflict so the UI can surface
+    \"Reload läuft — bitte warten\" without a 500-style error.
+    """
+
+
 @dataclass
 class TranscriptionResult:
     text: str
@@ -32,6 +48,9 @@ class Engine(ABC):
         audio_path: str,
         language: Optional[str] = None,
         enable_diarize: bool = False,
+        prompt: Optional[str] = None,
         progress_cb: Optional[Callable[[int, str], None]] = None,
     ) -> TranscriptionResult:
-        """Run transcription. progress_cb(percent, step) is optional."""
+        """Run transcription. progress_cb(percent, step) is optional.
+        `prompt` is a comma-separated list of dictionary terms; engines that
+        don't support prompting may ignore it."""

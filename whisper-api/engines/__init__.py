@@ -1,4 +1,4 @@
-from .base import Engine, TranscriptionResult
+from .base import Engine, TranscriptionResult, EngineUnavailable, EngineBusy
 from .whisperx_engine import WhisperXEngine
 from .nemo_engine import NeMoEngine
 

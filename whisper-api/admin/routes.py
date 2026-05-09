@@ -25,6 +25,8 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             e["instances"] = model_to_instances.get(e["id"], [])
             grouped.setdefault(e["kind"], []).append(e)
 
+        main_state = config["main_engine_state"]()
+        main_cfg = main_state.get("config", {})
         system_info = {
             "default_model": config["default_model"],
             "default_device": config["default_device"],
@@ -35,7 +37,13 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             "api_key_env_set": config["api_key_env_set"],
             "main_engine_disabled": config["main_engine_disabled"],
             "main_engine_loaded": config["main_engine_loaded"](),
-            "main_port": 8000,
+            "main_port": main_state.get("port", 8000),
+            "main_engine": main_cfg.get("engine", "whisperx"),
+            "main_model": main_cfg.get("model", config["default_model"]),
+            "main_device": main_cfg.get("device", config["default_device"]),
+            "main_compute_type": main_cfg.get("compute_type", config["default_compute_type"]),
+            "main_reload_status": main_state.get("reload", {}).get("status", "idle"),
+            "main_reload_error": main_state.get("reload", {}).get("error"),
         }
 
         return render_template(
@@ -64,6 +72,42 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
         rows = admin_db.list_instances(db_path)
         statuses = [supervisor.instance_status(r) for r in rows]
         downloaded = [e for e in catalog_status(db_path) if e["downloaded"] and e["kind"] in ("whisper", "parakeet")]
+
+        # Prepend the main engine on port 8000 as a synthetic "is_main" row
+        # so it shows up in the same table. It can be edited (engine + model)
+        # but not started/stopped/deleted — the lifecycle is tied to the
+        # gunicorn process.
+        main_state = config["main_engine_state"]()
+        main_cfg = main_state.get("config", {})
+        if main_state.get("disabled"):
+            main_status = "disabled"
+        elif main_state.get("reload", {}).get("status") == "loading":
+            main_status = "loading"
+        elif main_state.get("reload", {}).get("status") == "failed":
+            main_status = "failed"
+        elif main_state.get("loaded"):
+            main_status = "running"
+        else:
+            main_status = "stopped"
+        main_row = {
+            "id": "main",
+            "is_main": True,
+            "name": "Main Engine (Default)",
+            "engine": main_cfg.get("engine", "whisperx"),
+            "model": main_cfg.get("model", ""),
+            "device": main_cfg.get("device", config["default_device"]),
+            "compute_type": main_cfg.get("compute_type", config["default_compute_type"]),
+            "port": main_state.get("port", 8000),
+            "pid": None,
+            "enabled": not main_state.get("disabled"),
+            "status": main_status,
+            "reload_error": main_state.get("reload", {}).get("error"),
+            "health": None,
+            "cpu_pct": None,
+            "rss_mb": None,
+        }
+        statuses.insert(0, main_row)
+
         return render_template(
             "instances.html",
             instances=statuses,
@@ -71,6 +115,7 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             port_range=config["port_range"],
             default_device=config["default_device"],
             default_compute_type=config["default_compute_type"],
+            main_disabled=bool(main_state.get("disabled")),
         )
 
     @bp.route("/keys")

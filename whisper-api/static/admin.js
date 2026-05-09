@@ -113,9 +113,12 @@ const AdminUI = (() => {
   // ----- Instances -----
   function wireInstanceActions() {
     document.querySelectorAll("#instances-table [data-action]").forEach(btn => {
+      const action = btn.dataset.action;
+      // Skip main-engine-specific actions — they are wired in
+      // wireMainEngineActions() and would otherwise be handled here too.
+      if (action === "edit-main" || action === "reload-main" || action === "cancel-edit-main") return;
       btn.addEventListener("click", async () => {
         const id = btn.dataset.id;
-        const action = btn.dataset.action;
         if (action === "delete" && !confirm("Instanz wirklich löschen?")) return;
         btn.disabled = true;
         const original = btn.textContent;
@@ -132,6 +135,107 @@ const AdminUI = (() => {
         }
       });
     });
+  }
+
+  // ----- Main engine (Default) -----
+  function wireMainEngineActions() {
+    const editBtn = document.querySelector('[data-action="edit-main"]');
+    const reloadBtn = document.querySelector('[data-action="reload-main"]');
+    const dialog = document.getElementById("edit-main-dialog");
+
+    if (reloadBtn) {
+      reloadBtn.addEventListener("click", async () => {
+        if (!confirm("Main Engine jetzt neu laden? Transkriptionen auf Port 8000 sind währenddessen nicht verfügbar.")) return;
+        reloadBtn.disabled = true;
+        const orig = reloadBtn.textContent;
+        reloadBtn.textContent = "…";
+        try {
+          await api("/admin/api/main-engine/reload", { method: "POST" });
+          pollMainReloadAndReload();
+        } catch (e) {
+          alert("Fehler: " + e.message);
+          reloadBtn.disabled = false;
+          reloadBtn.textContent = orig;
+        }
+      });
+    }
+
+    if (!editBtn || !dialog) return;
+
+    const form = dialog.querySelector("#edit-main-form");
+    const engineSel = form.querySelector('[name="engine"]');
+    const modelSel = form.querySelector('[name="model"]');
+    const deviceSel = form.querySelector('[name="device"]');
+    const computeSel = form.querySelector('[name="compute_type"]');
+    const cancelBtn = dialog.querySelector('[data-action="cancel-edit-main"]');
+
+    const allModels = [...modelSel.options].map(o => ({
+      value: o.value, label: o.textContent, engine: o.dataset.engine,
+    }));
+
+    function refilterModels(currentValue) {
+      modelSel.innerHTML = "";
+      allModels.filter(o => o.engine === engineSel.value).forEach(o => {
+        const opt = document.createElement("option");
+        opt.value = o.value; opt.textContent = o.label; opt.dataset.engine = o.engine;
+        if (o.value === currentValue) opt.selected = true;
+        modelSel.appendChild(opt);
+      });
+    }
+
+    editBtn.addEventListener("click", () => {
+      engineSel.value = editBtn.dataset.engine || "whisperx";
+      const currentModel = editBtn.dataset.model || "";
+      refilterModels(currentModel);
+      deviceSel.value = editBtn.dataset.device || "cpu";
+      computeSel.value = editBtn.dataset.computeType || "int8";
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else dialog.setAttribute("open", "");
+    });
+
+    engineSel.addEventListener("change", () => refilterModels(""));
+    cancelBtn.addEventListener("click", () => dialog.close());
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const payload = {
+        engine: engineSel.value,
+        model: modelSel.value,
+        device: deviceSel.value,
+        compute_type: computeSel.value,
+      };
+      try {
+        await api("/admin/api/main-engine", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        dialog.close();
+        pollMainReloadAndReload();
+      } catch (e) {
+        alert("Fehler: " + e.message);
+      }
+    });
+  }
+
+  // Poll until the main engine finishes reloading, then refresh the page.
+  // Reloading can take a long time (large models on CPU). We give up after
+  // ~10 minutes and just refresh anyway so the user sees the latest state.
+  async function pollMainReloadAndReload() {
+    const deadline = Date.now() + 10 * 60 * 1000;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 2000));
+      try {
+        const state = await api("/admin/api/main-engine");
+        const status = state.reload && state.reload.status;
+        if (status !== "loading") {
+          location.reload();
+          return;
+        }
+      } catch {
+        // ignore transient errors and keep polling
+      }
+    }
+    location.reload();
   }
 
   function wireNewInstanceForm() {
@@ -175,5 +279,10 @@ const AdminUI = (() => {
     });
   }
 
-  return { wireKeyActions, wireNewKeyForm, wireDownloadButtons, wireCustomDownloadForm, wireInstanceActions, wireNewInstanceForm };
+  return {
+    wireKeyActions, wireNewKeyForm,
+    wireDownloadButtons, wireCustomDownloadForm,
+    wireInstanceActions, wireNewInstanceForm,
+    wireMainEngineActions,
+  };
 })();

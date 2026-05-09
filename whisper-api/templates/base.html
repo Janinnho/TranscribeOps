@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Whisper API Admin{% endblock %}</title>
+  <title>{% block title %}TranscribeOps Modell API{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">
 </head>
 <body>
   <nav class="topnav">
     <div class="brand">
       <span class="logo">◐</span>
-      <span>Whisper&nbsp;API&nbsp;Admin</span>
+      <span>TranscribeOps&nbsp;Modell&nbsp;API</span>
     </div>
     <ul class="nav-links">
       <li><a href="{{ url_for('admin.dashboard') }}" {% if request.endpoint == 'admin.dashboard' %}class="active"{% endif %}>Dashboard</a></li>

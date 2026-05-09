@@ -13,6 +13,8 @@ from typing import Callable
 
 from flask import Flask, request, jsonify
 
+from engines import EngineUnavailable
+
 logger = logging.getLogger("whisper-api.core")
 
 
@@ -83,7 +85,7 @@ def register_routes(app: Flask, engine, auth_fn: Callable[[], bool], model_alias
             return {"_raw_text": _to_vtt(segments)}
         return {"text": full_text}
 
-    def _run(tmp_path, language, response_format, enable_diarize, filename, task_id=None):
+    def _run(tmp_path, language, response_format, enable_diarize, prompt, filename, task_id=None):
         def _update(progress=None, step=None):
             # Called from the engine thread via progress_cb; the reader side
             # (task_status) runs on the request thread. Guard every touch of
@@ -105,15 +107,16 @@ def register_routes(app: Flask, engine, auth_fn: Callable[[], bool], model_alias
             tmp_path,
             language=language,
             enable_diarize=enable_diarize,
+            prompt=prompt,
             progress_cb=lambda p, s=None: _update(progress=p, step=s),
         )
         logger.info(f"Done in {round(time.time() - start, 2)}s (detected={result.language})")
         return _build_response(result, response_format)
 
-    def _async_wrapper(task_id, tmp_path, language, response_format, enable_diarize, filename):
+    def _async_wrapper(task_id, tmp_path, language, response_format, enable_diarize, prompt, filename):
         try:
             with transcribe_lock:
-                result = _run(tmp_path, language, response_format, enable_diarize, filename, task_id=task_id)
+                result = _run(tmp_path, language, response_format, enable_diarize, prompt, filename, task_id=task_id)
             with tasks_lock:
                 tasks[task_id]["status"] = "completed"
                 tasks[task_id]["progress"] = 100
@@ -146,6 +149,7 @@ def register_routes(app: Flask, engine, auth_fn: Callable[[], bool], model_alias
         language = request.form.get("language", None)
         response_format = request.form.get("response_format", "json")
         enable_diarize = request.form.get("diarize", "false").lower() == "true"
+        prompt = request.form.get("prompt") or None
         async_mode = request.form.get("async", "false").lower() == "true"
 
         suffix = os.path.splitext(audio_file.filename)[1] or ".wav"
@@ -163,17 +167,26 @@ def register_routes(app: Flask, engine, auth_fn: Callable[[], bool], model_alias
                 }
             threading.Thread(
                 target=_async_wrapper,
-                args=(task_id, tmp_path, language, response_format, enable_diarize, audio_file.filename),
+                args=(task_id, tmp_path, language, response_format, enable_diarize, prompt, audio_file.filename),
                 daemon=True,
             ).start()
             return jsonify({"task_id": task_id}), 202
 
         try:
             with transcribe_lock:
-                result = _run(tmp_path, language, response_format, enable_diarize, audio_file.filename)
+                result = _run(tmp_path, language, response_format, enable_diarize, prompt, audio_file.filename)
             if "_raw_text" in result:
                 return result["_raw_text"], 200, {"Content-Type": "text/plain; charset=utf-8"}
             return jsonify(result)
+        except EngineUnavailable as e:
+            # Reload in flight or load never succeeded — distinguishable from
+            # a real server error so clients can retry.
+            logger.info("Transcription rejected: engine temporarily unavailable (%s)", e)
+            return (
+                jsonify({"error": {"message": str(e), "type": "engine_unavailable"}}),
+                503,
+                {"Retry-After": "10"},
+            )
         except Exception as e:
             logger.exception("Transcription failed")
             return jsonify({"error": {"message": str(e), "type": "server_error"}}), 500
