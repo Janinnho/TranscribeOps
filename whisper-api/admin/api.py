@@ -1,7 +1,11 @@
 """Admin UI JSON endpoints under /admin/api/*."""
+import logging
 import secrets
+import uuid
 
 from flask import Blueprint, jsonify, request
+
+from engines import EngineBusy
 
 from .auth import login_required
 from . import db as admin_db
@@ -9,6 +13,8 @@ from . import supervisor
 from . import downloads
 from .catalog import by_id, by_repo_id, CATALOG
 from .engines_list import engines_choices
+
+logger = logging.getLogger("whisper-api.admin.api")
 
 
 def register_api_routes(bp: Blueprint, config: dict) -> None:
@@ -178,9 +184,23 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
         try:
             reload_state = update(data)
         except ValueError as e:
+            # User-supplied bad input — message is from our own validation,
+            # safe to surface verbatim.
             return jsonify({"error": str(e)}), 400
-        except Exception as e:
-            return jsonify({"error": f"reload failed: {e}"}), 500
+        except EngineBusy as e:
+            # A reload is already in flight — caller should retry, not a
+            # server fault.
+            return jsonify({"error": str(e)}), 409
+        except Exception:
+            # Don't leak internal exception text (paths, config values, etc.)
+            # to the client. Log full traceback server-side and hand back a
+            # short error id the user can quote when reporting problems.
+            err_id = uuid.uuid4().hex[:8]
+            logger.exception("Main engine update failed [err_id=%s]", err_id)
+            return jsonify({
+                "error": "Reload fehlgeschlagen — Details siehe Server-Log.",
+                "error_id": err_id,
+            }), 500
 
         return jsonify({"reload": reload_state, "state": config["main_engine_state"]()})
 

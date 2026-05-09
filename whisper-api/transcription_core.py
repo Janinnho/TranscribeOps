@@ -13,6 +13,8 @@ from typing import Callable
 
 from flask import Flask, request, jsonify
 
+from engines import EngineUnavailable
+
 logger = logging.getLogger("whisper-api.core")
 
 
@@ -176,6 +178,15 @@ def register_routes(app: Flask, engine, auth_fn: Callable[[], bool], model_alias
             if "_raw_text" in result:
                 return result["_raw_text"], 200, {"Content-Type": "text/plain; charset=utf-8"}
             return jsonify(result)
+        except EngineUnavailable as e:
+            # Reload in flight or load never succeeded — distinguishable from
+            # a real server error so clients can retry.
+            logger.info("Transcription rejected: engine temporarily unavailable (%s)", e)
+            return (
+                jsonify({"error": {"message": str(e), "type": "engine_unavailable"}}),
+                503,
+                {"Retry-After": "10"},
+            )
         except Exception as e:
             logger.exception("Transcription failed")
             return jsonify({"error": {"message": str(e), "type": "server_error"}}), 500
