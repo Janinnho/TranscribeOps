@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Text Tools - TranscribeOps{% endblock %}
-{% block page_title %}Text Tools{% endblock %}
+{% block title %}{{ _('Text Tools') }} - TranscribeOps{% endblock %}
+{% block page_title %}{{ _('Text Tools') }}{% endblock %}
 {% block content %}
 <div class="text-tools-bg rounded-4 p-4">
     <div class="mx-auto" style="max-width: 820px;">
@@ -8,7 +8,7 @@
         <!-- Model selector -->
         {% if not (hide_single_model and text_models|length <= 1) %}
         <div class="d-flex align-items-center gap-2 mb-3">
-            <label class="form-label mb-0 text-nowrap fw-medium"><i class="bi bi-cpu me-1"></i>Modell:</label>
+            <label class="form-label mb-0 text-nowrap fw-medium"><i class="bi bi-cpu me-1"></i>{{ _('Model:') }}</label>
             <select class="form-select form-select-sm" id="textModel" style="max-width: 260px;">
                 {% for m in text_models %}
                 <option value="{{ m.id }}">{{ m.display_name }}</option>
@@ -20,46 +20,46 @@
         {% endif %}
 
         <!-- Main textarea -->
-        <textarea class="form-control mb-3" id="inputText" rows="12" placeholder="Text hier einfügen..." style="font-size: 1rem; resize: vertical;"></textarea>
+        <textarea class="form-control mb-3" id="inputText" rows="12" placeholder="{{ _('Paste text here...') }}" style="font-size: 1rem; resize: vertical;"></textarea>
 
         <!-- Action buttons -->
         <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
             <button class="btn btn-outline-primary" onclick="processText('rewrite')">
-                <i class="bi bi-pencil me-1"></i>Umschreiben
+                <i class="bi bi-pencil me-1"></i>{{ _('Rewrite') }}
             </button>
             <button class="btn btn-outline-primary" onclick="processText('grammar')">
-                <i class="bi bi-spellcheck me-1"></i>Grammatik prüfen
+                <i class="bi bi-spellcheck me-1"></i>{{ _('Grammar check') }}
             </button>
             <div class="btn-group">
                 <button class="btn btn-outline-primary" onclick="processText('translate')">
-                    <i class="bi bi-translate me-1"></i>Übersetzen
+                    <i class="bi bi-translate me-1"></i>{{ _('Translate') }}
                 </button>
                 <button class="btn btn-outline-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
-                    <span class="visually-hidden">Sprache wählen</span>
+                    <span class="visually-hidden">{{ _('Choose language') }}</span>
                 </button>
                 <ul class="dropdown-menu" id="langMenu">
-                    <li><a class="dropdown-item active" href="#" onclick="setLang(this, 'Englisch')">Englisch</a></li>
-                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Deutsch')">Deutsch</a></li>
-                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Französisch')">Französisch</a></li>
-                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Spanisch')">Spanisch</a></li>
-                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Italienisch')">Italienisch</a></li>
-                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Portugiesisch')">Portugiesisch</a></li>
-                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Niederländisch')">Niederländisch</a></li>
-                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Polnisch')">Polnisch</a></li>
-                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Japanisch')">Japanisch</a></li>
-                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Chinesisch')">Chinesisch</a></li>
+                    <li><a class="dropdown-item active" href="#" onclick="setLang(this, 'Englisch')">{{ _('English') }}</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Deutsch')">{{ _('German') }}</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Französisch')">{{ _('French') }}</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Spanisch')">{{ _('Spanish') }}</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Italienisch')">{{ _('Italian') }}</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Portugiesisch')">{{ _('Portuguese') }}</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Niederländisch')">{{ _('Dutch') }}</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Polnisch')">{{ _('Polish') }}</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Japanisch')">{{ _('Japanese') }}</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="setLang(this, 'Chinesisch')">{{ _('Chinese') }}</a></li>
                 </ul>
             </div>
             <button class="btn btn-outline-primary" onclick="processText('summarize')">
-                <i class="bi bi-card-text me-1"></i>Zusammenfassen
+                <i class="bi bi-card-text me-1"></i>{{ _('Summarize') }}
             </button>
         </div>
 
         <!-- Processing indicator -->
         <div id="processingState" class="d-none my-4">
             <div class="text-center py-3">
-                <div class="spinner-border text-primary mb-2" role="status"><span class="visually-hidden">Laden...</span></div>
-                <p class="text-muted mb-0">Verarbeite...</p>
+                <div class="spinner-border text-primary mb-2" role="status"><span class="visually-hidden">{{ _('Loading...') }}</span></div>
+                <p class="text-muted mb-0">{{ _('Processing...') }}</p>
             </div>
         </div>
 
@@ -68,9 +68,9 @@
             <div class="card border-0 shadow-sm">
                 <div class="card-body p-3">
                     <div class="d-flex justify-content-between align-items-center mb-2">
-                        <span class="fw-medium"><i class="bi bi-file-text me-1"></i>Ergebnis</span>
+                        <span class="fw-medium"><i class="bi bi-file-text me-1"></i>{{ _('Result') }}</span>
                         <button class="btn btn-sm btn-outline-secondary" onclick="copyText(document.getElementById('resultText').textContent)">
-                            <i class="bi bi-clipboard me-1"></i>Kopieren
+                            <i class="bi bi-clipboard me-1"></i>{{ _('Copy') }}
                         </button>
                     </div>
                     <div id="resultText" class="p-3 bg-body-secondary rounded" style="white-space: pre-wrap; max-height: 350px; overflow-y: auto;"></div>
@@ -80,7 +80,7 @@
 
         <!-- History -->
         <div class="mt-4">
-            <h6 class="text-muted mb-3"><i class="bi bi-clock-history me-1"></i>Letzte Verarbeitungen</h6>
+            <h6 class="text-muted mb-3"><i class="bi bi-clock-history me-1"></i>{{ _('Recent processings') }}</h6>
             <div id="historyList"></div>
         </div>
 
@@ -137,7 +137,7 @@ async function pollResult(publicId) {
         if (task.status === 'completed' || task.status === 'failed') {
             document.getElementById('processingState').classList.add('d-none');
             document.getElementById('resultCard').classList.remove('d-none');
-            document.getElementById('resultText').textContent = task.result_text || task.error_message || 'Fehler';
+            document.getElementById('resultText').textContent = task.result_text || task.error_message || window.tr('Error');
             loadHistory();
         } else {
             setTimeout(check, 2000);
@@ -152,7 +152,7 @@ function copyText(text) {
     const toast = document.createElement('div');
     toast.className = 'position-fixed bottom-0 end-0 m-3 p-2 px-3 bg-success text-white rounded shadow';
     toast.style.zIndex = '9999';
-    toast.innerHTML = '<i class="bi bi-check-circle me-1"></i>Kopiert!';
+    toast.innerHTML = `<i class="bi bi-check-circle me-1"></i>${window.tr('Copied!')}`;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 1500);
 }
@@ -171,7 +171,7 @@ async function loadHistory() {
         const tasks = await resp.json();
 
         if (!tasks.length) {
-            container.innerHTML = '<p class="text-muted text-center py-3"><i class="bi bi-inbox me-1"></i>Noch keine Verarbeitungen</p>';
+            container.innerHTML = `<p class="text-muted text-center py-3"><i class="bi bi-inbox me-1"></i>${window.tr('No processings yet')}</p>`;
             return;
         }
 
@@ -183,12 +183,12 @@ async function loadHistory() {
             const resultPreview = t.status === 'completed' && t.result_text
                 ? `<div class="mt-2 p-2 bg-body-secondary rounded small" style="white-space: pre-wrap; max-height: 120px; overflow-y: auto;">${escapeHtml(t.result_text)}</div>`
                 : t.status === 'failed'
-                ? `<div class="mt-2 small text-danger">${escapeHtml(t.error_message || 'Fehler')}</div>`
+                ? `<div class="mt-2 small text-danger">${escapeHtml(t.error_message || window.tr('Error'))}</div>`
                 : '';
             const copyBtn = t.status === 'completed' && t.result_text
-                ? `<button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="event.stopPropagation(); copyText(this.closest('.history-item').querySelector('.history-result').textContent)" title="Kopieren"><i class="bi bi-clipboard"></i></button>`
+                ? `<button class="btn btn-sm btn-outline-secondary py-0 px-2" onclick="event.stopPropagation(); copyText(this.closest('.history-item').querySelector('.history-result').textContent)" title="${window.tr('Copy')}"><i class="bi bi-clipboard"></i></button>`
                 : '';
-            const deleteBtn = `<button class="btn btn-sm btn-link text-danger py-0 px-1" onclick="event.stopPropagation(); deleteTask('${t.id}')" title="Löschen"><i class="bi bi-trash"></i></button>`;
+            const deleteBtn = `<button class="btn btn-sm btn-link text-danger py-0 px-1" onclick="event.stopPropagation(); deleteTask('${t.id}')" title="${window.tr('Delete')}"><i class="bi bi-trash"></i></button>`;
 
             return `<div class="history-item border rounded p-3 mb-2">
                 <div class="d-flex justify-content-between align-items-center">
@@ -200,7 +200,7 @@ async function loadHistory() {
                     <div class="d-flex gap-1">${copyBtn}${deleteBtn}</div>
                 </div>
                 ${t.status === 'completed' && t.result_text ? `<div class="history-result mt-2 p-2 bg-body-secondary rounded small" style="white-space: pre-wrap; max-height: 120px; overflow-y: auto;">${escapeHtml(t.result_text)}</div>` : ''}
-                ${t.status === 'failed' ? `<div class="mt-2 small text-danger">${escapeHtml(t.error_message || 'Fehler')}</div>` : ''}
+                ${t.status === 'failed' ? `<div class="mt-2 small text-danger">${escapeHtml(t.error_message || window.tr('Error'))}</div>` : ''}
                 ${t.status === 'processing' ? '<div class="mt-2"><div class="progress" style="height:3px"><div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:100%"></div></div></div>' : ''}
             </div>`;
         }).join('');
@@ -210,7 +210,7 @@ async function loadHistory() {
 }
 
 async function deleteTask(publicId) {
-    if (!confirm('Eintrag löschen?')) return;
+    if (!confirm(window.tr('Delete entry?'))) return;
     const token = document.querySelector('meta[name="csrf-token"]').content;
     await fetch(`/api/text-task/${publicId}`, {
         method: 'DELETE',

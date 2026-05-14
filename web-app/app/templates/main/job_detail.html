@@ -3,12 +3,12 @@
 {% block page_title %}
 <a href="{{ back_url }}" class="text-decoration-none text-muted me-2"><i class="bi bi-arrow-left"></i></a>
 <span id="titleDisplay">{{ job.title or 'Job' }}</span>
-<button class="btn btn-link btn-sm text-muted p-0 ms-2" onclick="startEditTitle()" title="Titel bearbeiten">
+<button class="btn btn-link btn-sm text-muted p-0 ms-2" onclick="startEditTitle()" title="{{ _('Edit title') }}">
     <i class="bi bi-pencil"></i>
 </button>
 <span id="titleSpinner" class="d-none ms-2">
     <span class="spinner-border spinner-border-sm text-muted"></span>
-    <small class="text-muted ms-1">Titel wird generiert...</small>
+    <small class="text-muted ms-1">{{ _('Generating title…') }}</small>
 </span>
 <input type="text" id="titleInput" class="form-control form-control-sm d-none" style="width:auto; min-width:200px; max-width:500px;" value="{{ job.title or '' }}">
 {% endblock %}
@@ -18,25 +18,25 @@
 <div class="d-lg-none mb-3">
     <button class="btn btn-outline-secondary btn-sm w-100" type="button"
             data-bs-toggle="collapse" data-bs-target="#mobileActions">
-        <i class="bi bi-tools me-1"></i>Aktionen
+        <i class="bi bi-tools me-1"></i>{{ _('Actions') }}
         <i class="bi bi-chevron-down ms-1 small"></i>
     </button>
     <div class="collapse mt-2" id="mobileActions">
         <div class="d-flex flex-wrap gap-2">
             <button class="btn btn-outline-secondary btn-sm" onclick="copyResult()" id="mobileCopyBtn" disabled>
-                <i class="bi bi-clipboard me-1"></i>Kopieren
+                <i class="bi bi-clipboard me-1"></i>{{ _('Copy') }}
             </button>
             <a class="btn btn-outline-secondary btn-sm" id="mobileDownloadBtn"
                href="/api/{% if record_type == 'meeting' %}meeting{% elif record_type == 'dictation' %}dictation{% else %}job{% endif %}/{{ job.public_id }}/download"
                style="pointer-events: none; opacity: 0.5;">
-                <i class="bi bi-download me-1"></i>Download
+                <i class="bi bi-download me-1"></i>{{ _('Download') }}
             </a>
             {% if record_type != 'dictation' %}
             <button class="btn btn-outline-primary btn-sm" onclick="summarizeJob({{ text_models[0].id if text_models else 0 }})" id="mobileSummarizeBtn" disabled>
-                <i class="bi bi-magic me-1"></i>Zusammenfassen
+                <i class="bi bi-magic me-1"></i>{{ _('Summarize') }}
             </button>
             <button class="btn btn-outline-primary btn-sm" onclick="openChat()" id="mobileChatBtn" disabled>
-                <i class="bi bi-chat-dots me-1"></i>KI Chat
+                <i class="bi bi-chat-dots me-1"></i>{{ _('AI Chat') }}
             </button>
             {% endif %}
         </div>
@@ -51,14 +51,14 @@
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <h5 class="card-title mb-0">
                         <i class="bi bi-file-text me-2"></i>
-                        {% if record_type == 'meeting' %}Meeting-Transkript
-                        {% elif record_type == 'dictation' %}Diktat
-                        {% else %}Transkript{% endif %}
+                        {% if record_type == 'meeting' %}{{ _('Meeting transcript') }}
+                        {% elif record_type == 'dictation' %}{{ _('Dictation') }}
+                        {% else %}{{ _('Transcript') }}{% endif %}
                     </h5>
                     <div class="d-flex align-items-center gap-2">
                         <div class="input-group input-group-sm" style="width: 200px;">
                             <span class="input-group-text"><i class="bi bi-search"></i></span>
-                            <input type="text" class="form-control" id="transcriptSearchInput" placeholder="Suchen..." autocomplete="off">
+                            <input type="text" class="form-control" id="transcriptSearchInput" placeholder="{{ _('Search…') }}" autocomplete="off">
                             <span class="input-group-text d-none" id="transcriptSearchCount">0</span>
                         </div>
                         <small class="text-muted text-nowrap">{{ job.created_at.strftime('%d.%m.%Y %H:%M') }}</small>
@@ -70,9 +70,9 @@
                 <div id="processingState" class="d-none">
                     <div class="text-center py-5">
                         <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status">
-                            <span class="visually-hidden">Laden...</span>
+                            <span class="visually-hidden">{{ _('Loading…') }}</span>
                         </div>
-                        <p class="text-muted mb-3" id="processingLabel">Transkription wird verarbeitet...</p>
+                        <p class="text-muted mb-3" id="processingLabel">{{ _('Transcription is being processed…') }}</p>
                         <div class="progress mx-auto" style="max-width: 300px; height: 4px;">
                             <div class="progress-bar progress-bar-striped progress-bar-animated bg-info"
                                  id="processingProgressBar" style="width: 100%; transition: width 0.5s ease;"></div>
@@ -86,21 +86,21 @@
                 <div id="errorState" class="d-none">
                     <div class="alert alert-danger mb-0">
                         <i class="bi bi-exclamation-triangle me-2"></i>
-                        <strong>Fehler:</strong> <span id="errorMessage"></span>
+                        <strong>{{ _('Error:') }}</strong> <span id="errorMessage"></span>
                     </div>
                 </div>
 
                 <!-- Diarized speaker edit -->
                 <div id="speakerEditSection" class="d-none mb-3">
                     <div class="d-flex align-items-center gap-2 flex-wrap mb-2">
-                        <small class="text-muted fw-medium">Sprecher umbenennen:</small>
+                        <small class="text-muted fw-medium">{{ _('Rename speakers:') }}</small>
                         <div id="speakerInputs" class="d-flex gap-2 flex-wrap"></div>
                         <button class="btn btn-sm btn-outline-success" onclick="saveSpeakerNames()">
-                            <i class="bi bi-check-lg me-1"></i>Anwenden
+                            <i class="bi bi-check-lg me-1"></i>{{ _('Apply') }}
                         </button>
                         <span id="speakerSpinner" class="d-none">
                             <span class="spinner-border spinner-border-sm text-muted"></span>
-                            <small class="text-muted ms-1">Sprecher werden erkannt...</small>
+                            <small class="text-muted ms-1">{{ _('Identifying speakers…') }}</small>
                         </span>
                     </div>
                 </div>
@@ -122,29 +122,29 @@
         <!-- Actions -->
         <div class="card border-0 shadow-sm mb-4">
             <div class="card-body p-4">
-                <h6 class="card-title mb-3"><i class="bi bi-tools me-2"></i>Aktionen</h6>
+                <h6 class="card-title mb-3"><i class="bi bi-tools me-2"></i>{{ _('Actions') }}</h6>
                 <div class="d-flex flex-wrap gap-2" id="actionButtons">
                     <button class="btn btn-outline-secondary btn-sm" onclick="copyResult()" id="copyBtn" disabled>
-                        <i class="bi bi-clipboard me-1"></i>Text kopieren
+                        <i class="bi bi-clipboard me-1"></i>{{ _('Copy text') }}
                     </button>
                     <a class="btn btn-outline-secondary btn-sm" id="downloadBtn" href="/api/{% if record_type == 'meeting' %}meeting{% elif record_type == 'dictation' %}dictation{% else %}job{% endif %}/{{ job.public_id }}/download" style="pointer-events: none; opacity: 0.5;">
-                        <i class="bi bi-download me-1"></i>Download
+                        <i class="bi bi-download me-1"></i>{{ _('Download') }}
                     </a>
                     <button class="btn btn-outline-secondary btn-sm d-none" id="toggleTimestampsBtn" onclick="toggleTimestamps()">
-                        <i class="bi bi-clock-history me-1"></i>Zeitstempel
+                        <i class="bi bi-clock-history me-1"></i>{{ _('Timestamps') }}
                     </button>
                     <button class="btn btn-outline-secondary btn-sm" onclick="toggleDetails()" id="detailsToggleBtn">
-                        <i class="bi bi-info-circle me-1"></i>Details
+                        <i class="bi bi-info-circle me-1"></i>{{ _('Details') }}
                     </button>
                     {% if record_type != 'dictation' %}
                     {% if hide_single_model and text_models|length <= 1 %}
                     <button class="btn btn-outline-primary btn-sm" onclick="summarizeJob({{ text_models[0].id if text_models else 0 }})" disabled id="summarizeBtn">
-                        <i class="bi bi-magic me-1"></i>Zusammenfassen
+                        <i class="bi bi-magic me-1"></i>{{ _('Summarize') }}
                     </button>
                     {% else %}
                     <div class="btn-group" id="summarizeGroup">
                         <button class="btn btn-outline-primary btn-sm dropdown-toggle" data-bs-toggle="dropdown" disabled id="summarizeBtn">
-                            <i class="bi bi-magic me-1"></i>Zusammenfassen
+                            <i class="bi bi-magic me-1"></i>{{ _('Summarize') }}
                         </button>
                         <ul class="dropdown-menu">
                             {% for m in text_models %}
@@ -154,7 +154,7 @@
                     </div>
                     {% endif %}
                     <button class="btn btn-outline-primary btn-sm" onclick="openChat()" id="chatBtn" disabled>
-                        <i class="bi bi-chat-dots me-1"></i>KI Chat
+                        <i class="bi bi-chat-dots me-1"></i>{{ _('AI Chat') }}
                     </button>
                     {% endif %}
                 </div>
@@ -164,11 +164,11 @@
         <!-- Audio Player -->
         <div class="card border-0 shadow-sm mb-4 d-none" id="audioPlayerCard">
             <div class="card-body p-4">
-                <h6 class="card-title mb-3"><i class="bi bi-music-note-beamed me-2"></i>Audio</h6>
+                <h6 class="card-title mb-3"><i class="bi bi-music-note-beamed me-2"></i>{{ _('Audio') }}</h6>
                 <audio id="audioPlayer" class="w-100" controls preload="metadata"></audio>
                 <div class="mt-2 text-end">
                     <a id="audioDownloadBtn" class="btn btn-sm btn-outline-secondary" href="#" target="_blank">
-                        <i class="bi bi-download me-1"></i>Audio herunterladen
+                        <i class="bi bi-download me-1"></i>{{ _('Download audio') }}
                     </a>
                 </div>
             </div>
@@ -178,13 +178,13 @@
         {% if record_type != 'dictation' %}
         <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column" id="summaryCard">
             <div class="card-body p-4 d-flex flex-column flex-grow-1">
-                <h6 class="card-title mb-3"><i class="bi bi-lightning me-2"></i>Zusammenfassung</h6>
+                <h6 class="card-title mb-3"><i class="bi bi-lightning me-2"></i>{{ _('Summary') }}</h6>
 
                 <!-- Summary processing -->
                 <div id="summaryProcessing" class="d-none">
                     <div class="text-center py-4">
                         <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
-                        <span class="text-muted">Zusammenfassung wird generiert...</span>
+                        <span class="text-muted">{{ _('Summary is being generated…') }}</span>
                         <div class="progress mt-3" style="height: 3px;">
                             <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary" style="width: 100%"></div>
                         </div>
@@ -204,7 +204,7 @@
                     <div id="summaryRendered" class="markdown-content bg-body-secondary rounded p-3 flex-grow-1" style="overflow-y: auto;"></div>
                     <div class="mt-2 text-end">
                         <button class="btn btn-sm btn-outline-secondary" onclick="copySummary()">
-                            <i class="bi bi-clipboard me-1"></i>Kopieren
+                            <i class="bi bi-clipboard me-1"></i>{{ _('Copy') }}
                         </button>
                     </div>
                 </div>
@@ -212,7 +212,7 @@
                 <!-- No summary yet -->
                 <div id="summaryEmpty">
                     <p class="text-muted mb-0 text-center py-2">
-                        <i class="bi bi-info-circle me-1"></i>Noch keine Zusammenfassung erstellt.
+                        <i class="bi bi-info-circle me-1"></i>{{ _('No summary created yet.') }}
                     </p>
                 </div>
             </div>
@@ -225,12 +225,12 @@
             <div class="card-body p-3 d-flex flex-column flex-grow-1" style="min-height: 0; overflow: hidden;">
                 <!-- Chat header -->
                 <div class="d-flex justify-content-between align-items-center mb-2">
-                    <h6 class="card-title mb-0"><i class="bi bi-chat-dots me-2"></i>KI Chat</h6>
+                    <h6 class="card-title mb-0"><i class="bi bi-chat-dots me-2"></i>{{ _('AI Chat') }}</h6>
                     <div class="d-flex gap-2">
-                        <button class="btn btn-sm btn-outline-danger" onclick="clearChat()" title="Chat leeren">
+                        <button class="btn btn-sm btn-outline-danger" onclick="clearChat()" title="{{ _('Clear chat') }}">
                             <i class="bi bi-trash"></i>
                         </button>
-                        <button class="btn btn-sm btn-outline-secondary" onclick="closeChat()" title="Zurück">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="closeChat()" title="{{ _('Back') }}">
                             <i class="bi bi-x-lg"></i>
                         </button>
                     </div>
@@ -249,14 +249,14 @@
                 <div id="chatMessages" class="flex-grow-1 overflow-auto mb-2 p-2 bg-body-secondary rounded" style="min-height: 100px;">
                     <div id="chatEmpty" class="text-center text-muted py-4">
                         <i class="bi bi-chat-dots" style="font-size: 2rem;"></i>
-                        <p class="mt-2 mb-0">Stellen Sie Fragen zur Transkription</p>
+                        <p class="mt-2 mb-0">{{ _('Ask questions about the transcription') }}</p>
                     </div>
                 </div>
 
                 <!-- Input area -->
                 <div class="d-flex gap-2">
                     <textarea class="form-control form-control-sm" id="chatInput" rows="1"
-                              placeholder="Frage eingeben..." style="resize: none; max-height: 100px;"></textarea>
+                              placeholder="{{ _('Enter question…') }}" style="resize: none; max-height: 100px;"></textarea>
                     <button class="btn btn-primary btn-sm px-3" onclick="sendChatMessage()" id="chatSendBtn">
                         <i class="bi bi-send"></i>
                     </button>
@@ -268,31 +268,31 @@
         <!-- Job Info -->
         <div class="card border-0 shadow-sm mt-4 d-none" id="detailsCard">
             <div class="card-body p-4">
-                <h6 class="card-title mb-3"><i class="bi bi-info-circle me-2"></i>Details</h6>
+                <h6 class="card-title mb-3"><i class="bi bi-info-circle me-2"></i>{{ _('Details') }}</h6>
                 <table class="table table-sm table-borderless mb-0">
-                    <tr><td class="text-muted" style="width:40%">Typ</td><td>
-                        {% if record_type == 'job' %}Transkription
-                        {% elif record_type == 'meeting' %}Meeting
-                        {% elif record_type == 'dictation' %}Diktat
+                    <tr><td class="text-muted" style="width:40%">{{ _('Type') }}</td><td>
+                        {% if record_type == 'job' %}{{ _('Transcription') }}
+                        {% elif record_type == 'meeting' %}{{ _('Meeting') }}
+                        {% elif record_type == 'dictation' %}{{ _('Dictation') }}
                         {% else %}{{ record_type }}{% endif %}
                     </td></tr>
                     {% if job.original_filename %}
-                    <tr><td class="text-muted">Datei</td><td class="text-break">{{ job.original_filename }}</td></tr>
+                    <tr><td class="text-muted">{{ _('File') }}</td><td class="text-break">{{ job.original_filename }}</td></tr>
                     {% endif %}
                     {% if job.speech_model %}
-                    <tr><td class="text-muted">Modell</td><td>{{ job.speech_model.display_name }}</td></tr>
+                    <tr><td class="text-muted">{{ _('Model') }}</td><td>{{ job.speech_model.display_name }}</td></tr>
                     {% endif %}
                     {% if job.language %}
-                    <tr><td class="text-muted">Sprache</td><td>{{ job.language }}</td></tr>
+                    <tr><td class="text-muted">{{ _('Language') }}</td><td>{{ job.language }}</td></tr>
                     {% endif %}
                     {% if record_type == 'meeting' %}
-                    <tr><td class="text-muted">Modus</td><td>Mehrere Sprecher</td></tr>
+                    <tr><td class="text-muted">{{ _('Mode') }}</td><td>{{ _('Multiple speakers') }}</td></tr>
                     {% elif record_type == 'job' and job.multi_speaker %}
-                    <tr><td class="text-muted">Modus</td><td>Mehrere Sprecher</td></tr>
+                    <tr><td class="text-muted">{{ _('Mode') }}</td><td>{{ _('Multiple speakers') }}</td></tr>
                     {% endif %}
-                    <tr><td class="text-muted">Erstellt</td><td>{{ job.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</td></tr>
+                    <tr><td class="text-muted">{{ _('Created') }}</td><td>{{ job.created_at.strftime('%d.%m.%Y %H:%M:%S') }}</td></tr>
                     {% if job.completed_at %}
-                    <tr><td class="text-muted">Fertig</td><td>{{ job.completed_at.strftime('%d.%m.%Y %H:%M:%S') }}</td></tr>
+                    <tr><td class="text-muted">{{ _('Finished') }}</td><td>{{ job.completed_at.strftime('%d.%m.%Y %H:%M:%S') }}</td></tr>
                     {% endif %}
                 </table>
             </div>
@@ -326,10 +326,10 @@ function fmtTime(sec) {
 function updateStatusBadge(status) {
     const badge = document.getElementById('statusBadge');
     const map = {
-        'pending': '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Wartend</span>',
-        'processing': '<span class="badge bg-info"><span class="spinner-grow spinner-grow-sm me-1"></span>Verarbeite</span>',
-        'completed': '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Fertig</span>',
-        'failed': '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Fehler</span>'
+        'pending': '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>' + window.tr('Pending') + '</span>',
+        'processing': '<span class="badge bg-info"><span class="spinner-grow spinner-grow-sm me-1"></span>' + window.tr('Processing') + '</span>',
+        'completed': '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>' + window.tr('Completed') + '</span>',
+        'failed': '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>' + window.tr('Failed') + '</span>'
     };
     badge.innerHTML = map[status] || `<span class="badge bg-secondary">${status}</span>`;
 }
@@ -390,7 +390,7 @@ function renderJob(job) {
     if (job.status === 'pending' || job.status === 'processing') {
         processing.classList.remove('d-none');
         document.getElementById('processingLabel').textContent =
-            job.status === 'pending' ? 'Job wartet auf Verarbeitung...' : 'Transkription wird verarbeitet...';
+            job.status === 'pending' ? window.tr('Job is waiting to be processed…') : window.tr('Transcription is being processed…');
         const progressBar = document.getElementById('processingProgressBar');
         const progressPercent = document.getElementById('processingPercent');
         const progress = job.progress || 0;
@@ -430,7 +430,7 @@ function renderJob(job) {
         disableActions();
     } else if (job.status === 'failed') {
         error.classList.remove('d-none');
-        document.getElementById('errorMessage').textContent = job.error_message || 'Unbekannter Fehler';
+        document.getElementById('errorMessage').textContent = job.error_message || window.tr('Unknown error');
         disableActions();
     } else if (job.status === 'completed') {
         enableActions();
@@ -603,7 +603,7 @@ function showSpeakerEditor(segments) {
         const color = getSpeakerColor(idx);
         return `<div class="input-group input-group-sm" style="width:auto">
             <span class="input-group-text" style="background:${color};color:#fff;border-color:${color}">${escapeHtml(sp)}</span>
-            <input type="text" class="form-control" data-original="${escapeHtml(sp)}" placeholder="Neuer Name" style="width:100px">
+            <input type="text" class="form-control" data-original="${escapeHtml(sp)}" placeholder="${window.tr('New name')}" style="width:100px">
         </div>`;
     }).join('');
     document.getElementById('speakerEditSection').classList.remove('d-none');
@@ -632,7 +632,7 @@ function toggleTimestamps() {
 function renderTimestampSegments(segments) {
     const container = document.getElementById('timestampView');
     container.innerHTML = segments.map((seg, segIdx) => {
-        const ts = fmtTime(seg.start) + ' \u2013 ' + fmtTime(seg.end);
+        const ts = fmtTime(seg.start) + ' – ' + fmtTime(seg.end);
         return `<div class="mb-2 pb-2 border-bottom border-opacity-25 audio-segment" data-start="${seg.start}" data-end="${seg.end}">
             <div class="d-flex align-items-start gap-3">
                 <small class="text-muted text-nowrap timestamp-link" data-start="${seg.start}" style="min-width: 110px; flex-shrink: 0; font-family: monospace; font-size: 0.8rem;">[${ts}]</small>
@@ -677,13 +677,13 @@ function copyResult() {
         text = jobData ? (jobData.result_text || '') : '';
     }
     navigator.clipboard.writeText(text);
-    showToast('Text kopiert!');
+    showToast(window.tr('Text copied!'));
 }
 
 function copySummary() {
     if (jobData && jobData.summary_text) {
         navigator.clipboard.writeText(jobData.summary_text);
-        showToast('Zusammenfassung kopiert!');
+        showToast(window.tr('Summary copied!'));
     }
 }
 
@@ -763,7 +763,7 @@ async function saveTitle() {
         if (resp.ok) {
             display.textContent = data.title;
             document.title = data.title + ' - TranscribeOps';
-            showToast('Titel gespeichert!');
+            showToast(window.tr('Title saved!'));
         }
     } catch (err) {
         console.error('Title save failed:', err);
@@ -919,10 +919,10 @@ function startSegmentEdit(el) {
                 // Remove textarea before renderJob so polling guard doesn't block
                 el.textContent = newText;
                 renderJob(job);
-                showToast('Segment gespeichert!');
+                showToast(window.tr('Segment saved!'));
             } else {
                 el.textContent = originalText;
-                showToast(job.error || 'Fehler beim Speichern');
+                showToast(job.error || window.tr('Error while saving'));
             }
         } catch (err) {
             console.error('Segment save failed:', err);
@@ -1015,7 +1015,7 @@ function renderChatMessages(messages) {
         inner.style.maxWidth = '85%';
 
         if (msg.status === 'processing') {
-            inner.innerHTML = '<div class="d-flex align-items-center gap-2"><div class="spinner-border spinner-border-sm" role="status"></div><span class="text-muted">Antwort wird generiert...</span></div>';
+            inner.innerHTML = '<div class="d-flex align-items-center gap-2"><div class="spinner-border spinner-border-sm" role="status"></div><span class="text-muted">' + window.tr('Generating answer…') + '</span></div>';
         } else if (msg.status === 'failed') {
             inner.innerHTML = `<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>${escapeHtml(msg.content)}</span>`;
         } else if (msg.role === 'assistant' && typeof marked !== 'undefined') {
@@ -1058,11 +1058,11 @@ async function sendChatMessage() {
             startChatPolling();
         } else {
             const err = await resp.json();
-            showToast(err.error || 'Fehler beim Senden');
+            showToast(err.error || window.tr('Error while sending'));
         }
     } catch (err) {
         console.error('Failed to send chat message:', err);
-        showToast('Fehler beim Senden');
+        showToast(window.tr('Error while sending'));
     }
 
     input.disabled = false;
@@ -1089,7 +1089,7 @@ function startChatPolling() {
 }
 
 async function clearChat() {
-    if (!confirm('Chat-Verlauf wirklich löschen?')) return;
+    if (!confirm(window.tr('Really delete chat history?'))) return;
     const chatType = RECORD_TYPE === 'meeting' ? 'meeting' : 'job';
     const token = document.querySelector('meta[name="csrf-token"]').content;
     await fetch(`/api/chat/${chatType}/${JOB_ID}`, {
@@ -1199,10 +1199,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const m = Math.floor(remaining / 60);
         const s = remaining % 60;
-        const timeStr = m > 0 ? `${m} Min ${s} Sek` : `${s} Sek`;
+        const timeStr = m > 0 ? window.tr('{m} min {s} sec', {m: m, s: s}) : window.tr('{s} sec', {s: s});
         etaEl.textContent = snap.status === 'pending'
-            ? `Geschätzte Wartezeit: ${timeStr}`
-            : `Geschätzte Restzeit: ${timeStr}`;
+            ? window.tr('Estimated wait time: {time}', {time: timeStr})
+            : window.tr('Estimated remaining time: {time}', {time: timeStr});
     }, 1000);
 });
 </script>

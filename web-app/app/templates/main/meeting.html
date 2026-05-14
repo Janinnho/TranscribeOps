@@ -1,18 +1,18 @@
 {% extends "base.html" %}
-{% block title %}Meeting - TranscribeOps{% endblock %}
-{% block page_title %}Meeting{% endblock %}
+{% block title %}{{ _('Meeting') }} - TranscribeOps{% endblock %}
+{% block page_title %}{{ _('Meeting') }}{% endblock %}
 {% block content %}
 <div class="row g-4 h-100">
     <!-- Left: Recording / Upload -->
     <div class="col-lg-7">
         <div class="card border-0 shadow-sm">
             <div class="card-body p-4">
-                <h5 class="card-title mb-4"><i class="bi bi-camera-video me-2"></i>Meeting aufzeichnen</h5>
+                <h5 class="card-title mb-4"><i class="bi bi-camera-video me-2"></i>{{ _('Record meeting') }}</h5>
 
                 <div class="row g-3 mb-4">
                     {% if not (hide_single_model and speech_models|length <= 1) %}
                     <div class="col-md-4">
-                        <label class="form-label">Modell</label>
+                        <label class="form-label">{{ _('Model') }}</label>
                         <select class="form-select" id="speechModel" onchange="updateUploadLimits()">
                             {% for m in speech_models %}
                             <option value="{{ m.id }}">{{ m.display_name }}</option>
@@ -23,23 +23,23 @@
                     <select class="d-none" id="speechModel">{% for m in speech_models %}<option value="{{ m.id }}">{{ m.display_name }}</option>{% endfor %}</select>
                     {% endif %}
                     <div class="{{ 'col-md-4' if not (hide_single_model and speech_models|length <= 1) else 'col-md-6' }}">
-                        <label class="form-label">Sprache (optional)</label>
+                        <label class="form-label">{{ _('Language (optional)') }}</label>
                         <select class="form-select" id="language">
-                            <option value="">Automatisch</option>
-                            <option value="de">Deutsch</option>
-                            <option value="en">Englisch</option>
-                            <option value="fr">Französisch</option>
-                            <option value="es">Spanisch</option>
+                            <option value="">{{ _('Automatic') }}</option>
+                            <option value="de">{{ _('German') }}</option>
+                            <option value="en">{{ _('English') }}</option>
+                            <option value="fr">{{ _('French') }}</option>
+                            <option value="es">{{ _('Spanish') }}</option>
                         </select>
                     </div>
                     <div class="{{ 'col-md-4' if not (hide_single_model and speech_models|length <= 1) else 'col-md-6' }}">
-                        <label class="form-label">Audioquelle</label>
+                        <label class="form-label">{{ _('Audio source') }}</label>
                         <select class="form-select" id="audioSource" onchange="updateAudioSourceHint()">
-                            <option value="mic">Mikrofon</option>
-                            <option value="desktop">Desktop-Audio</option>
-                            <option value="both">Mikrofon + Desktop-Audio</option>
+                            <option value="mic">{{ _('Microphone') }}</option>
+                            <option value="desktop">{{ _('Desktop audio') }}</option>
+                            <option value="both">{{ _('Microphone + desktop audio') }}</option>
                         </select>
-                        <small class="text-muted d-none" id="audioSourceHint">Desktop-Audio funktioniert am besten in Chrome/Edge.</small>
+                        <small class="text-muted d-none" id="audioSourceHint">{{ _('Desktop audio works best in Chrome/Edge.') }}</small>
                     </div>
                 </div>
 
@@ -48,11 +48,11 @@
                     <button class="btn btn-lg btn-outline-danger rounded-circle p-4" id="recordBtn" onclick="toggleMeetingRecord()">
                         <i class="bi bi-mic-fill fs-2" id="recordIcon"></i>
                     </button>
-                    <p class="mt-3 mb-0" id="recordStatus">Klicken um Aufnahme zu starten</p>
+                    <p class="mt-3 mb-0" id="recordStatus">{{ _('Click to start recording') }}</p>
                     <span class="badge bg-danger d-none mt-2" id="recordTimer">00:00:00</span>
                 </div>
 
-                <div class="text-center text-muted mb-3">- oder -</div>
+                <div class="text-center text-muted mb-3">- {{ _('or') }} -</div>
 
                 <!-- File upload -->
                 <form id="uploadForm" enctype="multipart/form-data">
@@ -60,12 +60,12 @@
                     {% if audio_save_enabled %}
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" id="saveAudio" name="save_audio" {{ 'checked' if audio_save_default }}>
-                        <label class="form-check-label" for="saveAudio"><i class="bi bi-hdd me-1"></i>Audiodatei speichern</label>
+                        <label class="form-check-label" for="saveAudio"><i class="bi bi-hdd me-1"></i>{{ _('Save audio file') }}</label>
                     </div>
                     {% endif %}
                     <div class="upload-zone border rounded-3 p-4 text-center mb-3" id="dropZone">
                         <i class="bi bi-cloud-arrow-up display-5 text-muted"></i>
-                        <p class="mt-2 mb-1">Audiodatei hochladen</p>
+                        <p class="mt-2 mb-1">{{ _('Upload audio file') }}</p>
                         <small class="text-muted" id="uploadLimits">MP3, WAV, OGG, FLAC, M4A, WebM</small>
                         <input type="file" class="d-none" id="fileInput" accept=".mp3,.wav,.ogg,.webm,.flac,.m4a,.mp4">
                     </div>
@@ -85,7 +85,7 @@
                         </div>
                     </div>
                     <button type="submit" class="btn btn-primary" id="uploadBtn" disabled>
-                        <i class="bi bi-upload me-2"></i>Hochladen & Transkribieren
+                        <i class="bi bi-upload me-2"></i>{{ _('Upload & transcribe') }}
                     </button>
                 </form>
             </div>
@@ -96,17 +96,17 @@
     <div class="col-lg-5 d-flex flex-column">
         <div class="card border-0 shadow-sm flex-grow-1 d-flex flex-column">
             <div class="card-body p-4 flex-grow-1 d-flex flex-column overflow-hidden">
-                <h5 class="card-title mb-3"><i class="bi bi-clock-history me-2"></i>Meeting-Historie</h5>
+                <h5 class="card-title mb-3"><i class="bi bi-clock-history me-2"></i>{{ _('Meeting history') }}</h5>
                 <div class="mb-2">
                     <div class="input-group input-group-sm">
                         <span class="input-group-text"><i class="bi bi-search"></i></span>
-                        <input type="text" class="form-control" id="jobSearchInput" placeholder="Suchen..." autocomplete="off">
+                        <input type="text" class="form-control" id="jobSearchInput" placeholder="{{ _('Search...') }}" autocomplete="off">
                     </div>
                 </div>
                 <div id="jobList" class="job-list">
                     <div class="text-center text-muted py-4">
                         <i class="bi bi-inbox display-6"></i>
-                        <p class="mt-2">Noch keine Meetings</p>
+                        <p class="mt-2">{{ _('No meetings yet') }}</p>
                     </div>
                 </div>
             </div>
@@ -128,11 +128,11 @@ function updateUploadLimits() {
     const model = speechModelData.find(m => m.id === selId);
     let text = 'MP3, WAV, OGG, FLAC, M4A, WebM';
     const parts = [];
-    if (model && model.max_size > 0) parts.push('max. ' + model.max_size + ' MB');
+    if (model && model.max_size > 0) parts.push(window.tr('max. {size} MB', {size: model.max_size}));
     if (model && model.max_duration > 0) {
         const mins = Math.floor(model.max_duration / 60);
-        if (mins > 0) parts.push('max. ' + mins + ' Min.');
-        else parts.push('max. ' + model.max_duration + ' Sek.');
+        if (mins > 0) parts.push(window.tr('max. {mins} min', {mins: mins}));
+        else parts.push(window.tr('max. {secs} sec', {secs: model.max_duration}));
     }
     if (parts.length) text += ' (' + parts.join(', ') + ')';
     el.textContent = text;
@@ -163,7 +163,7 @@ async function getDesktopAudioStream() {
     stream.getVideoTracks().forEach(t => t.stop());
     if (stream.getAudioTracks().length === 0) {
         stream.getTracks().forEach(t => t.stop());
-        throw new Error('Desktop-Audio wurde nicht freigegeben. Bitte aktivieren Sie "Audio teilen" im Dialog.');
+        throw new Error(window.tr('Desktop audio was not shared. Please enable "Share audio" in the dialog.'));
     }
     return stream;
 }
@@ -219,13 +219,13 @@ async function startMeetingRecord() {
         if (activeAudioCtx) { activeAudioCtx.close(); activeAudioCtx = null; }
         const msg = err && err.message ? ': ' + err.message : '';
         if (source === 'mic' && err.name === 'NotAllowedError') {
-            alert('Mikrofon-Zugriff nicht möglich' + msg);
+            alert(window.tr('Microphone access not possible') + msg);
         } else if (err.name === 'AbortError') {
-            alert('Desktop-Audio-Freigabe abgebrochen' + msg);
+            alert(window.tr('Desktop audio sharing cancelled') + msg);
         } else if (err.name === 'NotAllowedError') {
-            alert('Desktop-Audio-Zugriff verweigert' + msg);
+            alert(window.tr('Desktop audio access denied') + msg);
         } else {
-            alert('Aufnahme konnte nicht gestartet werden' + msg);
+            alert(window.tr('Could not start recording') + msg);
         }
         return;
     }
@@ -251,8 +251,8 @@ async function startMeetingRecord() {
     document.getElementById('audioSource').disabled = true;
     document.getElementById('recordBtn').classList.replace('btn-outline-danger', 'btn-danger');
     document.getElementById('recordIcon').classList.replace('bi-mic-fill', 'bi-stop-fill');
-    const sourceLabels = {mic: 'Mikrofon', desktop: 'Desktop-Audio', both: 'Mikrofon + Desktop'};
-    document.getElementById('recordStatus').textContent = `Aufnahme läuft (${sourceLabels[source]})... Klicken zum Stoppen`;
+    const sourceLabels = {mic: window.tr('Microphone'), desktop: window.tr('Desktop audio'), both: window.tr('Microphone + desktop')};
+    document.getElementById('recordStatus').textContent = window.tr('Recording ({source})... Click to stop', {source: sourceLabels[source]});
     const timer = document.getElementById('recordTimer');
     timer.classList.remove('d-none');
     recordingTimer = setInterval(() => {
@@ -271,7 +271,7 @@ function stopMeetingRecord() {
         document.getElementById('audioSource').disabled = false;
         document.getElementById('recordBtn').classList.replace('btn-danger', 'btn-outline-danger');
         document.getElementById('recordIcon').classList.replace('bi-stop-fill', 'bi-mic-fill');
-        document.getElementById('recordStatus').textContent = 'Aufnahme wird verarbeitet...';
+        document.getElementById('recordStatus').textContent = window.tr('Processing recording...');
     }
 }
 
@@ -290,7 +290,7 @@ async function uploadRecording(blob) {
         method: 'POST', body: formData, headers: {'X-CSRFToken': token}
     });
     const data = await resp.json();
-    document.getElementById('recordStatus').textContent = 'Klicken um Aufnahme zu starten';
+    document.getElementById('recordStatus').textContent = window.tr('Click to start recording');
     document.getElementById('recordTimer').classList.add('d-none');
     loadJobs('/api/meetings', '/api/meeting', '/meeting-job');
 }
@@ -313,7 +313,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (const opt of sel.options) {
             if (opt.value === 'desktop' || opt.value === 'both') {
                 opt.disabled = true;
-                opt.textContent += ' (nicht unterstützt)';
+                opt.textContent += ' ' + window.tr('(not supported)');
             }
         }
     }

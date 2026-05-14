@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="de" data-bs-theme="{{ current_user.theme if current_user.is_authenticated and current_user.theme != 'auto' else '' }}">
+<html lang="{{ current_lang }}" data-bs-theme="{{ current_user.theme if current_user.is_authenticated and current_user.theme != 'auto' else '' }}">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -11,6 +11,7 @@
     <link href="{{ url_for('static', filename='vendor/bootstrap-icons/bootstrap-icons.css') }}" rel="stylesheet">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script>window.I18N = {{ client_i18n | tojson }}; window.tr = function(k, vars){ var s = (window.I18N && window.I18N[k]) || k; if(vars){ Object.keys(vars).forEach(function(v){ s = s.replace('{'+v+'}', vars[v]); }); } return s; };</script>
     {% if current_user.is_authenticated and current_user.theme == 'auto' %}
     <script>
         if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
@@ -36,55 +37,55 @@
                 {% if current_user.has_transcription_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.transcription') }}" class="nav-link {% if request.endpoint == 'main.transcription' %}active{% endif %}">
-                        <i class="bi bi-file-earmark-music me-2"></i>Transkription
+                        <i class="bi bi-file-earmark-music me-2"></i>{{ _('Transcription') }}
                     </a>
                 </li>
                 {% endif %}
                 {% if current_user.has_meeting_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.meeting') }}" class="nav-link {% if request.endpoint == 'main.meeting' %}active{% endif %}">
-                        <i class="bi bi-camera-video me-2"></i>Meeting
+                        <i class="bi bi-camera-video me-2"></i>{{ _('Meeting') }}
                     </a>
                 </li>
                 {% endif %}
                 {% if current_user.has_dictation_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.dictation') }}" class="nav-link {% if request.endpoint == 'main.dictation' %}active{% endif %}">
-                        <i class="bi bi-mic me-2"></i>Diktieren
+                        <i class="bi bi-mic me-2"></i>{{ _('Dictation') }}
                     </a>
                 </li>
                 {% endif %}
                 {% if current_user.has_text_tools_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.text_tools') }}" class="nav-link {% if request.endpoint == 'main.text_tools' %}active{% endif %}">
-                        <i class="bi bi-type me-2"></i>Text Tools
+                        <i class="bi bi-type me-2"></i>{{ _('Text Tools') }}
                     </a>
                 </li>
                 {% endif %}
                 {% if current_user.has_chat_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.chat') }}" class="nav-link {% if request.endpoint == 'main.chat' %}active{% endif %}">
-                        <i class="bi bi-chat-dots me-2"></i>Chat
+                        <i class="bi bi-chat-dots me-2"></i>{{ _('Chat') }}
                     </a>
                 </li>
                 {% endif %}
                 {% if current_user.has_dictionary_access() %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.dictionary') }}" class="nav-link {% if request.endpoint == 'main.dictionary' %}active{% endif %}">
-                        <i class="bi bi-book me-2"></i>Wörterbuch
+                        <i class="bi bi-book me-2"></i>{{ _('Dictionary') }}
                     </a>
                 </li>
                 {% endif %}
                 <li class="nav-item">
                     <a href="{{ url_for('main.settings') }}" class="nav-link {% if request.endpoint == 'main.settings' %}active{% endif %}">
-                        <i class="bi bi-sliders me-2"></i>Einstellungen
+                        <i class="bi bi-sliders me-2"></i>{{ _('Settings') }}
                     </a>
                 </li>
             </ul>
             <div class="mt-auto">
                 {% if current_user.is_admin %}
                 <a href="{{ url_for('admin.dashboard') }}" class="nav-link {% if 'admin' in request.endpoint %}active{% endif %} mb-2">
-                    <i class="bi bi-gear-wide-connected me-2"></i>Admin
+                    <i class="bi bi-gear-wide-connected me-2"></i>{{ _('Admin') }}
                 </a>
                 {% endif %}
                 <hr class="my-2">
@@ -94,9 +95,9 @@
                         <strong>{{ current_user.display_name }}</strong>
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end shadow">
-                        <li><a class="dropdown-item" href="{{ url_for('main.settings') }}"><i class="bi bi-sliders me-2"></i>Einstellungen</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('main.settings') }}"><i class="bi bi-sliders me-2"></i>{{ _('Settings') }}</a></li>
                         <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right me-2"></i>Abmelden</a></li>
+                        <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right me-2"></i>{{ _('Log out') }}</a></li>
                     </ul>
                 </div>
             </div>
@@ -139,7 +140,7 @@
 
     <script src="{{ url_for('static', filename='vendor/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
     <script src="{{ url_for('static', filename='vendor/marked/marked.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='js/app.js') }}?v=2"></script>
+    <script src="{{ url_for('static', filename='js/app.js') }}?v=3"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

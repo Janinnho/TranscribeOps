@@ -31,6 +31,10 @@ a:hover { text-decoration: underline; }
 .nav-links a:hover { background: rgba(255,255,255,0.04); color: var(--text); text-decoration: none; }
 .nav-links a.active { background: rgba(99,102,241,0.15); color: var(--accent); }
 .logout-form { margin: 0; }
+.nav-right { display: flex; align-items: center; gap: 12px; }
+.lang-switcher select { background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 13px; cursor: pointer; }
+.lang-switcher select:hover { border-color: var(--accent); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
 
 /* ---- Layout ---- */
 .container { max-width: 1280px; margin: 0 auto; padding: 28px 24px 80px; }

@@ -4,6 +4,7 @@ import secrets
 import uuid
 
 from flask import Blueprint, jsonify, request
+from flask_babel import gettext as _
 
 from engines import EngineBusy
 
@@ -38,7 +39,7 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
             "id": key_id,
             "label": label,
             "raw_key": raw,
-            "warning": "Dieser Key wird nur ein Mal angezeigt — jetzt speichern!",
+            "warning": _("This key is shown only once — save it now!"),
         })
 
     @bp.route("/api/keys/<int:key_id>", methods=["DELETE"])
@@ -175,7 +176,7 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
     @login_required
     def api_main_engine_update():
         if config.get("main_engine_disabled"):
-            return jsonify({"error": "Main engine ist via DISABLE_MAIN_ENGINE deaktiviert."}), 400
+            return jsonify({"error": _("Main engine is disabled via DISABLE_MAIN_ENGINE.")}), 400
         update = config.get("update_main_engine")
         if update is None:
             return jsonify({"error": "update_main_engine handler not configured"}), 500
@@ -198,7 +199,7 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
             err_id = uuid.uuid4().hex[:8]
             logger.exception("Main engine update failed [err_id=%s]", err_id)
             return jsonify({
-                "error": "Reload fehlgeschlagen — Details siehe Server-Log.",
+                "error": _("Reload failed — see server log for details."),
                 "error_id": err_id,
             }), 500
 
@@ -208,7 +209,7 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
     @login_required
     def api_main_engine_reload():
         if config.get("main_engine_disabled"):
-            return jsonify({"error": "Main engine ist via DISABLE_MAIN_ENGINE deaktiviert."}), 400
+            return jsonify({"error": _("Main engine is disabled via DISABLE_MAIN_ENGINE.")}), 400
         do_reload = config.get("reload_main_engine")
         if do_reload is None:
             return jsonify({"error": "reload handler not configured"}), 500

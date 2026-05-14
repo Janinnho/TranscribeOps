@@ -1,76 +1,71 @@
 {% extends "base.html" %}
-{% block title %}Dashboard — TranscribeOps Modell API{% endblock %}
+{% block title %}{{ _('Dashboard') }} — {{ _('TranscribeOps Model API') }}{% endblock %}
 {% block content %}
-<h1 class="page-title">Dashboard</h1>
-<p class="page-subtitle">Überblick aller Modelle nach Zweck.</p>
+<h1 class="page-title">{{ _('Dashboard') }}</h1>
+<p class="page-subtitle">{{ _('Overview of all models by purpose.') }}</p>
 
 <section class="card-group group-gray">
   <h2 class="group-title">
     <span class="group-dot"></span>
-    System (Hauptprozess)
+    {{ _('System (main process)') }}
   </h2>
   <p class="group-note">
-    Engine, Modell und Device können unter <a href="{{ url_for('admin.instances') }}">Instanzen</a> bearbeitet werden.
-    Initialwerte kommen aus den Docker-Env-Vars (<code>WHISPER_MODEL</code>, <code>WHISPER_DEVICE</code>, …);
-    Änderungen werden in der Admin-DB persistiert. Diarisierung und Alignment laufen innerhalb desselben Prozesses.
+    {{ _('Engine, model and device can be edited under %(link_start)sInstances%(link_end)s.', link_start='<a href="' + url_for('admin.instances') + '">'|safe, link_end='</a>'|safe) }}
+    {{ _('Initial values come from Docker env vars (%(vars)s); changes are persisted in the admin DB. Diarization and alignment run inside the same process.', vars='<code>WHISPER_MODEL</code>, <code>WHISPER_DEVICE</code>, …'|safe) }}
   </p>
   <div class="sys-grid">
-    <div class="sys-item"><dt>Port</dt><dd>:{{ system_info.main_port }}</dd></div>
-    <div class="sys-item"><dt>Status</dt><dd>
+    <div class="sys-item"><dt>{{ _('Port') }}</dt><dd>:{{ system_info.main_port }}</dd></div>
+    <div class="sys-item"><dt>{{ _('Status') }}</dt><dd>
       {% if system_info.main_engine_disabled %}
-        <span class="dot-gray"></span> deaktiviert (DISABLE_MAIN_ENGINE=1)
+        <span class="dot-gray"></span> {{ _('disabled (DISABLE_MAIN_ENGINE=1)') }}
       {% elif system_info.main_reload_status == 'loading' %}
-        <span class="dot-gray"></span> lädt neu…
+        <span class="dot-gray"></span> {{ _('reloading…') }}
       {% elif system_info.main_reload_status == 'failed' %}
-        <span class="dot-red"></span> Reload fehlgeschlagen{% if system_info.main_reload_error %}: {{ system_info.main_reload_error }}{% endif %}
+        <span class="dot-red"></span> {{ _('Reload failed') }}{% if system_info.main_reload_error %}: {{ system_info.main_reload_error }}{% endif %}
       {% elif system_info.main_engine_loaded %}
-        <span class="dot-green"></span> Engine geladen
+        <span class="dot-green"></span> {{ _('Engine loaded') }}
       {% else %}
-        <span class="dot-red"></span> Engine nicht geladen
+        <span class="dot-red"></span> {{ _('Engine not loaded') }}
       {% endif %}
     </dd></div>
-    <div class="sys-item"><dt>Engine</dt><dd><code>{{ system_info.main_engine }}</code></dd></div>
-    <div class="sys-item"><dt>Modell</dt><dd><code>{{ system_info.main_model }}</code></dd></div>
-    <div class="sys-item"><dt>Device</dt><dd><code>{{ system_info.main_device }}</code></dd></div>
-    <div class="sys-item"><dt>Compute type</dt><dd><code>{{ system_info.main_compute_type }}</code></dd></div>
-    <div class="sys-item"><dt>Batch size</dt><dd><code>{{ system_info.default_batch_size }}</code></dd></div>
-    <div class="sys-item"><dt>Instanz-Ports</dt><dd><code>{{ system_info.port_range }}</code></dd></div>
-    <div class="sys-item"><dt>HF_TOKEN</dt><dd>{% if system_info.hf_token_set %}<span class="dot-green"></span> gesetzt (erforderlich für Diarisierung){% else %}<span class="dot-red"></span> nicht gesetzt — pyannote nicht nutzbar{% endif %}</dd></div>
-    <div class="sys-item"><dt>WHISPER_API_KEY</dt><dd>{% if system_info.api_key_env_set %}<span class="dot-green"></span> gesetzt (Env){% else %}<span class="dot-gray"></span> leer — nur DB-Keys aktiv{% endif %}</dd></div>
+    <div class="sys-item"><dt>{{ _('Engine') }}</dt><dd><code>{{ system_info.main_engine }}</code></dd></div>
+    <div class="sys-item"><dt>{{ _('Model') }}</dt><dd><code>{{ system_info.main_model }}</code></dd></div>
+    <div class="sys-item"><dt>{{ _('Device') }}</dt><dd><code>{{ system_info.main_device }}</code></dd></div>
+    <div class="sys-item"><dt>{{ _('Compute type') }}</dt><dd><code>{{ system_info.main_compute_type }}</code></dd></div>
+    <div class="sys-item"><dt>{{ _('Batch size') }}</dt><dd><code>{{ system_info.default_batch_size }}</code></dd></div>
+    <div class="sys-item"><dt>{{ _('Instance ports') }}</dt><dd><code>{{ system_info.port_range }}</code></dd></div>
+    <div class="sys-item"><dt>HF_TOKEN</dt><dd>{% if system_info.hf_token_set %}<span class="dot-green"></span> {{ _('set (required for diarization)') }}{% else %}<span class="dot-red"></span> {{ _('not set — pyannote unavailable') }}{% endif %}</dd></div>
+    <div class="sys-item"><dt>WHISPER_API_KEY</dt><dd>{% if system_info.api_key_env_set %}<span class="dot-green"></span> {{ _('set (env)') }}{% else %}<span class="dot-gray"></span> {{ _('empty — only DB keys active') }}{% endif %}</dd></div>
   </div>
 </section>
 
 <section class="card-group group-green">
   <h2 class="group-title">
     <span class="group-dot"></span>
-    Mit Container ausgeliefert
+    {{ _('Shipped with the container') }}
   </h2>
   <p class="group-note">
-    Alignment- und Diarisierungs-Modelle werden nicht einzeln heruntergeladen — sie sind
-    entweder direkt im Image enthalten oder werden beim ersten Start automatisch nachgeladen.
-    Keine UI-Konfiguration nötig.
+    {{ _('Alignment and diarization models are not downloaded individually — they are either bundled in the image or auto-downloaded on first start. No UI configuration needed.') }}
   </p>
   <div class="card-grid">
     <article class="model-card {% if bundled_info.align.all_present %}is-downloaded{% endif %}">
       <header>
-        <h3>Wort-Alignment (wav2vec2)</h3>
-        <span class="badge badge-purple">bundled</span>
+        <h3>{{ _('Word alignment (wav2vec2)') }}</h3>
+        <span class="badge badge-purple">{{ _('bundled') }}</span>
       </header>
       <p class="model-desc">
-        Torchaudio-Bundles für Englisch, Französisch, Deutsch, Spanisch und Italienisch —
-        im Image beim Build vorgeladen. Liefern millisekundengenaue Wort-Timestamps,
-        werden in-process von WhisperX verwendet.
+        {{ _('Torchaudio bundles for English, French, German, Spanish and Italian — preloaded into the image at build time. They provide millisecond-accurate word timestamps and are used in-process by WhisperX.') }}
       </p>
       <dl class="model-meta">
-        <div><dt>Quelle</dt><dd><code>torchaudio.pipelines</code></dd></div>
-        <div><dt>Cache</dt><dd><code>{{ bundled_info.align.dir }}</code></dd></div>
-        <div><dt>Status</dt><dd>
+        <div><dt>{{ _('Source') }}</dt><dd><code>torchaudio.pipelines</code></dd></div>
+        <div><dt>{{ _('Cache') }}</dt><dd><code>{{ bundled_info.align.dir }}</code></dd></div>
+        <div><dt>{{ _('Status') }}</dt><dd>
           {% if bundled_info.align.all_present %}
-            <span class="dot-green"></span> {{ bundled_info.align.count }} Checkpoints vorhanden
+            <span class="dot-green"></span> {{ _('%(count)s checkpoints present', count=bundled_info.align.count) }}
           {% elif bundled_info.align.count > 0 %}
-            <span class="dot-gray"></span> nur {{ bundled_info.align.count }} Checkpoints (erwartet: 5) — evtl. Volume-Mount überlagert?
+            <span class="dot-gray"></span> {{ _('only %(count)s checkpoints (expected: 5) — maybe overridden by a volume mount?', count=bundled_info.align.count) }}
           {% else %}
-            <span class="dot-red"></span> keine Checkpoints — Image-Build prüfen
+            <span class="dot-red"></span> {{ _('no checkpoints — check the image build') }}
           {% endif %}
         </dd></div>
       </dl>
@@ -78,23 +73,21 @@
 
     <article class="model-card {% if bundled_info.diarize.all_present %}is-downloaded{% endif %}">
       <header>
-        <h3>Sprechererkennung (pyannote)</h3>
-        <span class="badge badge-green">auto-download</span>
+        <h3>{{ _('Speaker recognition (pyannote)') }}</h3>
+        <span class="badge badge-green">{{ _('auto-download') }}</span>
       </header>
       <p class="model-desc">
-        pyannote/segmentation-3.0 + pyannote/speaker-diarization-3.1 werden beim ersten
-        Containerstart mit dem Runtime-<code>HF_TOKEN</code> heruntergeladen und
-        anschließend dauerhaft im Volume abgelegt.
+        {{ _('pyannote/segmentation-3.0 + pyannote/speaker-diarization-3.1 are downloaded on first container start using the runtime %(token)s and then stored permanently in the volume.', token='<code>HF_TOKEN</code>'|safe) }}
       </p>
       <dl class="model-meta">
         {% for r in bundled_info.diarize.repos %}
         <div><dt>{{ r.repo_id }}</dt><dd>
           {% if r.cached %}
-            <span class="dot-green"></span> im Cache
+            <span class="dot-green"></span> {{ _('cached') }}
           {% elif system_info.hf_token_set %}
-            <span class="dot-gray"></span> wird beim nächsten Start geladen
+            <span class="dot-gray"></span> {{ _('will be loaded on next start') }}
           {% else %}
-            <span class="dot-red"></span> fehlt — HF_TOKEN nicht gesetzt
+            <span class="dot-red"></span> {{ _('missing — HF_TOKEN not set') }}
           {% endif %}
         </dd></div>
         {% endfor %}
@@ -119,10 +112,10 @@
             </header>
             <p class="model-desc">{{ e.description }}</p>
             <dl class="model-meta">
-              <div><dt>Größe</dt><dd>{% if e.downloaded %}{{ e.disk_size_mb }} MB{% else %}{{ e.size_hint }}{% endif %}</dd></div>
-              <div><dt>Status</dt><dd>{% if e.downloaded %}<span class="dot-green"></span> heruntergeladen{% else %}<span class="dot-gray"></span> nicht geladen{% endif %}</dd></div>
+              <div><dt>{{ _('Size') }}</dt><dd>{% if e.downloaded %}{{ e.disk_size_mb }} MB{% else %}{{ e.size_hint }}{% endif %}</dd></div>
+              <div><dt>{{ _('Status') }}</dt><dd>{% if e.downloaded %}<span class="dot-green"></span> {{ _('Downloaded') }}{% else %}<span class="dot-gray"></span> {{ _('not loaded') }}{% endif %}</dd></div>
               {% if e.instances %}
-                <div><dt>Instanzen</dt><dd>
+                <div><dt>{{ _('Instances') }}</dt><dd>
                   {% for inst in e.instances %}
                     <span class="pill">:{{ inst.port }} — {{ inst.name }}</span>
                   {% endfor %}

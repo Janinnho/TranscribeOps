@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone, timedelta
 from flask import Blueprint, request, jsonify, current_app, Response, send_file
 from flask_login import login_required, current_user
+from flask_babel import gettext as _
 from werkzeug.utils import secure_filename
 from app import db
 from app.models import Job, Meeting, Dictation, TextTask, DictionaryEntry, ChatMessage, SpeechModel, Conversation, ConversationMessage, TextModel
@@ -108,14 +109,14 @@ def _eta_fields(record):
 @login_required
 def upload():
     if 'file' not in request.files:
-        return jsonify({'error': 'Keine Datei ausgewählt'}), 400
+        return jsonify({'error': _('No file selected.')}), 400
 
     file = request.files['file']
     if file.filename == '':
-        return jsonify({'error': 'Keine Datei ausgewählt'}), 400
+        return jsonify({'error': _('No file selected.')}), 400
 
     if not allowed_file(file.filename):
-        return jsonify({'error': 'Dateityp nicht erlaubt'}), 400
+        return jsonify({'error': _('File type not allowed.')}), 400
 
     # Check group upload size limit
     max_upload_mb = current_user.get_max_upload_size_mb()
@@ -124,7 +125,7 @@ def upload():
         file_size = file.tell()
         file.seek(0)
         if file_size > max_upload_mb * 1024 * 1024:
-            return jsonify({'error': f'Datei zu groß. Maximale Upload-Größe: {max_upload_mb} MB'}), 413
+            return jsonify({'error': _('File too large. Maximum upload size: %(max)s MB', max=max_upload_mb)}), 413
 
     job_type = request.form.get('job_type', 'transcription')
     speech_model_id = request.form.get('speech_model_id', type=int)
@@ -134,15 +135,15 @@ def upload():
 
     # Validate feature access based on job_type
     if job_type == 'meeting' and not current_user.has_meeting_access():
-        return jsonify({'error': 'Kein Zugriff auf Meeting-Funktion'}), 403
+        return jsonify({'error': _('No access to meeting.')}), 403
     elif job_type != 'meeting' and not current_user.has_transcription_access():
-        return jsonify({'error': 'Kein Zugriff auf Transkription'}), 403
+        return jsonify({'error': _('No access to transcription.')}), 403
 
     # Validate speech model access
     if speech_model_id:
         allowed_model_ids = {m.id for m in current_user.get_available_speech_models()}
         if speech_model_id not in allowed_model_ids:
-            return jsonify({'error': 'Kein Zugriff auf dieses Sprachmodell'}), 403
+            return jsonify({'error': _('No access to this speech model.')}), 403
 
     # Check speech model upload limits
     if speech_model_id:
@@ -154,7 +155,7 @@ def upload():
                 file_size = file.tell()
                 file.seek(0)
                 if file_size > speech_model.max_upload_size_mb * 1024 * 1024:
-                    return jsonify({'error': f'Datei zu groß für dieses Modell. Maximum: {speech_model.max_upload_size_mb} MB'}), 413
+                    return jsonify({'error': _('File too large for this model. Maximum: %(max)s MB', max=speech_model.max_upload_size_mb)}), 413
             # Duration limit
             if speech_model.max_upload_duration_secs and speech_model.max_upload_duration_secs > 0:
                 import subprocess
@@ -172,7 +173,7 @@ def upload():
                     if duration > speech_model.max_upload_duration_secs:
                         os.remove(tmp_path)
                         mins = int(speech_model.max_upload_duration_secs // 60)
-                        return jsonify({'error': f'Audio zu lang für dieses Modell. Maximum: {mins} Minuten ({speech_model.max_upload_duration_secs}s), Datei: {int(duration)}s'}), 413
+                        return jsonify({'error': _('Audio too long for this model. Maximum: %(mins)s minutes (%(secs)ss), file: %(file)ss', mins=mins, secs=speech_model.max_upload_duration_secs, file=int(duration))}), 413
                 except Exception:
                     pass
                 # File already saved, reuse it
@@ -219,7 +220,7 @@ def upload():
 @login_required
 def upload_audio():
     if 'audio' not in request.files:
-        return jsonify({'error': 'Keine Audiodaten'}), 400
+        return jsonify({'error': _('No audio data.')}), 400
 
     file = request.files['audio']
 
@@ -230,7 +231,7 @@ def upload_audio():
         file_size = file.tell()
         file.seek(0)
         if file_size > max_upload_mb * 1024 * 1024:
-            return jsonify({'error': f'Datei zu groß. Maximale Upload-Größe: {max_upload_mb} MB'}), 413
+            return jsonify({'error': _('File too large. Maximum upload size: %(max)s MB', max=max_upload_mb)}), 413
 
     job_type = request.form.get('job_type', 'dictation')
     speech_model_id = request.form.get('speech_model_id', type=int)
@@ -239,15 +240,15 @@ def upload_audio():
 
     # Validate feature access based on job_type
     if job_type == 'meeting' and not current_user.has_meeting_access():
-        return jsonify({'error': 'Kein Zugriff auf Meeting-Funktion'}), 403
+        return jsonify({'error': _('No access to meeting.')}), 403
     elif job_type != 'meeting' and not current_user.has_dictation_access():
-        return jsonify({'error': 'Kein Zugriff auf Diktat-Funktion'}), 403
+        return jsonify({'error': _('No access to dictation.')}), 403
 
     # Validate speech model access
     if speech_model_id:
         allowed_model_ids = {m.id for m in current_user.get_available_speech_models()}
         if speech_model_id not in allowed_model_ids:
-            return jsonify({'error': 'Kein Zugriff auf dieses Sprachmodell'}), 403
+            return jsonify({'error': _('No access to this speech model.')}), 403
 
     ext = 'webm'
     unique_name = f"{uuid.uuid4().hex}_recording.{ext}"
@@ -255,7 +256,7 @@ def upload_audio():
     file.save(filepath)
 
     audio_duration = _extract_audio_duration(filepath)
-    title = f"Aufnahme {now_local().strftime('%d.%m.%Y %H:%M')}"
+    title = _('Recording %(time)s', time=now_local().strftime('%d.%m.%Y %H:%M'))
 
     if job_type == 'meeting':
         record = Meeting(
@@ -286,7 +287,7 @@ def upload_audio():
 def create_text_task():
     data = request.get_json()
     if not data:
-        return jsonify({'error': 'Keine Daten'}), 400
+        return jsonify({'error': _('No data.')}), 400
 
     action = data.get('action')
     text = data.get('text', '').strip()
@@ -294,14 +295,14 @@ def create_text_task():
     target_language = data.get('target_language', '')
 
     if not text:
-        return jsonify({'error': 'Kein Text eingegeben'}), 400
+        return jsonify({'error': _('No text entered.')}), 400
     if action not in ('rewrite', 'grammar', 'translate', 'summarize'):
-        return jsonify({'error': 'Ungültige Aktion'}), 400
+        return jsonify({'error': _('Invalid action.')}), 400
 
     try:
         text_model_id = int(text_model_id)
     except (TypeError, ValueError):
-        return jsonify({'error': 'Kein Textmodell ausgewählt'}), 400
+        return jsonify({'error': _('No text model selected.')}), 400
 
     task = TextTask(
         user_id=current_user.id,
@@ -327,7 +328,7 @@ def create_text_task():
 def get_text_task(public_id):
     task = TextTask.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not task:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     return jsonify(_text_task_to_dict(task))
 
 
@@ -345,7 +346,7 @@ def get_text_tasks():
 def delete_text_task(public_id):
     task = TextTask.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not task:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     db.session.delete(task)
     db.session.commit()
     return jsonify({'status': 'deleted'})
@@ -353,10 +354,10 @@ def delete_text_task(public_id):
 
 def _text_task_to_dict(t):
     ACTION_LABELS = {
-        'rewrite': 'Umschreiben',
-        'grammar': 'Grammatik',
-        'translate': 'Übersetzen',
-        'summarize': 'Zusammenfassen',
+        'rewrite': _('Rewrite'),
+        'grammar': _('Grammar'),
+        'translate': _('Translate'),
+        'summarize': _('Summarize'),
     }
     return {
         'id': t.public_id,
@@ -375,14 +376,14 @@ def _text_task_to_dict(t):
 def summarize(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
-        return jsonify({'error': 'Job nicht gefunden'}), 404
+        return jsonify({'error': _('Job not found.')}), 404
 
     data = request.get_json() or {}
     text_model_id = data.get('text_model_id')
     try:
         text_model_id = int(text_model_id)
     except (TypeError, ValueError):
-        return jsonify({'error': 'Kein Textmodell ausgewählt'}), 400
+        return jsonify({'error': _('No text model selected.')}), 400
 
     job.summary_status = 'processing'
     job.summary_text = None
@@ -398,7 +399,7 @@ def _sanitize_error(msg):
     """Hide technical error details — real errors only visible in admin job list."""
     if not msg:
         return msg
-    return 'Ein Fehler ist aufgetreten, bitte kontaktieren Sie den Administrator.'
+    return _('An error occurred, please contact the administrator.')
 
 
 def _job_to_dict(j):
@@ -432,7 +433,7 @@ def _job_to_dict(j):
 @login_required
 def get_jobs(job_type):
     if job_type not in ('transcription',):
-        return jsonify({'error': 'Ungültiger Typ'}), 400
+        return jsonify({'error': _('Invalid type.')}), 400
 
     history = current_user.get_effective_history_days()
     q = Job.query.filter_by(user_id=current_user.id, job_type=job_type)
@@ -448,7 +449,7 @@ def get_jobs(job_type):
 def get_job(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     return jsonify(_job_to_dict(job))
 
 
@@ -457,14 +458,14 @@ def get_job(public_id):
 def update_speakers(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     if not job.diarized_segments:
-        return jsonify({'error': 'Keine Sprechersegmente'}), 400
+        return jsonify({'error': _('No speaker segments.')}), 400
 
     data = request.get_json()
     renames = data.get('renames', {})
     if not renames:
-        return jsonify({'error': 'Keine Umbenennungen'}), 400
+        return jsonify({'error': _('No renames.')}), 400
 
     segments = json.loads(job.diarized_segments)
     for seg in segments:
@@ -503,7 +504,7 @@ def _download_audio_record(record):
         content = record.result_text or ''
 
     if hasattr(record, 'summary_text') and record.summary_text:
-        content += '\n\n--- Zusammenfassung ---\n' + record.summary_text
+        content += '\n\n--- ' + _('Summary') + ' ---\n' + record.summary_text
 
     title = record.title or f'record_{record.public_id}'
     safe_title = ''.join(c for c in title if c.isalnum() or c in ' _-.')[:50]
@@ -521,7 +522,7 @@ def _download_audio_record(record):
 def download_job(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     return _download_audio_record(job)
 
 
@@ -531,7 +532,7 @@ def download_job(public_id):
 @login_required
 def get_dictionary():
     if not current_user.has_dictionary_access():
-        return jsonify({'error': 'Kein Zugriff auf das Wörterbuch'}), 403
+        return jsonify({'error': _('No access to dictionary.')}), 403
     entries = DictionaryEntry.query.filter_by(
         user_id=current_user.id
     ).order_by(DictionaryEntry.word).all()
@@ -542,20 +543,20 @@ def get_dictionary():
 @login_required
 def create_dictionary_entry():
     if not current_user.has_dictionary_access():
-        return jsonify({'error': 'Kein Zugriff auf das Wörterbuch'}), 403
+        return jsonify({'error': _('No access to dictionary.')}), 403
     data = request.get_json()
     if not data:
-        return jsonify({'error': 'Keine Daten'}), 400
+        return jsonify({'error': _('No data.')}), 400
 
     word = (data.get('word') or '').strip()
     description = (data.get('description') or '').strip()
     if not word:
-        return jsonify({'error': 'Wort ist erforderlich'}), 400
+        return jsonify({'error': _('Word is required.')}), 400
 
     # Check for duplicate
     existing = DictionaryEntry.query.filter_by(user_id=current_user.id, word=word).first()
     if existing:
-        return jsonify({'error': 'Dieses Wort existiert bereits'}), 409
+        return jsonify({'error': _('This word already exists.')}), 409
 
     entry = DictionaryEntry(user_id=current_user.id, word=word, description=description)
     db.session.add(entry)
@@ -567,15 +568,15 @@ def create_dictionary_entry():
 @login_required
 def update_dictionary_entry(entry_id):
     if not current_user.has_dictionary_access():
-        return jsonify({'error': 'Kein Zugriff auf das Wörterbuch'}), 403
+        return jsonify({'error': _('No access to dictionary.')}), 403
     entry = DictionaryEntry.query.filter_by(id=entry_id, user_id=current_user.id).first()
     if not entry:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
 
     data = request.get_json()
     word = (data.get('word') or '').strip()
     if not word:
-        return jsonify({'error': 'Wort ist erforderlich'}), 400
+        return jsonify({'error': _('Word is required.')}), 400
 
     # Check duplicate (different entry)
     existing = DictionaryEntry.query.filter(
@@ -584,7 +585,7 @@ def update_dictionary_entry(entry_id):
         DictionaryEntry.id != entry_id
     ).first()
     if existing:
-        return jsonify({'error': 'Dieses Wort existiert bereits'}), 409
+        return jsonify({'error': _('This word already exists.')}), 409
 
     entry.word = word
     entry.description = (data.get('description') or '').strip()
@@ -596,10 +597,10 @@ def update_dictionary_entry(entry_id):
 @login_required
 def delete_dictionary_entry(entry_id):
     if not current_user.has_dictionary_access():
-        return jsonify({'error': 'Kein Zugriff auf das Wörterbuch'}), 403
+        return jsonify({'error': _('No access to dictionary.')}), 403
     entry = DictionaryEntry.query.filter_by(id=entry_id, user_id=current_user.id).first()
     if not entry:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     db.session.delete(entry)
     db.session.commit()
     return jsonify({'status': 'deleted'})
@@ -625,7 +626,7 @@ def _fmt_time(seconds):
 def delete_job(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     if job.file_path and os.path.exists(job.file_path):
         os.remove(job.file_path)
     ChatMessage.query.filter_by(record_type='job', record_id=job.id).delete()
@@ -637,12 +638,12 @@ def delete_job(public_id):
 def _update_segment_text(record, segment_index, new_text, has_speakers):
     """Update a single segment's text and regenerate result_text."""
     if not record.diarized_segments:
-        return {'error': 'Keine Segmente vorhanden'}, 400
+        return {'error': _('No segments available.')}, 400
     segments = json.loads(record.diarized_segments)
     if not isinstance(segment_index, int) or segment_index < 0 or segment_index >= len(segments):
-        return {'error': 'Ungültiger Segmentindex'}, 400
+        return {'error': _('Invalid segment index.')}, 400
     if not new_text or not new_text.strip():
-        return {'error': 'Text darf nicht leer sein'}, 400
+        return {'error': _('Text must not be empty.')}, 400
     segments[segment_index]['text'] = ' ' + new_text.strip()
     record.diarized_segments = json.dumps(segments, ensure_ascii=False)
     # Regenerate result_text from segments
@@ -662,11 +663,11 @@ def _update_segment_text(record, segment_index, new_text, has_speakers):
 def update_job_title(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     data = request.get_json() or {}
     title = (data.get('title') or '').strip()
     if not title:
-        return jsonify({'error': 'Titel darf nicht leer sein'}), 400
+        return jsonify({'error': _('Title must not be empty.')}), 400
     job.title = title[:255]
     # Cancel auto-title if running
     if job.title_status == 'processing':
@@ -680,12 +681,12 @@ def update_job_title(public_id):
 def update_job_segment(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     data = request.get_json() or {}
     try:
         segment_index = int(data.get('segment_index'))
     except (TypeError, ValueError):
-        return jsonify({'error': 'Ungültiger Segmentindex'}), 400
+        return jsonify({'error': _('Invalid segment index.')}), 400
     new_text = (data.get('text') or '').strip()
     err, code = _update_segment_text(job, segment_index, new_text, job.multi_speaker)
     if err:
@@ -734,7 +735,7 @@ def get_meetings():
 def get_meeting(public_id):
     m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not m:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     return jsonify(_meeting_to_dict(m))
 
 
@@ -743,7 +744,7 @@ def get_meeting(public_id):
 def delete_meeting(public_id):
     m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not m:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     if m.file_path and os.path.exists(m.file_path):
         os.remove(m.file_path)
     ChatMessage.query.filter_by(record_type='meeting', record_id=m.id).delete()
@@ -757,11 +758,11 @@ def delete_meeting(public_id):
 def update_meeting_title(public_id):
     m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not m:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     data = request.get_json() or {}
     title = (data.get('title') or '').strip()
     if not title:
-        return jsonify({'error': 'Titel darf nicht leer sein'}), 400
+        return jsonify({'error': _('Title must not be empty.')}), 400
     m.title = title[:255]
     # Cancel auto-title if running
     if m.title_status == 'processing':
@@ -775,12 +776,12 @@ def update_meeting_title(public_id):
 def update_meeting_segment(public_id):
     m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not m:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     data = request.get_json() or {}
     try:
         segment_index = int(data.get('segment_index'))
     except (TypeError, ValueError):
-        return jsonify({'error': 'Ungültiger Segmentindex'}), 400
+        return jsonify({'error': _('Invalid segment index.')}), 400
     new_text = (data.get('text') or '').strip()
     err, code = _update_segment_text(m, segment_index, new_text, True)
     if err:
@@ -793,13 +794,13 @@ def update_meeting_segment(public_id):
 def update_meeting_speakers(public_id):
     m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not m:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     if not m.diarized_segments:
-        return jsonify({'error': 'Keine Sprechersegmente'}), 400
+        return jsonify({'error': _('No speaker segments.')}), 400
     data = request.get_json()
     renames = data.get('renames', {})
     if not renames:
-        return jsonify({'error': 'Keine Umbenennungen'}), 400
+        return jsonify({'error': _('No renames.')}), 400
     segments = json.loads(m.diarized_segments)
     for seg in segments:
         old_name = seg.get('speaker', '')
@@ -822,7 +823,7 @@ def update_meeting_speakers(public_id):
 def download_meeting(public_id):
     m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not m:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     return _download_audio_record(m)
 
 
@@ -831,13 +832,13 @@ def download_meeting(public_id):
 def summarize_meeting(public_id):
     m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not m:
-        return jsonify({'error': 'Meeting nicht gefunden'}), 404
+        return jsonify({'error': _('Meeting not found.')}), 404
     data = request.get_json() or {}
     text_model_id = data.get('text_model_id')
     try:
         text_model_id = int(text_model_id)
     except (TypeError, ValueError):
-        return jsonify({'error': 'Kein Textmodell ausgewählt'}), 400
+        return jsonify({'error': _('No text model selected.')}), 400
     m.summary_status = 'processing'
     m.summary_text = None
     db.session.commit()
@@ -882,7 +883,7 @@ def get_dictations():
 def get_dictation(public_id):
     d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not d:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     return jsonify(_dictation_to_dict(d))
 
 
@@ -891,7 +892,7 @@ def get_dictation(public_id):
 def delete_dictation(public_id):
     d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not d:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     if d.file_path and os.path.exists(d.file_path):
         os.remove(d.file_path)
     db.session.delete(d)
@@ -904,11 +905,11 @@ def delete_dictation(public_id):
 def update_dictation_title(public_id):
     d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not d:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     data = request.get_json() or {}
     title = (data.get('title') or '').strip()
     if not title:
-        return jsonify({'error': 'Titel darf nicht leer sein'}), 400
+        return jsonify({'error': _('Title must not be empty.')}), 400
     d.title = title[:255]
     db.session.commit()
     return jsonify({'status': 'ok', 'title': d.title})
@@ -919,12 +920,12 @@ def update_dictation_title(public_id):
 def update_dictation_segment(public_id):
     d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not d:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     data = request.get_json() or {}
     try:
         segment_index = int(data.get('segment_index'))
     except (TypeError, ValueError):
-        return jsonify({'error': 'Ungültiger Segmentindex'}), 400
+        return jsonify({'error': _('Invalid segment index.')}), 400
     new_text = (data.get('text') or '').strip()
     err, code = _update_segment_text(d, segment_index, new_text, False)
     if err:
@@ -937,7 +938,7 @@ def update_dictation_segment(public_id):
 def download_dictation(public_id):
     d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not d:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     return _download_audio_record(d)
 
 
@@ -946,7 +947,7 @@ def download_dictation(public_id):
 def _serve_audio(record, download=False):
     """Serve an audio file with HTTP Range support for seeking."""
     if not record.file_path or not record.audio_saved or not os.path.exists(record.file_path):
-        return jsonify({'error': 'Keine Audiodatei verfügbar'}), 404
+        return jsonify({'error': _('No audio file available.')}), 404
     as_attachment = download or request.args.get('download') == '1'
     return send_file(
         record.file_path,
@@ -961,7 +962,7 @@ def _serve_audio(record, download=False):
 def stream_job_audio(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     return _serve_audio(job)
 
 
@@ -970,7 +971,7 @@ def stream_job_audio(public_id):
 def stream_meeting_audio(public_id):
     m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not m:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     return _serve_audio(m)
 
 
@@ -979,7 +980,7 @@ def stream_meeting_audio(public_id):
 def stream_dictation_audio(public_id):
     d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not d:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     return _serve_audio(d)
 
 
@@ -1012,7 +1013,7 @@ def get_chat_messages(record_type, public_id):
     """Return all chat messages for a record."""
     record, record_id = _resolve_chat_record(record_type, public_id)
     if not record:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
 
     messages = ChatMessage.query.filter_by(
         record_type=record_type, record_id=record_id, user_id=current_user.id
@@ -1030,18 +1031,18 @@ def send_chat_message(record_type, public_id):
     """Send a user message and queue an AI response."""
     record, record_id = _resolve_chat_record(record_type, public_id)
     if not record:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
 
     data = request.get_json() or {}
     content = (data.get('content') or '').strip()
     text_model_id = data.get('text_model_id')
 
     if not content:
-        return jsonify({'error': 'Nachricht darf nicht leer sein'}), 400
+        return jsonify({'error': _('Message must not be empty.')}), 400
     try:
         text_model_id = int(text_model_id)
     except (TypeError, ValueError):
-        return jsonify({'error': 'Kein Textmodell ausgewählt'}), 400
+        return jsonify({'error': _('No text model selected.')}), 400
 
     # Save user message
     user_msg = ChatMessage(
@@ -1078,7 +1079,7 @@ def clear_chat(record_type, public_id):
     """Delete all chat messages for a record."""
     record, record_id = _resolve_chat_record(record_type, public_id)
     if not record:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
 
     ChatMessage.query.filter_by(
         record_type=record_type, record_id=record_id, user_id=current_user.id
@@ -1113,7 +1114,7 @@ def _conv_msg_to_dict(m):
 @login_required
 def list_conversations():
     if not current_user.has_chat_access():
-        return jsonify({'error': 'Kein Zugriff'}), 403
+        return jsonify({'error': _('No access to chat.')}), 403
     convs = Conversation.query.filter_by(user_id=current_user.id).order_by(
         Conversation.updated_at.desc()).all()
     return jsonify([_conv_to_dict(c) for c in convs])
@@ -1123,17 +1124,17 @@ def list_conversations():
 @login_required
 def create_conversation():
     if not current_user.has_chat_access():
-        return jsonify({'error': 'Kein Zugriff'}), 403
+        return jsonify({'error': _('No access to chat.')}), 403
     data = request.get_json(silent=True) or {}
     text_model_id = data.get('text_model_id')
     if text_model_id:
         try:
             text_model_id = int(text_model_id)
         except (TypeError, ValueError):
-            return jsonify({'error': 'Ungültige text_model_id'}), 400
+            return jsonify({'error': _('Invalid text_model_id.')}), 400
         allowed_ids = {m.id for m in current_user.get_available_text_models(function='chat')}
         if text_model_id not in allowed_ids:
-            return jsonify({'error': 'Kein Zugriff auf dieses Modell'}), 403
+            return jsonify({'error': _('No access to this model.')}), 403
     conv = Conversation(user_id=current_user.id, text_model_id=text_model_id)
     db.session.add(conv)
     db.session.commit()
@@ -1144,10 +1145,10 @@ def create_conversation():
 @login_required
 def get_conversation(public_id):
     if not current_user.has_chat_access():
-        return jsonify({'error': 'Kein Zugriff'}), 403
+        return jsonify({'error': _('No access to chat.')}), 403
     conv = Conversation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not conv:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     msgs = ConversationMessage.query.filter_by(conversation_id=conv.id).order_by(
         ConversationMessage.created_at).all()
     has_pending = any(m.status in ('processing', 'pending') for m in msgs)
@@ -1162,23 +1163,23 @@ def get_conversation(public_id):
 @login_required
 def update_conversation(public_id):
     if not current_user.has_chat_access():
-        return jsonify({'error': 'Kein Zugriff'}), 403
+        return jsonify({'error': _('No access to chat.')}), 403
     conv = Conversation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not conv:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     data = request.get_json(silent=True) or {}
     if 'title' in data:
         if not isinstance(data['title'], str):
-            return jsonify({'error': 'Titel muss ein String sein'}), 400
+            return jsonify({'error': _('Title must be a string.')}), 400
         conv.title = data['title'][:255]
     if 'text_model_id' in data:
         try:
             tid = int(data['text_model_id'])
         except (TypeError, ValueError):
-            return jsonify({'error': 'Ungültige text_model_id'}), 400
+            return jsonify({'error': _('Invalid text_model_id.')}), 400
         allowed_ids = {m.id for m in current_user.get_available_text_models(function='chat')}
         if tid not in allowed_ids:
-            return jsonify({'error': 'Kein Zugriff auf dieses Modell'}), 403
+            return jsonify({'error': _('No access to this model.')}), 403
         conv.text_model_id = tid
     db.session.commit()
     return jsonify(_conv_to_dict(conv))
@@ -1188,10 +1189,10 @@ def update_conversation(public_id):
 @login_required
 def delete_conversation(public_id):
     if not current_user.has_chat_access():
-        return jsonify({'error': 'Kein Zugriff'}), 403
+        return jsonify({'error': _('No access to chat.')}), 403
     conv = Conversation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not conv:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     db.session.delete(conv)
     db.session.commit()
     return jsonify({'status': 'deleted'})
@@ -1201,27 +1202,27 @@ def delete_conversation(public_id):
 @login_required
 def send_conversation_message(public_id):
     if not current_user.has_chat_access():
-        return jsonify({'error': 'Kein Zugriff'}), 403
+        return jsonify({'error': _('No access to chat.')}), 403
     conv = Conversation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not conv:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     data = request.get_json(silent=True) or {}
     content = (data.get('content') or '').strip()
     if not content:
-        return jsonify({'error': 'Nachricht darf nicht leer sein'}), 400
+        return jsonify({'error': _('Message must not be empty.')}), 400
 
     text_model_id = data.get('text_model_id') or conv.text_model_id
     if not text_model_id:
-        return jsonify({'error': 'Kein Textmodell ausgewählt'}), 400
+        return jsonify({'error': _('No text model selected.')}), 400
 
     # Validate model access
     try:
         text_model_id = int(text_model_id)
     except (TypeError, ValueError):
-        return jsonify({'error': 'Ungültige text_model_id'}), 400
+        return jsonify({'error': _('Invalid text_model_id.')}), 400
     allowed_ids = {m.id for m in current_user.get_available_text_models(function='chat')}
     if text_model_id not in allowed_ids:
-        return jsonify({'error': 'Kein Zugriff auf dieses Modell'}), 403
+        return jsonify({'error': _('No access to this model.')}), 403
 
     # Update conversation model if changed
     if text_model_id != conv.text_model_id:
@@ -1256,10 +1257,10 @@ def send_conversation_message(public_id):
 @login_required
 def poll_conversation_messages(public_id):
     if not current_user.has_chat_access():
-        return jsonify({'error': 'Kein Zugriff'}), 403
+        return jsonify({'error': _('No access to chat.')}), 403
     conv = Conversation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not conv:
-        return jsonify({'error': 'Nicht gefunden'}), 404
+        return jsonify({'error': _('Not found.')}), 404
     msgs = ConversationMessage.query.filter_by(conversation_id=conv.id).order_by(
         ConversationMessage.created_at).all()
     has_pending = any(m.status in ('processing', 'pending') for m in msgs)

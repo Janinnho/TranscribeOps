@@ -1,23 +1,23 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Login — TranscribeOps Modell API</title>
+  <title>{{ _('Sign in') }} — {{ _('TranscribeOps Model API') }}</title>
   <link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">
 </head>
 <body class="login-body">
   <form method="post" class="login-card">
     <div class="login-brand">
       <span class="logo">◐</span>
-      <h1>TranscribeOps Modell API</h1>
+      <h1>{{ _('TranscribeOps Model API') }}</h1>
     </div>
-    <label for="password">Passwort</label>
+    <label for="password">{{ _('Password') }}</label>
     <input type="password" name="password" id="password" required autofocus>
     {% if error %}
       <p class="error">{{ error }}</p>
     {% endif %}
-    <button type="submit" class="btn btn-primary">Anmelden</button>
+    <button type="submit" class="btn btn-primary">{{ _('Sign in') }}</button>
   </form>
 </body>
 </html>

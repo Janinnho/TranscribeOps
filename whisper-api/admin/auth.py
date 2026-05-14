@@ -6,6 +6,7 @@ from collections import defaultdict, deque
 from urllib.parse import urlparse
 
 from flask import Blueprint, session, redirect, url_for, request, render_template, abort
+from flask_babel import gettext as _
 
 
 def _safe_next_url(nxt: str | None) -> str | None:
@@ -78,7 +79,7 @@ def register_auth_routes(bp: Blueprint, config: dict) -> None:
         if request.method == "POST":
             ip = request.remote_addr or "unknown"
             if _rate_limited(ip):
-                error = "Zu viele Fehlversuche. Bitte später erneut versuchen."
+                error = _("Too many failed attempts. Please try again later.")
             else:
                 submitted = request.form.get("password", "")
                 if admin_password and hmac.compare_digest(submitted, admin_password):
@@ -87,7 +88,7 @@ def register_auth_routes(bp: Blueprint, config: dict) -> None:
                     nxt = _safe_next_url(request.args.get("next")) or url_for("admin.dashboard")
                     return redirect(nxt)
                 _record_attempt(ip)
-                error = "Falsches Passwort."
+                error = _("Wrong password.")
         return render_template("login.html", error=error)
 
     @bp.route("/logout", methods=["POST"])

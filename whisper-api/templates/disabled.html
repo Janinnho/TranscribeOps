@@ -1,17 +1,16 @@
 <!doctype html>
-<html lang="de">
+<html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>Admin deaktiviert</title>
+  <title>{{ _('Admin UI disabled') }}</title>
   <link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">
 </head>
 <body class="login-body">
   <div class="login-card">
-    <h1>Admin-UI nicht aktiviert</h1>
+    <h1>{{ _('Admin UI disabled') }}</h1>
     <p>
-      Die grafische Admin-Oberfläche ist deaktiviert, weil kein Passwort gesetzt ist.
-      Setze die Umgebungsvariable <code>ADMIN_PASSWORD</code> im Docker-Config
-      und starte den Container neu.
+      {{ _('The admin interface is disabled because no ADMIN_PASSWORD has been set.') }}
+      {{ _('Set the %(var)s environment variable in your Docker config and restart the container.', var='<code>ADMIN_PASSWORD</code>'|safe) }}
     </p>
   </div>
 </body>

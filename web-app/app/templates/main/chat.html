@@ -1,6 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Chat - TranscribeOps{% endblock %}
-{% block page_title %}Chat{% endblock %}
+{% block title %}{{ _('Chat') }} - TranscribeOps{% endblock %}
+{% block page_title %}{{ _('Chat') }}{% endblock %}
 {% block content %}
 <div class="d-flex h-100" style="min-height: 0;">
 
@@ -8,11 +8,11 @@
     <div class="chat-sidebar d-flex flex-column border-end">
         <div class="p-3 border-bottom">
             <button class="btn btn-primary w-100" onclick="createConversation()">
-                <i class="bi bi-plus-lg me-1"></i>Neuer Chat
+                <i class="bi bi-plus-lg me-1"></i>{{ _('New chat') }}
             </button>
         </div>
         <div class="flex-grow-1 overflow-auto" id="convList">
-            <div class="text-center text-muted py-4"><small>Keine Chats vorhanden</small></div>
+            <div class="text-center text-muted py-4"><small>{{ _('No conversations yet.') }}</small></div>
         </div>
     </div>
 
@@ -22,7 +22,7 @@
         <!-- Top bar: model selector -->
         <div class="chat-topbar d-flex align-items-center gap-2 p-2 px-3 border-bottom">
             {% if not (hide_single_model and text_models|length <= 1) %}
-            <label class="form-label mb-0 text-nowrap fw-medium"><i class="bi bi-cpu me-1"></i>Modell:</label>
+            <label class="form-label mb-0 text-nowrap fw-medium"><i class="bi bi-cpu me-1"></i>{{ _('Model:') }}</label>
             <select class="form-select form-select-sm" id="textModel" style="max-width: 260px;">
                 {% for m in text_models %}
                 <option value="{{ m.id }}">{{ m.display_name }}</option>
@@ -40,14 +40,14 @@
         <div class="chat-messages flex-grow-1 overflow-auto p-3" id="messagesArea">
             <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted" id="emptyState">
                 <i class="bi bi-chat-dots" style="font-size: 3rem;"></i>
-                <p class="mt-2">Nachricht eingeben, um einen Chat zu starten</p>
+                <p class="mt-2">{{ _('Type a message to start a chat') }}</p>
             </div>
         </div>
 
         <!-- Input area -->
         <div class="chat-input border-top p-3">
             <div class="d-flex gap-2 align-items-end">
-                <textarea class="form-control" id="msgInput" rows="1" placeholder="Nachricht eingeben..." style="resize: none; max-height: 150px;"></textarea>
+                <textarea class="form-control" id="msgInput" rows="1" placeholder="{{ _('Type a message...') }}" style="resize: none; max-height: 150px;"></textarea>
                 <button class="btn btn-primary" id="sendBtn" onclick="sendMessage()">
                     <i class="bi bi-send"></i>
                 </button>
@@ -78,7 +78,7 @@ async function loadConversations() {
         const convs = await resp.json();
         const container = document.getElementById('convList');
         if (!convs.length) {
-            container.innerHTML = '<div class="text-center text-muted py-4"><small>Keine Chats vorhanden</small></div>';
+            container.innerHTML = '<div class="text-center text-muted py-4"><small>' + window.tr('No conversations yet.') + '</small></div>';
             return;
         }
         container.innerHTML = convs.map(c => `
@@ -90,11 +90,11 @@ async function loadConversations() {
                 </div>
                 <div class="d-flex gap-1 flex-shrink-0">
                     <button class="btn btn-sm btn-link text-muted p-0 conv-action-btn"
-                            onclick="event.stopPropagation(); startEditTitle('${c.id}', this)" title="Umbenennen">
+                            onclick="event.stopPropagation(); startEditTitle('${c.id}', this)" title="${window.tr('Rename')}">
                         <i class="bi bi-pencil"></i>
                     </button>
                     <button class="btn btn-sm btn-link text-danger p-0 conv-action-btn"
-                            onclick="event.stopPropagation(); deleteConversation('${c.id}')" title="Löschen">
+                            onclick="event.stopPropagation(); deleteConversation('${c.id}')" title="${window.tr('Delete')}">
                         <i class="bi bi-trash"></i>
                     </button>
                 </div>
@@ -152,7 +152,7 @@ async function selectConversation(publicId) {
 }
 
 async function deleteConversation(publicId) {
-    if (!confirm('Chat löschen?')) return;
+    if (!confirm(window.tr('Delete chat?'))) return;
     try {
         await fetch(`/api/conversations/${publicId}`, {
             method: 'DELETE',
@@ -185,7 +185,7 @@ function resetChatArea() {
     document.getElementById('messagesArea').innerHTML = `
         <div class="d-flex flex-column align-items-center justify-content-center h-100 text-muted" id="emptyState">
             <i class="bi bi-chat-dots" style="font-size: 3rem;"></i>
-            <p class="mt-2">Nachricht eingeben, um einen Chat zu starten</p>
+            <p class="mt-2">${window.tr('Type a message to start a chat')}</p>
         </div>`;
     document.getElementById('convTitleDisplay').textContent = '';
 }
@@ -209,18 +209,18 @@ function renderMessages(messages) {
         const isUser = m.role === 'user';
         const bubbleClass = isUser ? 'chat-bubble-user' : 'chat-bubble-assistant';
         const roleLabel = isUser
-            ? '<div class="chat-role-label text-end"><i class="bi bi-person-fill me-1"></i>Du</div>'
-            : '<div class="chat-role-label"><i class="bi bi-robot me-1"></i>Assistent</div>';
+            ? '<div class="chat-role-label text-end"><i class="bi bi-person-fill me-1"></i>' + window.tr('You') + '</div>'
+            : '<div class="chat-role-label"><i class="bi bi-robot me-1"></i>' + window.tr('Assistant') + '</div>';
         let content;
         if (m.status === 'pending') {
-            content = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Laden...</span></div>';
+            content = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">' + window.tr('Loading...') + '</span></div>';
         } else if (m.status === 'processing') {
             // Show partial content while streaming to DB
             content = m.content
                 ? renderMarkdown(m.content) + '<span class="streaming-cursor"></span>'
-                : '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Laden...</span></div>';
+                : '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">' + window.tr('Loading...') + '</span></div>';
         } else if (m.status === 'failed') {
-            content = '<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Fehler bei der Verarbeitung</span>';
+            content = '<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>' + window.tr('Error during processing') + '</span>';
         } else if (isUser) {
             content = escapeHtml(m.content);
         } else {
@@ -279,12 +279,12 @@ async function sendMessage() {
     // Optimistic: add user message + spinner immediately
     const area = document.getElementById('messagesArea');
     area.insertAdjacentHTML('beforeend', `<div class="d-flex flex-column align-items-end mb-3">
-        <div class="chat-role-label text-end"><i class="bi bi-person-fill me-1"></i>Du</div>
+        <div class="chat-role-label text-end"><i class="bi bi-person-fill me-1"></i>${window.tr('You')}</div>
         <div class="chat-bubble chat-bubble-user">${escapeHtml(content)}</div>
     </div>`);
     area.insertAdjacentHTML('beforeend', `<div class="d-flex flex-column align-items-start mb-3" id="assistantPlaceholder">
-        <div class="chat-role-label"><i class="bi bi-robot me-1"></i>Assistent</div>
-        <div class="chat-bubble chat-bubble-assistant"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Laden...</span></div></div>
+        <div class="chat-role-label"><i class="bi bi-robot me-1"></i>${window.tr('Assistant')}</div>
+        <div class="chat-bubble chat-bubble-assistant"><div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">${window.tr('Loading...')}</span></div></div>
     </div>`);
     scrollToBottom();
 
@@ -295,7 +295,7 @@ async function sendMessage() {
             body: JSON.stringify({content, text_model_id: modelId})
         });
         if (!resp.ok) {
-            let errorMessage = 'Nachricht konnte nicht gesendet werden.';
+            let errorMessage = window.tr('Message could not be sent.');
             try {
                 const errData = await resp.json();
                 if (errData.error) errorMessage = errData.error;
@@ -316,7 +316,7 @@ async function sendMessage() {
         const placeholder = document.getElementById('assistantPlaceholder');
         if (placeholder) {
             const bubble = placeholder.querySelector('.chat-bubble');
-            bubble.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>Netzwerkfehler</span>';
+            bubble.innerHTML = '<span class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i>' + window.tr('Network error') + '</span>';
         }
         input.value = content;
         autoResizeInput();
