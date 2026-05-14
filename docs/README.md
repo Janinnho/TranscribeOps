@@ -34,7 +34,7 @@ cp .env.example .env
 docker compose up -d
 
 # 4. Im Browser öffnen
-open http://localhost:5050
+open http://localhost:5000
 ```
 
 **Standard-Login:**

@@ -1,29 +1,34 @@
-# TranscribeOps — Docker Compose Konfiguration
+# TranscribeOps — Docker Compose configuration
 #
-# Kopiere diese Datei als docker-compose.yml und passe die Werte an:
+# Copy this file to docker-compose.yml and adjust the values:
 #   cp docker-compose.example.yml docker-compose.yml
 #
-# Mindestens SECRET_KEY muss gesetzt werden!
+# At minimum, SECRET_KEY must be set in .env!
 #
-# Alle Services nutzen network_mode: host — die Ports sind direkt auf dem Host erreichbar.
-# Gunicorn (web) lauscht auf Port 5000, Redis auf 6379, Whisper API auf 8000.
-# Whisper-Instanz-Worker (Admin-UI) lauschen im Bereich 8100-8120.
+# Default ports (published on the host):
+#   5000 → Web UI            (http://localhost:5000)
+#   8000 → Whisper API + Admin UI (http://localhost:8000)
+#
+# Redis is not published; it stays internal to the Docker network.
+# Whisper instance workers (managed via the admin UI) listen on ports 8100-8120
+# inside the container; expose them only if you need direct access from the host.
 
 services:
   web:
     build: ./web-app
     container_name: transcribeops-web
-    network_mode: host
+    ports:
+      - "5000:5000"
     volumes:
       - transcribeops-db:/app/data
       - transcribeops-uploads:/app/app/static/uploads
-      # Optional: Externer Audio-Speicher (z.B. NFS-Mount, Netzwerkspeicher)
-      # - /pfad/zum/audio-speicher:/app/audio_storage
+      # Optional: external audio storage (e.g. NFS mount, network share)
+      # - /path/to/audio-storage:/app/audio_storage
       - transcribeops-audio:/app/audio_storage
     environment:
       - SECRET_KEY=${SECRET_KEY}
       - DATABASE_URL=sqlite:////app/data/transcribeops.db
-      - REDIS_URL=redis://localhost:6379/0
+      - REDIS_URL=redis://redis:6379/0
       - AUDIO_STORAGE_PATH=/app/audio_storage
     depends_on:
       - redis
@@ -32,18 +37,17 @@ services:
   worker:
     build: ./web-app
     container_name: transcribeops-worker
-    network_mode: host
     command: celery -A celery_worker.celery worker --loglevel=info --concurrency=8
     volumes:
       - transcribeops-db:/app/data
       - transcribeops-uploads:/app/app/static/uploads
-      # Muss mit web-Service übereinstimmen
-      # - /pfad/zum/audio-speicher:/app/audio_storage
+      # Must match the web service.
+      # - /path/to/audio-storage:/app/audio_storage
       - transcribeops-audio:/app/audio_storage
     environment:
       - SECRET_KEY=${SECRET_KEY}
       - DATABASE_URL=sqlite:////app/data/transcribeops.db
-      - REDIS_URL=redis://localhost:6379/0
+      - REDIS_URL=redis://redis:6379/0
       - AUDIO_STORAGE_PATH=/app/audio_storage
     depends_on:
       - redis
@@ -52,7 +56,6 @@ services:
   redis:
     image: redis:7-alpine
     container_name: transcribeops-redis
-    network_mode: host
     volumes:
       - transcribeops-redis:/data
     restart: always
@@ -60,7 +63,10 @@ services:
   whisper:
     build: ./whisper-api
     container_name: transcribeops-whisper
-    network_mode: host
+    ports:
+      - "8000:8000"
+      # Uncomment to expose admin-UI managed instance workers on the host:
+      # - "8100-8120:8100-8120"
     environment:
       - WHISPER_API_KEY=${WHISPER_API_KEY:-}
       - WHISPER_MODEL=medium
@@ -68,11 +74,11 @@ services:
       - WHISPER_COMPUTE_TYPE=int8
       - WHISPER_BATCH_SIZE=16
       - HF_TOKEN=${HF_TOKEN:-}
-      # Admin-UI: erreichbar unter http://<host>:8000/admin
-      # Leer lassen = Admin-UI deaktiviert. Passwort beliebig setzen, um zu aktivieren.
+      # Admin UI reachable at http://<host>:8000/admin
+      # Leave empty to disable the admin UI. Set any password to enable.
       - ADMIN_PASSWORD=${WHISPER_ADMIN_PASSWORD:-}
       - ADMIN_SESSION_SECRET=${WHISPER_ADMIN_SESSION_SECRET:-}
-      # Port-Range für Instanz-Worker, die über das Admin-UI verwaltet werden.
+      # Port range for instance workers managed via the admin UI.
       - INSTANCE_PORT_RANGE=8100-8120
     volumes:
       - transcribeops-whisper-cache:/root/.cache
