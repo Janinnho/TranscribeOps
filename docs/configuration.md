@@ -154,7 +154,7 @@ Folgende Einstellungen werden in der Tabelle `system_settings` als Key-Value-Paa
 
 | Service | Interner Port | Externer Port | Beschreibung |
 |---------|--------------|---------------|-------------|
-| Web-App | 5000 | 5050 | Weboberfläche |
+| Web-App | 5000 | 5000 | Weboberfläche |
 | Whisper API | 8000 | 8090 | Speech-to-Text API |
 | Redis | 6379 | — (nur intern) | Message Broker |
 

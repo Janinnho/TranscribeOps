@@ -136,7 +136,7 @@ Beim ersten Start passiert Folgendes automatisch:
 
 | Service | Funktion | Port |
 |---------|---------|------|
-| `web` | Flask-Webserver (Gunicorn) | 5050 → 5000 |
+| `web` | Flask-Webserver (Gunicorn) | 5000 |
 | `worker` | Celery Worker (Async Tasks) | — |
 | `redis` | Message Broker | — (intern) |
 
@@ -152,7 +152,7 @@ Beim ersten Start passiert Folgendes automatisch:
 
 ## Erster Login
 
-1. Öffne http://localhost:5050 im Browser
+1. Öffne http://localhost:5000 im Browser
 2. Melde dich mit den Standard-Zugangsdaten an:
    - **E-Mail:** `admin@transcribeops.local`
    - **Passwort:** `admin`
@@ -202,7 +202,7 @@ server {
     client_max_body_size 500M;  # Für große Audiodateien
 
     location / {
-        proxy_pass http://localhost:5050;
+        proxy_pass http://localhost:5000;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

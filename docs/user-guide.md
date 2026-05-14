@@ -19,7 +19,7 @@
 
 ### Anmelden
 
-1. Öffne TranscribeOps im Browser (z.B. `http://localhost:5050`)
+1. Öffne TranscribeOps im Browser (z.B. `http://localhost:5000`)
 2. Gib deine E-Mail-Adresse und dein Passwort ein
 3. Klicke auf **Anmelden**
 
