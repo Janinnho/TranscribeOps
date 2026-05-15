@@ -4,7 +4,7 @@
 <h1 class="page-title">{{ _('Instances') }}</h1>
 <p class="page-subtitle">
   {{ _('Each instance loads its own model and listens on its own port. Multiple instances run in parallel — ideal for express mode without a separate container.') }}
-  {{ _('Port range: %(range)s', range='<code>' + port_range|string + '</code>'|safe) }}
+  {{ _('Port range: %(range)s', range=('<code>' + port_range|string + '</code>')|safe) | safe }}
 </p>
 
 <section class="card">
@@ -45,7 +45,7 @@
     </div>
   </form>
   <p class="hint" style="margin-top: 12px;">
-    {{ _('Note: instances are always transcription services. Diarization (pyannote) and alignment (wav2vec2) run as components %(em_start)sinside%(em_end)s the WhisperX engine when a transcription request asks for %(diarize_code)s or word timestamps — not as separate instances.', em_start='<em>'|safe, em_end='</em>'|safe, diarize_code='<code>diarize=true</code>'|safe) }}
+    {{ _('Note: instances are always transcription services. Diarization (pyannote) and alignment (wav2vec2) run as components %(em_start)sinside%(em_end)s the WhisperX engine when a transcription request asks for %(diarize_code)s or word timestamps — not as separate instances.', em_start='<em>'|safe, em_end='</em>'|safe, diarize_code='<code>diarize=true</code>'|safe) | safe }}
   </p>
   {% if not downloaded_models %}
   <p class="hint">{{ _('No transcription models downloaded yet. Please download one under "Models" first.') }}</p>
@@ -96,7 +96,7 @@
                     data-compute-type="{{ inst.compute_type }}">{{ _('Edit') }}</button>
             <button class="btn btn-sm" data-action="reload-main">{{ _('Reload') }}</button>
           {% else %}
-            <span class="text-muted">{{ _('disabled via %(var)s', var='<code>DISABLE_MAIN_ENGINE=1</code>'|safe) }}</span>
+            <span class="text-muted">{{ _('disabled via %(var)s', var='<code>DISABLE_MAIN_ENGINE=1</code>'|safe) | safe }}</span>
           {% endif %}
         {% else %}
           {% if inst.status == 'running' %}

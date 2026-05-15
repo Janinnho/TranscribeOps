@@ -10,8 +10,8 @@
     {{ _('System (main process)') }}
   </h2>
   <p class="group-note">
-    {{ _('Engine, model and device can be edited under %(link_start)sInstances%(link_end)s.', link_start='<a href="' + url_for('admin.instances') + '">'|safe, link_end='</a>'|safe) }}
-    {{ _('Initial values come from Docker env vars (%(vars)s); changes are persisted in the admin DB. Diarization and alignment run inside the same process.', vars='<code>WHISPER_MODEL</code>, <code>WHISPER_DEVICE</code>, …'|safe) }}
+    {{ _('Engine, model and device can be edited under %(link_start)sInstances%(link_end)s.', link_start=('<a href="' + url_for('admin.instances') + '">')|safe, link_end='</a>'|safe) | safe }}
+    {{ _('Initial values come from Docker env vars (%(vars)s); changes are persisted in the admin DB. Diarization and alignment run inside the same process.', vars='<code>WHISPER_MODEL</code>, <code>WHISPER_DEVICE</code>, …'|safe) | safe }}
   </p>
   <div class="sys-grid">
     <div class="sys-item"><dt>{{ _('Port') }}</dt><dd>:{{ system_info.main_port }}</dd></div>
@@ -77,7 +77,7 @@
         <span class="badge badge-green">{{ _('auto-download') }}</span>
       </header>
       <p class="model-desc">
-        {{ _('pyannote/segmentation-3.0 + pyannote/speaker-diarization-3.1 are downloaded on first container start using the runtime %(token)s and then stored permanently in the volume.', token='<code>HF_TOKEN</code>'|safe) }}
+        {{ _('pyannote/segmentation-3.0 + pyannote/speaker-diarization-3.1 are downloaded on first container start using the runtime %(token)s and then stored permanently in the volume.', token='<code>HF_TOKEN</code>'|safe) | safe }}
       </p>
       <dl class="model-meta">
         {% for r in bundled_info.diarize.repos %}

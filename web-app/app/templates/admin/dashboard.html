@@ -623,7 +623,7 @@
                     </div>
                     <div class="alert alert-info small mt-3 mb-0">
                         <i class="bi bi-info-circle me-1"></i>
-                        {{ _('Manual login is always available at <code>/manuell-login</code>.') }}
+                        {{ _('Manual login is always available at <code>/manuell-login</code>.') | safe }}
                     </div>
                 </div>
             </div>
@@ -995,7 +995,7 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" name="use_speaker_references" id="newSpeechSpeakerRefs">
                         <label class="form-check-label" for="newSpeechSpeakerRefs">{{ _('Pass speaker references across chunks') }}</label>
-                        <small class="text-muted d-block">{{ _('Extracts audio samples per speaker after the first chunk and sends them as <code>known_speaker_references</code> with following chunks. Only for OpenAI/Azure with diarization.') }}</small>
+                        <small class="text-muted d-block">{{ _('Extracts audio samples per speaker after the first chunk and sends them as <code>known_speaker_references</code> with following chunks. Only for OpenAI/Azure with diarization.') | safe }}</small>
                     </div>
                     <hr>
                     <label class="form-label fw-medium">{{ _('Request') }}</label>
@@ -1089,7 +1089,7 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" name="use_speaker_references" {{ 'checked' if m.use_speaker_references }}>
                         <label class="form-check-label">{{ _('Pass speaker references across chunks') }}</label>
-                        <small class="text-muted d-block">{{ _('Extracts audio samples per speaker after the first chunk and sends them as <code>known_speaker_references</code> with following chunks. Only for OpenAI/Azure with diarization.') }}</small>
+                        <small class="text-muted d-block">{{ _('Extracts audio samples per speaker after the first chunk and sends them as <code>known_speaker_references</code> with following chunks. Only for OpenAI/Azure with diarization.') | safe }}</small>
                     </div>
                     <hr>
                     <label class="form-label fw-medium">{{ _('Request') }}</label>

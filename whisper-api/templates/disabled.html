@@ -10,7 +10,7 @@
     <h1>{{ _('Admin UI disabled') }}</h1>
     <p>
       {{ _('The admin interface is disabled because no ADMIN_PASSWORD has been set.') }}
-      {{ _('Set the %(var)s environment variable in your Docker config and restart the container.', var='<code>ADMIN_PASSWORD</code>'|safe) }}
+      {{ _('Set the %(var)s environment variable in your Docker config and restart the container.', var='<code>ADMIN_PASSWORD</code>'|safe) | safe }}
     </p>
   </div>
 </body>

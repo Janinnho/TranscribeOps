@@ -2,7 +2,7 @@
 {% block title %}{{ _('API Keys') }} — {{ _('TranscribeOps Model API') }}{% endblock %}
 {% block content %}
 <h1 class="page-title">{{ _('API Keys') }}</h1>
-<p class="page-subtitle">{{ _('Generate keys for the %(header)s header of the transcription API.', header='<code>Authorization: Bearer</code>'|safe) }}</p>
+<p class="page-subtitle">{{ _('Generate keys for the %(header)s header of the transcription API.', header='<code>Authorization: Bearer</code>'|safe) | safe }}</p>
 
 <section class="card">
   <h2>{{ _('Create new key') }}</h2>
