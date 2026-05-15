@@ -10,7 +10,7 @@ python-dotenv==1.2.2
 requests==2.34.2
 gunicorn==26.0.0
 openai==2.36.0
-celery==5.4.0
+celery==5.6.3
 redis==7.4.0
 Authlib==1.6.12
 Flask-Babel==4.0.0
