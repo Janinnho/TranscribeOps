@@ -5,7 +5,7 @@ requests==2.34.2
 whisperx @ git+https://github.com/m-bain/whisperX.git@646f511e6bb47f8d2f0687e9976f8e7035b1e18d
 
 # Admin UI / infrastructure
-huggingface_hub>=0.28.1,<1.0.0
+huggingface_hub>=1.14.0,<2.0.0
 psutil==7.2.2
 
 # NeMo (Parakeet ASR engine)
