@@ -13,4 +13,4 @@ psutil==6.0.0
 # plus NeMo core and ASR dependencies. Adds ~2 GB to the image.
 # NeMo 2.0.0 still calls the removed np.sctypes API; patched post-install
 # in the Dockerfile (see sed step) because whisperx requires numpy>=2.1.
-nemo_toolkit[asr]==2.6.2
+nemo_toolkit[asr]==2.7.3
