@@ -274,7 +274,3 @@ Issues and pull requests are welcome. Please follow the existing code style (no 
 [MIT](LICENSE) — use, modification and commercial use are all permitted.
 
 ---
-
-<div align="center">
-Made with ☕ in Germany
-</div>
