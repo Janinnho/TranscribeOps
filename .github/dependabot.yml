@@ -21,6 +21,10 @@ updates:
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
+    ignore:
+      # whisperx pins huggingface-hub<1.0.0; block major bumps until upstream relaxes.
+      - dependency-name: "huggingface-hub"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
