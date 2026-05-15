@@ -11,6 +11,6 @@ requests==2.34.2
 gunicorn==23.0.0
 openai==1.58.1
 celery==5.4.0
-redis==5.2.1
+redis==7.4.0
 Authlib==1.6.12
 Flask-Babel==4.0.0
