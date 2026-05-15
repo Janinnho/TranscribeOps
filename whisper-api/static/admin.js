@@ -18,7 +18,7 @@ const AdminUI = (() => {
     document.querySelectorAll('[data-action="revoke"]').forEach(btn => {
       btn.addEventListener("click", async () => {
         const id = btn.dataset.id;
-        if (!confirm("Diesen Key wirklich widerrufen?")) return;
+        if (!confirm(window.tr("Really revoke this key?"))) return;
         await api(`/admin/api/keys/${id}`, { method: "DELETE" });
         location.reload();
       });
@@ -50,7 +50,7 @@ const AdminUI = (() => {
         const repo_id = btn.dataset.repo;
         const kind = btn.dataset.kind;
         btn.disabled = true;
-        btn.textContent = "Starte…";
+        btn.textContent = window.tr("Starting…");
         try {
           const res = await api("/admin/api/downloads", {
             method: "POST",
@@ -59,8 +59,8 @@ const AdminUI = (() => {
           pollDownload(res.id, btn.closest("tr"));
         } catch (e) {
           btn.disabled = false;
-          btn.textContent = "Download";
-          alert("Download fehlgeschlagen: " + e.message);
+          btn.textContent = window.tr("Download");
+          alert(window.tr("Download failed: {msg}", {msg: e.message}));
         }
       });
     });
@@ -80,7 +80,7 @@ const AdminUI = (() => {
         });
         location.reload();
       } catch (e) {
-        alert("Fehler: " + e.message);
+        alert(window.tr("Error: {msg}", {msg: e.message}));
       }
     });
   }
@@ -104,7 +104,7 @@ const AdminUI = (() => {
 
       if (dl.status === "done") { location.reload(); return; }
       if (dl.status === "failed") {
-        statusCell.innerHTML = `<span class="pill pill-red">Fehler</span> ${dl.error || ""}`;
+        statusCell.innerHTML = `<span class="pill pill-red">${window.tr("Error")}</span> ${dl.error || ""}`;
         return;
       }
     }
@@ -119,7 +119,7 @@ const AdminUI = (() => {
       if (action === "edit-main" || action === "reload-main" || action === "cancel-edit-main") return;
       btn.addEventListener("click", async () => {
         const id = btn.dataset.id;
-        if (action === "delete" && !confirm("Instanz wirklich löschen?")) return;
+        if (action === "delete" && !confirm(window.tr("Really delete this instance?"))) return;
         btn.disabled = true;
         const original = btn.textContent;
         btn.textContent = "…";
@@ -129,7 +129,7 @@ const AdminUI = (() => {
           else if (action === "delete") await api(`/admin/api/instances/${id}`, { method: "DELETE" });
           location.reload();
         } catch (e) {
-          alert("Fehler: " + e.message);
+          alert(window.tr("Error: {msg}", {msg: e.message}));
           btn.disabled = false;
           btn.textContent = original;
         }
@@ -145,7 +145,7 @@ const AdminUI = (() => {
 
     if (reloadBtn) {
       reloadBtn.addEventListener("click", async () => {
-        if (!confirm("Main Engine jetzt neu laden? Transkriptionen auf Port 8000 sind währenddessen nicht verfügbar.")) return;
+        if (!confirm(window.tr("Reload main engine now? Transcriptions on port 8000 will be unavailable during the reload."))) return;
         reloadBtn.disabled = true;
         const orig = reloadBtn.textContent;
         reloadBtn.textContent = "…";
@@ -153,7 +153,7 @@ const AdminUI = (() => {
           await api("/admin/api/main-engine/reload", { method: "POST" });
           pollMainReloadAndReload();
         } catch (e) {
-          alert("Fehler: " + e.message);
+          alert(window.tr("Error: {msg}", {msg: e.message}));
           reloadBtn.disabled = false;
           reloadBtn.textContent = orig;
         }
@@ -212,7 +212,7 @@ const AdminUI = (() => {
         dialog.close();
         pollMainReloadAndReload();
       } catch (e) {
-        alert("Fehler: " + e.message);
+        alert(window.tr("Error: {msg}", {msg: e.message}));
       }
     });
   }
@@ -274,7 +274,7 @@ const AdminUI = (() => {
         });
         location.reload();
       } catch (e) {
-        alert("Fehler: " + e.message);
+        alert(window.tr("Error: {msg}", {msg: e.message}));
       }
     });
   }

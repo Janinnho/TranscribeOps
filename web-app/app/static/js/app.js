@@ -68,7 +68,7 @@ function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId,
         if (typeof getSelectedModelMaxSize === 'function') {
             const maxMb = getSelectedModelMaxSize();
             if (maxMb > 0 && file.size > maxMb * 1024 * 1024) {
-                alert(`Datei zu groß. Maximale Upload-Größe für dieses Modell: ${maxMb} MB. Ihre Datei: ${(file.size / 1024 / 1024).toFixed(1)} MB`);
+                alert(window.tr('File too large. Maximum upload size for this model: {max} MB. Your file: {size} MB', {max: maxMb, size: (file.size / 1024 / 1024).toFixed(1)}));
                 return false;
             }
         }
@@ -141,7 +141,7 @@ function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId,
         xhr.addEventListener('error', () => {
             progress.classList.add('d-none');
             uploadBtn.disabled = false;
-            alert('Upload fehlgeschlagen.');
+            alert(window.tr('Upload failed.'));
         });
 
         xhr.open('POST', '/api/upload');
@@ -209,7 +209,7 @@ function renderJobList(filterText) {
         container.innerHTML = `
             <div class="text-center text-muted py-4">
                 <i class="bi bi-${filterText ? 'search' : 'inbox'} display-6"></i>
-                <p class="mt-2">${filterText ? 'Keine Treffer' : 'Noch keine Einträge'}</p>
+                <p class="mt-2">${filterText ? window.tr('No matches') : window.tr('No entries yet.')}</p>
             </div>`;
         return;
     }
@@ -221,18 +221,18 @@ function renderJobList(filterText) {
         <div class="job-item ${job.id === (typeof currentJobId !== 'undefined' ? currentJobId : null) ? 'active' : ''}" onclick="selectJob('${job.id}', '${dBase}')">
             <div class="d-flex justify-content-between align-items-start">
                 <div class="flex-grow-1">
-                    <div class="fw-medium text-truncate" style="max-width: 250px;">${escapeHtml(job.title || 'Job')}</div>
+                    <div class="fw-medium text-truncate" style="max-width: 250px;">${escapeHtml(job.title || window.tr('Job'))}</div>
                     <small class="text-muted">${job.created_at}</small>
                 </div>
                 <div class="d-flex align-items-center gap-2">
                     ${statusBadge(job.status)}
-                    <button class="btn btn-sm btn-link text-danger p-0" onclick="event.stopPropagation(); deleteItem('${job.id}', '${listUrl}', '${deleteUrlBase}')" title="Löschen">
+                    <button class="btn btn-sm btn-link text-danger p-0" onclick="event.stopPropagation(); deleteItem('${job.id}', '${listUrl}', '${deleteUrlBase}')" title="${window.tr('Delete')}">
                         <i class="bi bi-trash"></i>
                     </button>
                 </div>
             </div>
             ${job.status === 'processing' ? '<div class="mt-2"><div class="progress" style="height:3px"><div class="progress-bar progress-bar-striped progress-bar-animated bg-info" style="width:100%"></div></div></div>' : ''}
-            ${job.status === 'failed' ? `<small class="text-danger d-block mt-1">${escapeHtml(job.error_message || 'Fehler')}</small>` : ''}
+            ${job.status === 'failed' ? `<small class="text-danger d-block mt-1">${escapeHtml(job.error_message || window.tr('Error'))}</small>` : ''}
             ${(job.status === 'processing' || job.status === 'pending') && job.eta_seconds != null ? `<small class="text-muted d-block mt-1" data-eta-job="${job.id}"></small>` : ''}
         </div>
     `).join('');
@@ -257,7 +257,7 @@ function selectJob(jobId, detailBase) {
 }
 
 async function deleteItem(itemId, listUrl, deleteUrlBase) {
-    if (!confirm('Eintrag wirklich löschen?')) return;
+    if (!confirm(window.tr('Really delete this entry?'))) return;
     const token = document.querySelector('meta[name="csrf-token"]').content;
     await fetch(`${deleteUrlBase}/${itemId}`, {
         method: 'DELETE',
@@ -268,10 +268,10 @@ async function deleteItem(itemId, listUrl, deleteUrlBase) {
 
 function statusBadge(status) {
     const map = {
-        'pending': '<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>Wartend</span>',
-        'processing': '<span class="badge bg-info"><span class="spinner-grow spinner-grow-sm me-1"></span>Verarbeite</span>',
-        'completed': '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Fertig</span>',
-        'failed': '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Fehler</span>'
+        'pending': `<span class="badge bg-warning text-dark"><i class="bi bi-hourglass-split me-1"></i>${window.tr('Pending')}</span>`,
+        'processing': `<span class="badge bg-info"><span class="spinner-grow spinner-grow-sm me-1"></span>${window.tr('Processing')}</span>`,
+        'completed': `<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>${window.tr('Completed')}</span>`,
+        'failed': `<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>${window.tr('Failed')}</span>`
     };
     return map[status] || `<span class="badge bg-secondary">${status}</span>`;
 }
@@ -298,7 +298,7 @@ function formatEtaTime(secs) {
     secs = Math.max(0, Math.round(secs));
     const m = Math.floor(secs / 60);
     const s = secs % 60;
-    return m > 0 ? `${m} Min ${s} Sek` : `${s} Sek`;
+    return m > 0 ? window.tr('{m} min {s} sec', {m: m, s: s}) : window.tr('{s} sec', {s: s});
 }
 
 function updateEtaData(jobs) {
@@ -350,7 +350,7 @@ function tickEtaCountdowns() {
         const remaining = getEtaRemaining(jobId);
         if (remaining != null && remaining >= 0) {
             const d = _etaData[jobId];
-            const prefix = d && d.status === 'pending' ? 'Geschätzte Wartezeit: ' : 'Restzeit: ';
+            const prefix = d && d.status === 'pending' ? window.tr('Estimated wait time: ') : window.tr('Remaining time: ');
             el.textContent = prefix + formatEtaTime(remaining);
         } else {
             el.textContent = '';

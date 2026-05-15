@@ -1,15 +1,37 @@
 import uuid
-from flask import Flask
+from flask import Flask, request, session
 from flask_sqlalchemy import SQLAlchemy
-from flask_login import LoginManager
+from flask_login import LoginManager, current_user
 from flask_migrate import Migrate
 from flask_wtf.csrf import CSRFProtect
+from flask_babel import Babel
 from config import Config
 
 db = SQLAlchemy()
 login_manager = LoginManager()
 migrate = Migrate()
 csrf = CSRFProtect()
+babel = Babel()
+
+
+def _select_locale():
+    """Pick the active locale: explicit user pref > session > browser > default."""
+    supported = ['en', 'de']
+    # 1. Logged-in user's saved preference.
+    try:
+        if current_user.is_authenticated and current_user.language in supported:
+            return current_user.language
+    except Exception:
+        pass
+    # 2. Session override (used by anonymous users and lang switcher).
+    lang = session.get('lang')
+    if lang in supported:
+        return lang
+    # 3. Browser Accept-Language.
+    best = request.accept_languages.best_match(supported)
+    if best:
+        return best
+    return 'en'
 
 
 def create_app(config_class=Config):
@@ -20,9 +42,16 @@ def create_app(config_class=Config):
     login_manager.init_app(app)
     migrate.init_app(app, db)
     csrf.init_app(app)
+    # Compile translation .mo files from the Python source-of-truth dict
+    # before Babel initialises — otherwise it won't find them on first request.
+    from app.i18n import compile_translations, client_strings_for
+    compile_translations(app.config['BABEL_TRANSLATION_DIRECTORIES'])
 
+    babel.init_app(app, locale_selector=_select_locale)
+
+    from flask_babel import lazy_gettext as _l
     login_manager.login_view = 'auth.login'
-    login_manager.login_message = 'Bitte melden Sie sich an.'
+    login_manager.login_message = _l('Please sign in.')
     login_manager.login_message_category = 'info'
 
     from app.models import User
@@ -55,7 +84,17 @@ def create_app(config_class=Config):
 
     @app.context_processor
     def inject_version():
-        return {'app_version': app.config.get('APP_VERSION', '')}
+        from flask_babel import get_locale
+        try:
+            current_lang = str(get_locale() or 'en')
+        except Exception:
+            current_lang = 'en'
+        return {
+            'app_version': app.config.get('APP_VERSION', ''),
+            'current_lang': current_lang,
+            'supported_locales': app.config.get('BABEL_SUPPORTED_LOCALES', ['en', 'de']),
+            'client_i18n': client_strings_for(current_lang),
+        }
 
     with app.app_context():
         import os
@@ -199,6 +238,8 @@ def _apply_migrations():
                 _safe_execute(conn, "ALTER TABLE users ADD COLUMN auth_source VARCHAR(20) DEFAULT 'local'")
             if not _has_column('users', 'external_id'):
                 _safe_execute(conn, "ALTER TABLE users ADD COLUMN external_id VARCHAR(255)")
+            if not _has_column('users', 'language'):
+                _safe_execute(conn, "ALTER TABLE users ADD COLUMN language VARCHAR(5)")
 
         # Jobs/Meetings/Dictations: audio_saved flag.
         for table in ('jobs', 'meetings', 'dictations'):

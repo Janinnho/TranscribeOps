@@ -46,6 +46,7 @@ class User(UserMixin, db.Model):
     is_admin = db.Column(db.Boolean, default=False)
     is_active_user = db.Column(db.Boolean, default=True)
     theme = db.Column(db.String(20), default='auto')  # light, dark, auto
+    language = db.Column(db.String(5), nullable=True, default=None)  # None=auto-detect, 'en', 'de'
     history_days = db.Column(db.Integer, nullable=True, default=None)  # None=global default, 0=unlimited, >0=days
     auth_source = db.Column(db.String(20), default='local')  # 'local', 'header_sso', 'oidc'
     external_id = db.Column(db.String(255), nullable=True)     # OIDC 'sub' claim or header identity

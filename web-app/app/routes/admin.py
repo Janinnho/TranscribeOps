@@ -1,6 +1,7 @@
 from functools import wraps
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
 from flask_login import login_required, current_user
+from flask_babel import gettext as _
 import os
 import time
 from urllib.parse import urlparse, urlunparse
@@ -19,7 +20,7 @@ def admin_required(f):
     @login_required
     def decorated(*args, **kwargs):
         if not current_user.is_admin:
-            flash('Zugriff verweigert.', 'danger')
+            flash(_('Access denied.'), 'danger')
             return redirect(url_for('main.transcription'))
         return f(*args, **kwargs)
     return decorated
@@ -95,10 +96,10 @@ def dashboard():
     _chat_counts = {(rt, rid): cnt for rt, rid, cnt in _chat_counts_raw}
 
     ACTION_LABELS = {
-        'rewrite': 'Umschreiben',
-        'grammar': 'Grammatik',
-        'translate': 'Übersetzen',
-        'summarize': 'Zusammenfassen',
+        'rewrite': _('Rewrite'),
+        'grammar': _('Grammar'),
+        'translate': _('Translate'),
+        'summarize': _('Summarize'),
     }
 
     def _build_record(record, rtype, record_type_str):
@@ -142,13 +143,13 @@ def dashboard():
 
     all_records = []
     for record in Job.query.order_by(Job.created_at.desc()).limit(100).all():
-        all_records.append(_build_record(record, 'Transkription', 'job'))
+        all_records.append(_build_record(record, _('Transcription'), 'job'))
     for record in Meeting.query.order_by(Meeting.created_at.desc()).limit(100).all():
-        all_records.append(_build_record(record, 'Meeting', 'meeting'))
+        all_records.append(_build_record(record, _('Meeting'), 'meeting'))
     for record in Dictation.query.order_by(Dictation.created_at.desc()).limit(100).all():
-        all_records.append(_build_record(record, 'Diktat', 'dictation'))
+        all_records.append(_build_record(record, _('Dictation'), 'dictation'))
     for record in TextTask.query.order_by(TextTask.created_at.desc()).limit(100).all():
-        all_records.append(_build_record(record, 'Textverarbeitung', 'text_task'))
+        all_records.append(_build_record(record, _('Text Processing'), 'text_task'))
 
     # Chat conversations — derive status from messages
     for conv in Conversation.query.order_by(Conversation.created_at.desc()).limit(100).all():
@@ -172,7 +173,7 @@ def dashboard():
         text_model = db.session.get(TextModel, conv.text_model_id) if conv.text_model_id else None
         processing_count = sum(1 for s in statuses if s in ('processing', 'pending'))
         all_records.append({
-            'type': 'Chat',
+            'type': _('Chat'),
             'record_type': 'conversation',
             'record_id': conv.id,
             'title': conv.title,
@@ -240,11 +241,11 @@ def create_user():
     is_admin = data.get('is_admin') == 'on'
 
     if not display_name or not email or not password:
-        flash('Alle Felder sind erforderlich.', 'danger')
+        flash(_('All fields are required.'), 'danger')
         return redirect(url_for('admin.dashboard'))
 
     if User.query.filter_by(email=email).first():
-        flash('E-Mail-Adresse existiert bereits.', 'danger')
+        flash(_('Email address already exists.'), 'danger')
         return redirect(url_for('admin.dashboard'))
 
     user = User(display_name=display_name, email=email, is_admin=is_admin)
@@ -258,7 +259,7 @@ def create_user():
         user.groups.append(g)
 
     db.session.commit()
-    flash(f'Benutzer "{display_name}" erstellt.', 'success')
+    flash(_('User "%(name)s" created.', name=display_name), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -267,7 +268,7 @@ def create_user():
 def update_user(user_id):
     user = db.session.get(User, user_id)
     if not user:
-        flash('Benutzer nicht gefunden.', 'danger')
+        flash(_('User not found.'), 'danger')
         return redirect(url_for('admin.dashboard'))
 
     user.display_name = request.form.get('display_name', user.display_name).strip()
@@ -282,7 +283,7 @@ def update_user(user_id):
     user.groups = Group.query.filter(Group.id.in_(group_ids)).all() if group_ids else []
 
     db.session.commit()
-    flash(f'Benutzer "{user.display_name}" aktualisiert.', 'success')
+    flash(_('User "%(name)s" updated.', name=user.display_name), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -291,14 +292,14 @@ def update_user(user_id):
 def delete_user(user_id):
     user = db.session.get(User, user_id)
     if not user:
-        flash('Benutzer nicht gefunden.', 'danger')
+        flash(_('User not found.'), 'danger')
         return redirect(url_for('admin.dashboard'))
     if user.id == current_user.id:
-        flash('Sie können sich nicht selbst löschen.', 'danger')
+        flash(_('You cannot delete yourself.'), 'danger')
         return redirect(url_for('admin.dashboard'))
     db.session.delete(user)
     db.session.commit()
-    flash('Benutzer gelöscht.', 'success')
+    flash(_('User deleted.'), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -311,7 +312,7 @@ def create_group():
     description = request.form.get('description', '').strip()
     is_default = request.form.get('is_default') == 'on'
     if not name:
-        flash('Gruppenname erforderlich.', 'danger')
+        flash(_('Group name required.'), 'danger')
         return redirect(url_for('admin.dashboard'))
 
     # If setting as default, unset other defaults
@@ -358,7 +359,7 @@ def create_group():
     _save_model_functions(group)
 
     db.session.commit()
-    flash(f'Gruppe "{name}" erstellt.', 'success')
+    flash(_('Group "%(name)s" created.', name=name), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -390,7 +391,7 @@ def _save_model_functions(group):
 def update_group(group_id):
     group = db.session.get(Group, group_id)
     if not group:
-        flash('Gruppe nicht gefunden.', 'danger')
+        flash(_('Group not found.'), 'danger')
         return redirect(url_for('admin.dashboard'))
 
     group.name = request.form.get('name', group.name).strip()
@@ -437,7 +438,7 @@ def update_group(group_id):
     _save_model_functions(group)
 
     db.session.commit()
-    flash(f'Gruppe "{group.name}" aktualisiert.', 'success')
+    flash(_('Group "%(name)s" updated.', name=group.name), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -446,7 +447,7 @@ def update_group(group_id):
 def delete_group(group_id):
     group = db.session.get(Group, group_id)
     if not group:
-        flash('Gruppe nicht gefunden.', 'danger')
+        flash(_('Group not found.'), 'danger')
         return redirect(url_for('admin.dashboard'))
     db.session.execute(group_speech_model_functions.delete().where(
         group_speech_model_functions.c.group_id == group.id))
@@ -454,7 +455,7 @@ def delete_group(group_id):
         group_text_model_functions.c.group_id == group.id))
     db.session.delete(group)
     db.session.commit()
-    flash('Gruppe gelöscht.', 'success')
+    flash(_('Group deleted.'), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -488,7 +489,7 @@ def create_speech_model():
     )
     db.session.add(model)
     db.session.commit()
-    flash(f'Sprachmodell "{model.name}" erstellt.', 'success')
+    flash(_('Speech model "%(name)s" created.', name=model.name), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -497,7 +498,7 @@ def create_speech_model():
 def update_speech_model(model_id):
     model = db.session.get(SpeechModel, model_id)
     if not model:
-        flash('Modell nicht gefunden.', 'danger')
+        flash(_('Model not found.'), 'danger')
         return redirect(url_for('admin.dashboard'))
 
     model.name = request.form.get('name', model.name).strip()
@@ -525,7 +526,7 @@ def update_speech_model(model_id):
         model.api_key = new_key
 
     db.session.commit()
-    flash(f'Sprachmodell "{model.name}" aktualisiert.', 'success')
+    flash(_('Speech model "%(name)s" updated.', name=model.name), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -547,12 +548,12 @@ def _derive_openai_base(endpoint_url: str) -> str:
 
 def _test_speech_connection(model):
     if not model.endpoint_url:
-        return False, 'Keine Endpoint-URL konfiguriert.', 0
+        return False, _('No endpoint URL configured.'), 0
     start = time.time()
     try:
         if model.provider == 'azure':
             if not model.azure_api_version:
-                return False, 'azure_api_version fehlt.', 0
+                return False, _('azure_api_version missing.'), 0
             url = f"{model.endpoint_url.rstrip('/')}/openai/deployments?api-version={model.azure_api_version}"
             headers = {'api-key': model.api_key} if model.api_key else {}
             r = requests.get(url, headers=headers, timeout=8)
@@ -563,26 +564,26 @@ def _test_speech_connection(model):
             r = requests.get(url, headers=headers, timeout=8)
         latency = int((time.time() - start) * 1000)
         if r.status_code == 200:
-            return True, f'OK ({r.status_code})', latency
+            return True, _('OK (%(code)s)', code=r.status_code), latency
         if r.status_code in (401, 403):
-            return False, f'Erreichbar, aber Auth-Fehler ({r.status_code}). API-Key prüfen.', latency
+            return False, _('Reachable, but auth error (%(code)s). Check API key.', code=r.status_code), latency
         return False, f'HTTP {r.status_code}: {r.text[:200]}', latency
     except requests.exceptions.ConnectTimeout:
-        return False, 'Timeout beim Verbindungsaufbau.', int((time.time() - start) * 1000)
+        return False, _('Timeout while establishing connection.'), int((time.time() - start) * 1000)
     except requests.exceptions.ConnectionError as e:
-        return False, f'Verbindung fehlgeschlagen: {str(e)[:200]}', int((time.time() - start) * 1000)
+        return False, _('Connection failed: %(err)s', err=str(e)[:200]), int((time.time() - start) * 1000)
     except Exception as e:
-        return False, f'Fehler: {str(e)[:200]}', int((time.time() - start) * 1000)
+        return False, _('Error: %(err)s', err=str(e)[:200]), int((time.time() - start) * 1000)
 
 
 def _test_text_connection(model):
     if not model.endpoint_url:
-        return False, 'Keine Endpoint-URL konfiguriert.', 0
+        return False, _('No endpoint URL configured.'), 0
     start = time.time()
     try:
         if model.provider == 'azure':
             if not model.azure_api_version:
-                return False, 'azure_api_version fehlt.', 0
+                return False, _('azure_api_version missing.'), 0
             url = f"{model.endpoint_url.rstrip('/')}/openai/deployments?api-version={model.azure_api_version}"
             headers = {'api-key': model.api_key} if model.api_key else {}
             r = requests.get(url, headers=headers, timeout=8)
@@ -596,16 +597,16 @@ def _test_text_connection(model):
             r = requests.get(url, headers=headers, timeout=8)
         latency = int((time.time() - start) * 1000)
         if r.status_code == 200:
-            return True, f'OK ({r.status_code})', latency
+            return True, _('OK (%(code)s)', code=r.status_code), latency
         if r.status_code in (401, 403):
-            return False, f'Erreichbar, aber Auth-Fehler ({r.status_code}). API-Key prüfen.', latency
+            return False, _('Reachable, but auth error (%(code)s). Check API key.', code=r.status_code), latency
         return False, f'HTTP {r.status_code}: {r.text[:200]}', latency
     except requests.exceptions.ConnectTimeout:
-        return False, 'Timeout beim Verbindungsaufbau.', int((time.time() - start) * 1000)
+        return False, _('Timeout while establishing connection.'), int((time.time() - start) * 1000)
     except requests.exceptions.ConnectionError as e:
-        return False, f'Verbindung fehlgeschlagen: {str(e)[:200]}', int((time.time() - start) * 1000)
+        return False, _('Connection failed: %(err)s', err=str(e)[:200]), int((time.time() - start) * 1000)
     except Exception as e:
-        return False, f'Fehler: {str(e)[:200]}', int((time.time() - start) * 1000)
+        return False, _('Error: %(err)s', err=str(e)[:200]), int((time.time() - start) * 1000)
 
 
 @admin_bp.route('/speech-model/<int:model_id>/test', methods=['POST'])
@@ -613,7 +614,7 @@ def _test_text_connection(model):
 def test_speech_model(model_id):
     model = db.session.get(SpeechModel, model_id)
     if not model:
-        return jsonify({'ok': False, 'message': 'Modell nicht gefunden.'}), 404
+        return jsonify({'ok': False, 'message': _('Model not found.')}), 404
     ok, msg, latency = _test_speech_connection(model)
     return jsonify({'ok': ok, 'message': msg, 'latency_ms': latency,
                     'endpoint': model.endpoint_url, 'provider': model.provider})
@@ -624,7 +625,7 @@ def test_speech_model(model_id):
 def test_text_model(model_id):
     model = db.session.get(TextModel, model_id)
     if not model:
-        return jsonify({'ok': False, 'message': 'Modell nicht gefunden.'}), 404
+        return jsonify({'ok': False, 'message': _('Model not found.')}), 404
     ok, msg, latency = _test_text_connection(model)
     return jsonify({'ok': ok, 'message': msg, 'latency_ms': latency,
                     'endpoint': model.endpoint_url, 'provider': model.provider})
@@ -635,11 +636,11 @@ def test_text_model(model_id):
 def delete_speech_model(model_id):
     model = db.session.get(SpeechModel, model_id)
     if not model:
-        flash('Modell nicht gefunden.', 'danger')
+        flash(_('Model not found.'), 'danger')
         return redirect(url_for('admin.dashboard'))
     db.session.delete(model)
     db.session.commit()
-    flash('Sprachmodell gelöscht.', 'success')
+    flash(_('Speech model deleted.'), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -663,7 +664,7 @@ def create_text_model():
     )
     db.session.add(model)
     db.session.commit()
-    flash(f'Textmodell "{model.name}" erstellt.', 'success')
+    flash(_('Text model "%(name)s" created.', name=model.name), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -672,7 +673,7 @@ def create_text_model():
 def update_text_model(model_id):
     model = db.session.get(TextModel, model_id)
     if not model:
-        flash('Modell nicht gefunden.', 'danger')
+        flash(_('Model not found.'), 'danger')
         return redirect(url_for('admin.dashboard'))
 
     model.name = request.form.get('name', model.name).strip()
@@ -690,7 +691,7 @@ def update_text_model(model_id):
         model.api_key = new_key
 
     db.session.commit()
-    flash(f'Textmodell "{model.name}" aktualisiert.', 'success')
+    flash(_('Text model "%(name)s" updated.', name=model.name), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -699,11 +700,11 @@ def update_text_model(model_id):
 def delete_text_model(model_id):
     model = db.session.get(TextModel, model_id)
     if not model:
-        flash('Modell nicht gefunden.', 'danger')
+        flash(_('Model not found.'), 'danger')
         return redirect(url_for('admin.dashboard'))
     db.session.delete(model)
     db.session.commit()
-    flash('Textmodell gelöscht.', 'success')
+    flash(_('Text model deleted.'), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -732,7 +733,7 @@ def update_global():
                 db.session.add(SystemSetting(key='default_history_days', value=hist_val))
 
     db.session.commit()
-    flash('Globale Einstellungen gespeichert.', 'success')
+    flash(_('Global settings saved.'), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -745,7 +746,7 @@ def cancel_job(record_type, record_id):
     if record_type == 'conversation':
         conv = db.session.get(Conversation, record_id)
         if not conv:
-            flash('Chat nicht gefunden.', 'warning')
+            flash(_('Chat not found.'), 'warning')
             return redirect(url_for('admin.dashboard'))
         processing_msgs = ConversationMessage.query.filter(
             ConversationMessage.conversation_id == conv.id,
@@ -753,20 +754,20 @@ def cancel_job(record_type, record_id):
         ).all()
         for msg in processing_msgs:
             msg.status = 'failed'
-            msg.content = 'Vom Administrator abgebrochen'
+            msg.content = _('Cancelled by administrator')
         db.session.commit()
-        flash(f'{len(processing_msgs)} Chat-Nachricht(en) abgebrochen.', 'success')
+        flash(_('%(count)s chat message(s) cancelled.', count=len(processing_msgs)), 'success')
         return redirect(url_for('admin.dashboard'))
 
     model_map = {'job': Job, 'meeting': Meeting, 'dictation': Dictation, 'text_task': TextTask}
     model_cls = model_map.get(record_type)
     if not model_cls:
-        flash('Ungültiger Typ.', 'danger')
+        flash(_('Invalid type.'), 'danger')
         return redirect(url_for('admin.dashboard'))
 
     record = db.session.get(model_cls, record_id)
     if not record or record.status not in ('pending', 'processing'):
-        flash('Job nicht gefunden oder bereits abgeschlossen.', 'warning')
+        flash(_('Job not found or already completed.'), 'warning')
         return redirect(url_for('admin.dashboard'))
 
     if record.celery_task_id:
@@ -774,9 +775,9 @@ def cancel_job(record_type, record_id):
         celery.control.revoke(record.celery_task_id, terminate=True)
 
     record.status = 'failed'
-    record.error_message = 'Vom Administrator abgebrochen'
+    record.error_message = _('Cancelled by administrator')
     db.session.commit()
-    flash('Job abgebrochen.', 'success')
+    flash(_('Job cancelled.'), 'success')
     return redirect(url_for('admin.dashboard'))
 
 
@@ -789,37 +790,37 @@ def cancel_subtask(record_type, record_id):
     model_cls = model_map.get(record_type)
     subtask = request.form.get('subtask')
     if not model_cls or subtask not in ('title', 'summary', 'speaker', 'chat'):
-        flash('Ungültiger Typ oder Sub-Task.', 'danger')
+        flash(_('Invalid type or sub-task.'), 'danger')
         return redirect(url_for('admin.dashboard'))
 
     record = db.session.get(model_cls, record_id)
     if not record:
-        flash('Job nicht gefunden.', 'warning')
+        flash(_('Job not found.'), 'warning')
         return redirect(url_for('admin.dashboard'))
 
     if subtask == 'title' and record.title_status == 'processing':
         record.title_status = 'cancelled'
         db.session.commit()
-        flash('Titelgenerierung abgebrochen.', 'success')
+        flash(_('Title generation cancelled.'), 'success')
     elif subtask == 'summary' and record.summary_status == 'processing':
         record.summary_status = 'cancelled'
         db.session.commit()
-        flash('Zusammenfassung abgebrochen.', 'success')
+        flash(_('Summary cancelled.'), 'success')
     elif subtask == 'speaker' and record.speaker_identify_status == 'processing':
         record.speaker_identify_status = 'cancelled'
         db.session.commit()
-        flash('Sprechererkennung abgebrochen.', 'success')
+        flash(_('Speaker identification cancelled.'), 'success')
     elif subtask == 'chat':
         processing_msgs = ChatMessage.query.filter_by(
             record_type=record_type, record_id=record_id, status='processing'
         ).all()
         for msg in processing_msgs:
             msg.status = 'failed'
-            msg.content = 'Vom Administrator abgebrochen'
+            msg.content = _('Cancelled by administrator')
         db.session.commit()
-        flash(f'{len(processing_msgs)} Chat-Nachricht(en) abgebrochen.', 'success')
+        flash(_('%(count)s chat message(s) cancelled.', count=len(processing_msgs)), 'success')
     else:
-        flash('Sub-Task läuft nicht oder bereits abgeschlossen.', 'warning')
+        flash(_('Sub-task is not running or already completed.'), 'warning')
 
     return redirect(url_for('admin.dashboard'))
 
@@ -831,5 +832,5 @@ def cancel_subtask(record_type, record_id):
 def update_sso():
     from app.sso import save_sso_settings
     save_sso_settings(request.form)
-    flash('Single-Sign-On Einstellungen gespeichert.', 'success')
+    flash(_('Single Sign-On settings saved.'), 'success')
     return redirect(url_for('admin.dashboard'))

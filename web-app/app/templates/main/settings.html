@@ -1,59 +1,68 @@
 {% extends "base.html" %}
-{% block title %}Einstellungen - TranscribeOps{% endblock %}
-{% block page_title %}Einstellungen{% endblock %}
+{% block title %}{{ _('Settings') }} - TranscribeOps{% endblock %}
+{% block page_title %}{{ _('Settings') }}{% endblock %}
 {% block content %}
 <div class="row justify-content-center">
     <div class="col-lg-6">
         <div class="card border-0 shadow-sm">
             <div class="card-body p-4">
-                <h5 class="card-title mb-4"><i class="bi bi-sliders me-2"></i>Benutzereinstellungen</h5>
+                <h5 class="card-title mb-4"><i class="bi bi-sliders me-2"></i>{{ _('User Settings') }}</h5>
                 <form method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                     <div class="mb-4">
-                        <label class="form-label fw-medium">Design</label>
+                        <label class="form-label fw-medium">{{ _('Theme') }}</label>
                         <div class="d-flex gap-3">
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="theme" id="themeLight" value="light" {{ 'checked' if current_user.theme == 'light' }}>
                                 <label class="form-check-label" for="themeLight">
-                                    <i class="bi bi-sun me-1"></i>Hell
+                                    <i class="bi bi-sun me-1"></i>{{ _('Light') }}
                                 </label>
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="theme" id="themeDark" value="dark" {{ 'checked' if current_user.theme == 'dark' }}>
                                 <label class="form-check-label" for="themeDark">
-                                    <i class="bi bi-moon me-1"></i>Dunkel
+                                    <i class="bi bi-moon me-1"></i>{{ _('Dark') }}
                                 </label>
                             </div>
                             <div class="form-check">
                                 <input class="form-check-input" type="radio" name="theme" id="themeAuto" value="auto" {{ 'checked' if current_user.theme == 'auto' }}>
                                 <label class="form-check-label" for="themeAuto">
-                                    <i class="bi bi-circle-half me-1"></i>Automatisch
+                                    <i class="bi bi-circle-half me-1"></i>{{ _('Automatic') }}
                                 </label>
                             </div>
                         </div>
-                        <small class="text-muted">Automatisch übernimmt die Browsereinstellungen.</small>
+                        <small class="text-muted">{{ _('Automatic uses the browser settings.') }}</small>
                     </div>
 
                     <div class="mb-4">
-                        <label for="historyMode" class="form-label fw-medium">Historie-Aufbewahrung</label>
+                        <label for="languageSelect" class="form-label fw-medium">{{ _('Language') }}</label>
+                        <select class="form-select" id="languageSelect" name="language" style="max-width: 350px;">
+                            <option value="" {{ 'selected' if not current_user.language }}>{{ _('Auto (detect from browser)') }}</option>
+                            <option value="en" {{ 'selected' if current_user.language == 'en' }}>{{ _('English') }}</option>
+                            <option value="de" {{ 'selected' if current_user.language == 'de' }}>{{ _('German') }}</option>
+                        </select>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="historyMode" class="form-label fw-medium">{{ _('History retention') }}</label>
                         <div class="d-flex align-items-center gap-2" style="max-width: 350px;">
                             <select class="form-select" id="historyMode" name="history_mode" onchange="document.getElementById('historyDaysGroup').classList.toggle('d-none', this.value !== 'custom')">
-                                <option value="default" {{ 'selected' if current_user.history_days is none }}>Standard ({{ global_history_label }})</option>
-                                <option value="unlimited" {{ 'selected' if current_user.history_days == 0 }}>Unbegrenzt</option>
-                                <option value="custom" {{ 'selected' if current_user.history_days is not none and current_user.history_days > 0 }}>Eigener Wert</option>
+                                <option value="default" {{ 'selected' if current_user.history_days is none }}>{{ _('Default (%(label)s)', label=global_history_label) }}</option>
+                                <option value="unlimited" {{ 'selected' if current_user.history_days == 0 }}>{{ _('Unlimited') }}</option>
+                                <option value="custom" {{ 'selected' if current_user.history_days is not none and current_user.history_days > 0 }}>{{ _('Custom value') }}</option>
                             </select>
                             <div class="input-group {{ 'd-none' if current_user.history_days is none or current_user.history_days == 0 }}" id="historyDaysGroup" style="width: 160px; flex-shrink: 0;">
                                 <input type="number" class="form-control" id="historyDays" name="history_days"
                                        value="{{ current_user.history_days if current_user.history_days and current_user.history_days > 0 else 30 }}" min="1" max="365">
-                                <span class="input-group-text">Tage</span>
+                                <span class="input-group-text">{{ _('Days') }}</span>
                             </div>
                         </div>
-                        <small class="text-muted">Wie lange die Transkriptions-Historie angezeigt wird.</small>
+                        <small class="text-muted">{{ _('How long the transcription history is shown.') }}</small>
                     </div>
 
                     <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-check-lg me-2"></i>Speichern
+                        <i class="bi bi-check-lg me-2"></i>{{ _('Save') }}
                     </button>
                 </form>
             </div>
@@ -61,12 +70,12 @@
 
         <div class="card border-0 shadow-sm mt-4">
             <div class="card-body p-4">
-                <h5 class="card-title mb-3"><i class="bi bi-person me-2"></i>Kontoinformationen</h5>
+                <h5 class="card-title mb-3"><i class="bi bi-person me-2"></i>{{ _('Account information') }}</h5>
                 <table class="table table-borderless mb-0">
-                    <tr><td class="text-muted" style="width:150px">Anzeigename</td><td>{{ current_user.display_name }}</td></tr>
-                    <tr><td class="text-muted">E-Mail</td><td>{{ current_user.email }}</td></tr>
-                    <tr><td class="text-muted">Rolle</td><td>{{ 'Administrator' if current_user.is_admin else 'Benutzer' }}</td></tr>
-                    <tr><td class="text-muted">Mitglied seit</td><td>{{ current_user.created_at.strftime('%d.%m.%Y') }}</td></tr>
+                    <tr><td class="text-muted" style="width:150px">{{ _('Display name') }}</td><td>{{ current_user.display_name }}</td></tr>
+                    <tr><td class="text-muted">{{ _('Email') }}</td><td>{{ current_user.email }}</td></tr>
+                    <tr><td class="text-muted">{{ _('Role') }}</td><td>{{ _('Administrator') if current_user.is_admin else _('User') }}</td></tr>
+                    <tr><td class="text-muted">{{ _('Member since') }}</td><td>{{ current_user.created_at.strftime('%Y-%m-%d') }}</td></tr>
                 </table>
             </div>
         </div>

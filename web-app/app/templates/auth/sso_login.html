@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Login - TranscribeOps{% endblock %}
+{% block title %}{{ _('Sign in') }} - TranscribeOps{% endblock %}
 {% block auth_content %}
 <div class="row justify-content-center align-items-center min-vh-100">
     <div class="col-md-5 col-lg-4">
@@ -8,7 +8,7 @@
                 <div class="text-center mb-4">
                     <i class="bi bi-soundwave display-3 text-primary"></i>
                     <h2 class="mt-2 fw-bold">TranscribeOps</h2>
-                    <p class="text-muted">Bitte melden Sie sich an</p>
+                    <p class="text-muted">{{ _('Please sign in.') }}</p>
                 </div>
                 {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
@@ -21,12 +21,18 @@
                 {% endif %}
                 {% endwith %}
                 <a href="{{ url_for('auth.login') }}" class="btn btn-primary w-100 py-2 mb-3">
-                    <i class="bi bi-box-arrow-in-right me-2"></i>Anmelden via SSO
+                    <i class="bi bi-box-arrow-in-right me-2"></i>{{ _('Continue with SSO') }}
                 </a>
                 <div class="text-center">
                     <a href="{{ url_for('auth.manual_login') }}" class="text-muted small">
-                        Manuell anmelden
+                        {{ _('Use manual login') }}
                     </a>
+                </div>
+                <div class="text-center mt-3">
+                    <small class="text-muted">
+                        <a href="{{ url_for('main.set_language', code='en') }}">EN</a> ·
+                        <a href="{{ url_for('main.set_language', code='de') }}">DE</a>
+                    </small>
                 </div>
             </div>
         </div>

@@ -13,3 +13,7 @@ class Config:
     MAX_CONTENT_LENGTH = 500 * 1024 * 1024  # 500MB
     CELERY_BROKER_URL = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
     CELERY_RESULT_BACKEND = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    # i18n
+    BABEL_DEFAULT_LOCALE = 'en'
+    BABEL_SUPPORTED_LOCALES = ['en', 'de']
+    BABEL_TRANSLATION_DIRECTORIES = os.path.join(basedir, 'app', 'translations')

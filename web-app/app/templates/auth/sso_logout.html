@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Abgemeldet - TranscribeOps{% endblock %}
+{% block title %}{{ _('Logout') }} - TranscribeOps{% endblock %}
 {% block auth_content %}
 <div class="row justify-content-center align-items-center min-vh-100">
     <div class="col-md-5 col-lg-4">
@@ -7,13 +7,13 @@
             <div class="card-body p-5 text-center">
                 <i class="bi bi-soundwave display-3 text-primary"></i>
                 <h2 class="mt-2 fw-bold">TranscribeOps</h2>
-                <p class="text-muted mb-4">Sie wurden erfolgreich abgemeldet.</p>
+                <p class="text-muted mb-4">{{ _('You have been signed out.') }}</p>
                 <a href="{{ url_for('auth.login') }}" class="btn btn-primary w-100 py-2 mb-3">
-                    <i class="bi bi-box-arrow-in-right me-2"></i>Anmelden
+                    <i class="bi bi-box-arrow-in-right me-2"></i>{{ _('Sign in') }}
                 </a>
                 <div class="text-center">
                     <a href="{{ url_for('auth.manual_login') }}" class="text-muted small">
-                        Manuell anmelden
+                        {{ _('Use manual login') }}
                     </a>
                 </div>
             </div>

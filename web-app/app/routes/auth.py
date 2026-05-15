@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
+from flask_babel import gettext as _
 from app import db
 from app.models import User
 from app.sso import (
@@ -39,7 +40,7 @@ def login():
         callback_url = url_for('auth.oidc_callback', _external=True)
         response = oidc_authorize_redirect(callback_url)
         if response is None:
-            flash('OIDC ist nicht vollständig konfiguriert.', 'danger')
+            flash(_('OIDC is not fully configured.'), 'danger')
             return render_template('auth/sso_login.html', sso_method='oidc', error=True)
         return response
 
@@ -56,7 +57,7 @@ def oidc_callback():
     if user:
         login_user(user, remember=True)
         return redirect(url_for('main.transcription'))
-    flash('Anmeldung fehlgeschlagen.', 'danger')
+    flash(_('Login failed.'), 'danger')
     return redirect(url_for('auth.login'))
 
 
@@ -87,5 +88,5 @@ def _handle_local_login(template='auth/login.html'):
             login_user(user, remember=True)
             next_page = request.args.get('next')
             return redirect(next_page or url_for('main.transcription'))
-        flash('Ungültige E-Mail-Adresse oder Passwort.', 'danger')
+        flash(_('Invalid email address or password.'), 'danger')
     return render_template(template)

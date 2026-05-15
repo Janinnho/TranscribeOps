@@ -1,25 +1,25 @@
 {% extends "base.html" %}
-{% block title %}Modelle — TranscribeOps Modell API{% endblock %}
+{% block title %}{{ _('Models') }} — {{ _('TranscribeOps Model API') }}{% endblock %}
 {% block content %}
-<h1 class="page-title">Modelle verwalten</h1>
-<p class="page-subtitle">Kuratierter Katalog — Modelle bei Bedarf aus HuggingFace herunterladen.</p>
+<h1 class="page-title">{{ _('Manage models') }}</h1>
+<p class="page-subtitle">{{ _('Curated catalog — download models from HuggingFace as needed.') }}</p>
 
 <section class="card">
-  <h2>Eigenes HuggingFace-Repo herunterladen</h2>
+  <h2>{{ _('Download a custom HuggingFace repo') }}</h2>
   <form id="custom-dl-form" class="inline-form">
-    <input type="text" name="repo_id" placeholder="z.B. user/custom-model" required>
+    <input type="text" name="repo_id" placeholder="{{ _('e.g. user/custom-model') }}" required>
     <select name="kind">
-      <option value="whisper">Transkription (Whisper)</option>
-      <option value="parakeet">Transkription (Parakeet)</option>
+      <option value="whisper">{{ _('Transcription (Whisper)') }}</option>
+      <option value="parakeet">{{ _('Transcription (Parakeet)') }}</option>
     </select>
-    <button type="submit" class="btn btn-primary">Herunterladen</button>
+    <button type="submit" class="btn btn-primary">{{ _('Download') }}</button>
   </form>
 </section>
 
 <table class="data-table" id="models-table">
   <thead>
     <tr>
-      <th>Modell</th><th>Zweck</th><th>Engine</th><th>Größe</th><th>Status</th><th></th>
+      <th>{{ _('Model') }}</th><th>{{ _('Purpose') }}</th><th>{{ _('Engine') }}</th><th>{{ _('Size') }}</th><th>{{ _('Status') }}</th><th></th>
     </tr>
   </thead>
   <tbody>
@@ -34,20 +34,20 @@
       <td>{% if e.downloaded %}{{ e.disk_size_mb }} MB{% else %}{{ e.size_hint }}{% endif %}</td>
       <td class="dl-status">
         {% if e.downloaded %}
-          <span class="dot-green"></span> heruntergeladen
+          <span class="dot-green"></span> {{ _('Downloaded') }}
         {% elif e.active_download %}
           <progress value="{{ e.active_download.progress }}" max="100"></progress>
           <span class="progress-label">{{ '%.0f'|format(e.active_download.progress) }}%</span>
         {% else %}
-          <span class="dot-gray"></span> nicht geladen
+          <span class="dot-gray"></span> {{ _('not loaded') }}
         {% endif %}
       </td>
       <td>
         {% if not e.downloaded and not e.active_download %}
-        <button class="btn btn-primary btn-sm download-btn" data-repo="{{ e.repo_id }}" data-kind="{{ e.kind }}">Download</button>
+        <button class="btn btn-primary btn-sm download-btn" data-repo="{{ e.repo_id }}" data-kind="{{ e.kind }}">{{ _('Download') }}</button>
         {% endif %}
         {% if e.requires_hf_token %}
-        <span class="hint">benötigt HF-Token</span>
+        <span class="hint">{{ _('requires HF token') }}</span>
         {% endif %}
       </td>
     </tr>

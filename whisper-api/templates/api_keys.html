@@ -1,17 +1,17 @@
 {% extends "base.html" %}
-{% block title %}API-Keys — TranscribeOps Modell API{% endblock %}
+{% block title %}{{ _('API Keys') }} — {{ _('TranscribeOps Model API') }}{% endblock %}
 {% block content %}
-<h1 class="page-title">API-Keys</h1>
-<p class="page-subtitle">Generiere Keys für den <code>Authorization: Bearer</code>-Header der Transkriptions-API.</p>
+<h1 class="page-title">{{ _('API Keys') }}</h1>
+<p class="page-subtitle">{{ _('Generate keys for the %(header)s header of the transcription API.', header='<code>Authorization: Bearer</code>'|safe) | safe }}</p>
 
 <section class="card">
-  <h2>Neuen Key generieren</h2>
+  <h2>{{ _('Create new key') }}</h2>
   <form id="new-key-form" class="inline-form">
-    <input type="text" name="label" placeholder="Beschriftung (z.B. 'Produktion')" required>
-    <button type="submit" class="btn btn-primary">Generieren</button>
+    <input type="text" name="label" placeholder="{{ _('Label (e.g. \'Production\')') }}" required>
+    <button type="submit" class="btn btn-primary">{{ _('Generate') }}</button>
   </form>
   <div id="new-key-result" class="hidden">
-    <p><strong>Wichtig:</strong> Dieser Key wird nur ein Mal angezeigt. Jetzt sicher speichern!</p>
+    <p><strong>{{ _('Important:') }}</strong> {{ _('This key is shown only once — save it now!') }}</p>
     <pre id="new-key-raw"></pre>
   </div>
 </section>
@@ -19,7 +19,7 @@
 <table class="data-table" id="keys-table">
   <thead>
     <tr>
-      <th>Label</th><th>Prefix</th><th>Erstellt</th><th>Zuletzt verwendet</th><th>Status</th><th></th>
+      <th>{{ _('Label') }}</th><th>{{ _('Prefix') }}</th><th>{{ _('Created at') }}</th><th>{{ _('Last used') }}</th><th>{{ _('Status') }}</th><th></th>
     </tr>
   </thead>
   <tbody>
@@ -31,19 +31,19 @@
       <td>{{ k.last_used_at or '—' }}</td>
       <td>
         {% if k.revoked_at %}
-          <span class="pill pill-red">widerrufen</span>
+          <span class="pill pill-red">{{ _('revoked') }}</span>
         {% else %}
-          <span class="pill pill-green">aktiv</span>
+          <span class="pill pill-green">{{ _('active') }}</span>
         {% endif %}
       </td>
       <td>
         {% if not k.revoked_at %}
-        <button class="btn btn-sm btn-danger" data-action="revoke" data-id="{{ k.id }}">Widerrufen</button>
+        <button class="btn btn-sm btn-danger" data-action="revoke" data-id="{{ k.id }}">{{ _('Revoke') }}</button>
         {% endif %}
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="6" class="text-muted text-center">Noch keine Keys angelegt.</td></tr>
+    <tr><td colspan="6" class="text-muted text-center">{{ _('No keys yet.') }}</td></tr>
     {% endfor %}
   </tbody>
 </table>

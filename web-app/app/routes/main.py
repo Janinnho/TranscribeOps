@@ -1,9 +1,26 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, abort
+from flask import Blueprint, render_template, request, redirect, url_for, flash, abort, session
 from flask_login import login_required, current_user
+from flask_babel import gettext as _
 from app import db
 from app.models import Job, Meeting, Dictation, DictionaryEntry
 
 main_bp = Blueprint('main', __name__)
+
+
+@main_bp.route('/lang/<string:code>')
+def set_language(code):
+    """Switch UI language. Persists to user record if logged in; otherwise to session."""
+    if code not in ('en', 'de'):
+        code = 'en'
+    if current_user.is_authenticated:
+        current_user.language = code
+        db.session.commit()
+    session['lang'] = code
+    next_url = request.args.get('next') or request.referrer or url_for('main.transcription')
+    # Reject open redirects: only allow relative URLs on this host.
+    if next_url.startswith('/') and not next_url.startswith('//'):
+        return redirect(next_url)
+    return redirect(url_for('main.transcription'))
 
 
 @main_bp.route('/')
@@ -16,7 +33,7 @@ def index():
 @login_required
 def transcription():
     if not current_user.has_transcription_access():
-        flash('Kein Zugriff auf Transkription.', 'danger')
+        flash(_('No access to transcription.'), 'danger')
         return redirect(url_for('main.settings'))
     single_models = current_user.get_available_speech_models(mode='single', function='transcription')
     multi_models = current_user.get_available_speech_models(mode='multi', function='transcription')
@@ -36,7 +53,7 @@ def transcription():
 @login_required
 def meeting():
     if not current_user.has_meeting_access():
-        flash('Kein Zugriff auf Meeting.', 'danger')
+        flash(_('No access to meeting.'), 'danger')
         return redirect(url_for('main.settings'))
     speech_models = current_user.get_available_speech_models(mode='multi', function='meeting')
     text_models = current_user.get_available_text_models()
@@ -54,7 +71,7 @@ def meeting():
 @login_required
 def dictation():
     if not current_user.has_dictation_access():
-        flash('Kein Zugriff auf Diktieren.', 'danger')
+        flash(_('No access to dictation.'), 'danger')
         return redirect(url_for('main.settings'))
     speech_models = current_user.get_available_speech_models(mode='single', function='dictation')
     hide_single_model = current_user.get_hide_single_model()
@@ -67,7 +84,7 @@ def dictation():
 @login_required
 def text_tools():
     if not current_user.has_text_tools_access():
-        flash('Kein Zugriff auf Text Tools.', 'danger')
+        flash(_('No access to text tools.'), 'danger')
         return redirect(url_for('main.settings'))
     text_models = current_user.get_available_text_models(function='text_tools')
     hide_single_model = current_user.get_hide_single_model()
@@ -80,7 +97,7 @@ def text_tools():
 @login_required
 def chat():
     if not current_user.has_chat_access():
-        flash('Kein Zugriff auf Chat.', 'danger')
+        flash(_('No access to chat.'), 'danger')
         return redirect(url_for('main.settings'))
     text_models = current_user.get_available_text_models(function='chat')
     hide_single_model = current_user.get_hide_single_model()
@@ -163,7 +180,7 @@ def job_detail_legacy(public_id):
 @login_required
 def dictionary():
     if not current_user.has_dictionary_access():
-        flash('Kein Zugriff auf das Wörterbuch.', 'danger')
+        flash(_('No access to dictionary.'), 'danger')
         return redirect(url_for('main.transcription'))
     return render_template('main/dictionary.html')
 
@@ -175,6 +192,14 @@ def settings():
         theme = request.form.get('theme', 'auto')
         if theme in ('light', 'dark', 'auto'):
             current_user.theme = theme
+        language = request.form.get('language', '')
+        if language in ('en', 'de'):
+            current_user.language = language
+            # Sync session so the next response renders in the new language.
+            session['lang'] = language
+        elif language == '':
+            current_user.language = None
+            session.pop('lang', None)
         history_mode = request.form.get('history_mode', 'default')
         if history_mode == 'default':
             current_user.history_days = None
@@ -185,9 +210,10 @@ def settings():
             if 1 <= days <= 365:
                 current_user.history_days = days
         db.session.commit()
-        flash('Einstellungen gespeichert.', 'success')
+        flash(_('Settings saved.'), 'success')
+        return redirect(url_for('main.settings'))
     from app.models import SystemSetting
     hist_setting = SystemSetting.query.get('default_history_days')
     global_days = int(hist_setting.value) if hist_setting else 30
-    global_history_label = 'Unbegrenzt' if global_days == 0 else f'{global_days} Tage'
+    global_history_label = _('Unlimited') if global_days == 0 else _('%(days)s days', days=global_days)
     return render_template('main/settings.html', global_history_label=global_history_label)

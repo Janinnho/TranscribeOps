@@ -1,26 +1,36 @@
 <!doctype html>
-<html lang="de">
+<html lang="{{ current_lang }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}TranscribeOps Modell API{% endblock %}</title>
+  <title>{% block title %}{{ _('TranscribeOps Model API') }}{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">
+  <script>window.I18N = {{ client_i18n | tojson }}; window.tr = function(k, vars){ var s = (window.I18N && window.I18N[k]) || k; if(vars){ Object.keys(vars).forEach(function(v){ s = s.replace('{'+v+'}', vars[v]); }); } return s; };</script>
 </head>
 <body>
   <nav class="topnav">
     <div class="brand">
       <span class="logo">◐</span>
-      <span>TranscribeOps&nbsp;Modell&nbsp;API</span>
+      <span>{{ _('TranscribeOps Model API') }}</span>
     </div>
     <ul class="nav-links">
-      <li><a href="{{ url_for('admin.dashboard') }}" {% if request.endpoint == 'admin.dashboard' %}class="active"{% endif %}>Dashboard</a></li>
-      <li><a href="{{ url_for('admin.models') }}" {% if request.endpoint == 'admin.models' %}class="active"{% endif %}>Modelle</a></li>
-      <li><a href="{{ url_for('admin.instances') }}" {% if request.endpoint == 'admin.instances' %}class="active"{% endif %}>Instanzen</a></li>
-      <li><a href="{{ url_for('admin.keys') }}" {% if request.endpoint == 'admin.keys' %}class="active"{% endif %}>API-Keys</a></li>
+      <li><a href="{{ url_for('admin.dashboard') }}" {% if request.endpoint == 'admin.dashboard' %}class="active"{% endif %}>{{ _('Dashboard') }}</a></li>
+      <li><a href="{{ url_for('admin.models') }}" {% if request.endpoint == 'admin.models' %}class="active"{% endif %}>{{ _('Models') }}</a></li>
+      <li><a href="{{ url_for('admin.instances') }}" {% if request.endpoint == 'admin.instances' %}class="active"{% endif %}>{{ _('Instances') }}</a></li>
+      <li><a href="{{ url_for('admin.keys') }}" {% if request.endpoint == 'admin.keys' %}class="active"{% endif %}>{{ _('API Keys') }}</a></li>
     </ul>
-    <form method="post" action="{{ url_for('admin.logout') }}" class="logout-form">
-      <button type="submit" class="btn btn-ghost">Abmelden</button>
-    </form>
+    <div class="nav-right">
+      <div class="lang-switcher">
+        <label for="lang-select" class="sr-only">{{ _('Language') }}</label>
+        <select id="lang-select" onchange="window.location.href='/lang/'+this.value+'?next='+encodeURIComponent(window.location.pathname);">
+          <option value="en" {% if current_lang == 'en' %}selected{% endif %}>EN</option>
+          <option value="de" {% if current_lang == 'de' %}selected{% endif %}>DE</option>
+        </select>
+      </div>
+      <form method="post" action="{{ url_for('admin.logout') }}" class="logout-form">
+        <button type="submit" class="btn btn-ghost">{{ _('Sign out') }}</button>
+      </form>
+    </div>
   </nav>
 
   <main class="container">

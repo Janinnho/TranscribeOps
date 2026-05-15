@@ -8,7 +8,8 @@ import signal
 import threading
 import time
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session, redirect, url_for
+from flask_babel import Babel
 
 from engines import get_engine, EngineUnavailable, EngineBusy
 from transcription_core import register_routes
@@ -16,6 +17,7 @@ from admin import create_admin_blueprint
 from admin.db import init_db, touch_api_key_last_used, key_is_active
 from admin import db as admin_db
 from admin import supervisor
+from i18n import compile_translations, client_strings_for
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("whisper-api")
@@ -44,6 +46,50 @@ elif ADMIN_PASSWORD:
     app.secret_key = hashlib.sha256((ADMIN_PASSWORD + "::session").encode()).hexdigest()
 else:
     app.secret_key = hashlib.sha256(os.urandom(32)).hexdigest()
+
+# --- i18n --------------------------------------------------------------------
+_TRANSLATIONS_DIR = os.path.join(os.path.dirname(__file__), "translations")
+app.config["BABEL_DEFAULT_LOCALE"] = "en"
+app.config["BABEL_SUPPORTED_LOCALES"] = ["en", "de"]
+app.config["BABEL_TRANSLATION_DIRECTORIES"] = _TRANSLATIONS_DIR
+compile_translations(_TRANSLATIONS_DIR)
+
+
+def _select_locale():
+    supported = ["en", "de"]
+    lang = session.get("lang")
+    if lang in supported:
+        return lang
+    best = request.accept_languages.best_match(supported)
+    return best or "en"
+
+
+babel = Babel(app, locale_selector=_select_locale)
+
+
+@app.route("/lang/<code>")
+def set_language(code):
+    if code not in ("en", "de"):
+        code = "en"
+    session["lang"] = code
+    nxt = request.args.get("next") or request.referrer or url_for("admin.dashboard")
+    if isinstance(nxt, str) and nxt.startswith("/") and not nxt.startswith("//"):
+        return redirect(nxt)
+    return redirect(url_for("admin.dashboard"))
+
+
+@app.context_processor
+def _inject_i18n():
+    from flask_babel import get_locale
+    try:
+        current = str(get_locale() or "en")
+    except Exception:
+        current = "en"
+    return {
+        "current_lang": current,
+        "supported_locales": app.config["BABEL_SUPPORTED_LOCALES"],
+        "client_i18n": client_strings_for(current),
+    }
 
 # --- SQLite init -------------------------------------------------------------
 init_db(ADMIN_DB_PATH)
