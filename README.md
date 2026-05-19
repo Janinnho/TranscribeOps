@@ -180,16 +180,16 @@ Pull the latest code from GitHub, rebuild the images, and restart the containers
 >   tar czf /backup/db-backup-$(date +%Y%m%d).tar.gz /data
 > ```
 
+Your local `docker-compose.yml` and `.env` are listed in `.gitignore`, so `git pull` will never overwrite them. Named volumes (database, uploads, model cache) are also untouched.
+
 ### 🐳 Docker
 
 ```bash
 cd /path/to/TranscribeOps && \
-git stash push -u -m "pre-update-$(date +%Y%m%d_%H%M%S)" -- docker-compose.yml .env 2>/dev/null; \
 git fetch origin && \
-git pull origin main && \
-git stash pop 2>/dev/null; \
-docker compose build --pull && \
-docker compose up -d && \
+git reset --hard origin/main && \
+docker compose build --pull --no-cache && \
+docker compose up -d --force-recreate && \
 docker image prune -f
 ```
 
@@ -197,23 +197,20 @@ docker image prune -f
 
 ```bash
 cd /path/to/TranscribeOps && \
-git stash push -u -m "pre-update-$(date +%Y%m%d_%H%M%S)" -- docker-compose.yml .env 2>/dev/null; \
 git fetch origin && \
-git pull origin main && \
-git stash pop 2>/dev/null; \
-podman compose build --pull && \
-podman compose up -d && \
+git reset --hard origin/main && \
+podman compose build --pull --no-cache && \
+podman compose up -d --force-recreate && \
 podman image prune -f
 ```
 
 **What happens:**
 
-1. `git stash` temporarily saves any local changes to `docker-compose.yml` / `.env`
-2. `git pull` fetches the latest code from `main`
-3. `git stash pop` restores your local config files
-4. `build --pull` rebuilds the images and also pulls newer base images
-5. `up -d` recreates the containers with the new images
-6. `image prune -f` removes the now-unused old images to free disk space
+1. `git fetch` downloads the latest commits from GitHub
+2. `git reset --hard origin/main` moves your working copy to the latest commit — gitignored files (`docker-compose.yml`, `.env`) are kept, but **any local edits to tracked files are discarded**. If you have customized tracked source files, commit them to a fork or branch first.
+3. `build --pull --no-cache` rebuilds the images from scratch, also pulling newer base images
+4. `up -d --force-recreate` recreates the containers with the new images, even if Compose thinks nothing changed
+5. `image prune -f` removes the now-unused old images to free disk space
 
 Database migrations run automatically on app start (`_apply_migrations()` in `app/__init__.py`) — no manual DB steps required.
 
