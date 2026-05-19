@@ -170,6 +170,55 @@ More details: [`docs/whisper-api.md`](docs/whisper-api.md)
 
 ---
 
+## 🔄 Updating to the Latest Version
+
+Pull the latest code from GitHub, rebuild the images, and restart the containers. Your local `docker-compose.yml`, `.env`, and named volumes (database, uploads, model cache) are **not** touched.
+
+> **Tip:** Back up the database volume before updating:
+> ```bash
+> docker run --rm -v transcribeops-db:/data -v "$(pwd)":/backup alpine \
+>   tar czf /backup/db-backup-$(date +%Y%m%d).tar.gz /data
+> ```
+
+### 🐳 Docker
+
+```bash
+cd /path/to/TranscribeOps && \
+git stash push -u -m "pre-update-$(date +%Y%m%d_%H%M%S)" -- docker-compose.yml .env 2>/dev/null; \
+git fetch origin && \
+git pull origin main && \
+git stash pop 2>/dev/null; \
+docker compose build --pull && \
+docker compose up -d && \
+docker image prune -f
+```
+
+### 🦭 Podman
+
+```bash
+cd /path/to/TranscribeOps && \
+git stash push -u -m "pre-update-$(date +%Y%m%d_%H%M%S)" -- docker-compose.yml .env 2>/dev/null; \
+git fetch origin && \
+git pull origin main && \
+git stash pop 2>/dev/null; \
+podman compose build --pull && \
+podman compose up -d && \
+podman image prune -f
+```
+
+**What happens:**
+
+1. `git stash` temporarily saves any local changes to `docker-compose.yml` / `.env`
+2. `git pull` fetches the latest code from `main`
+3. `git stash pop` restores your local config files
+4. `build --pull` rebuilds the images and also pulls newer base images
+5. `up -d` recreates the containers with the new images
+6. `image prune -f` removes the now-unused old images to free disk space
+
+Database migrations run automatically on app start (`_apply_migrations()` in `app/__init__.py`) — no manual DB steps required.
+
+---
+
 ## ⚙️ Configuration
 
 The most important environment variables (see [`.env.example`](.env.example)):
