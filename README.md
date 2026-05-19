@@ -182,26 +182,28 @@ Pull the latest code from GitHub, rebuild the images, and restart the containers
 
 Your local `docker-compose.yml` and `.env` are listed in `.gitignore`, so `git pull` will never overwrite them. Named volumes (database, uploads, model cache) are also untouched.
 
+> **Note on `sudo`:** if you originally deployed with `sudo docker` / `sudo podman` (rootful), run *all* of the commands below with `sudo` too — otherwise you'll update a separate, rootless instance and your production containers will stay on the old version.
+
 ### 🐳 Docker
 
 ```bash
 cd /path/to/TranscribeOps && \
-git fetch origin && \
-git reset --hard origin/main && \
-docker compose build --pull --no-cache && \
-docker compose up -d --force-recreate && \
-docker image prune -f
+sudo git fetch origin && \
+sudo git reset --hard origin/main && \
+sudo docker compose build --pull --no-cache && \
+sudo docker compose up -d --force-recreate && \
+sudo docker image prune -f
 ```
 
 ### 🦭 Podman
 
 ```bash
 cd /path/to/TranscribeOps && \
-git fetch origin && \
-git reset --hard origin/main && \
-podman compose build --pull --no-cache && \
-podman compose up -d --force-recreate && \
-podman image prune -f
+sudo git fetch origin && \
+sudo git reset --hard origin/main && \
+sudo podman compose build --pull --no-cache && \
+sudo podman compose up -d --force-recreate && \
+sudo podman image prune -f
 ```
 
 **What happens:**
