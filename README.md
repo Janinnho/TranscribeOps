@@ -284,6 +284,7 @@ Local Whisper runs on CPU by default. For GPU (NVIDIA):
 | Document | Contents |
 |---|---|
 | [Installation & Deployment](docs/installation.md) | Detailed setup guide |
+| [Updating](docs/en/updating.md) | Update to the latest version (Docker / Podman, rootless / rootful) |
 | [Configuration](docs/configuration.md) | All environment variables and settings |
 | [Architecture](docs/architecture.md) | Tech stack, data model, tasks |
 | [API Reference](docs/api-reference.md) | REST API endpoints |

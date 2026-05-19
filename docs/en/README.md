@@ -9,6 +9,7 @@ TranscribeOps is a self-hosted web application for automated transcription, meet
 | Document | Description |
 |----------|-------------|
 | [Installation & Deployment](installation.md) | Docker setup, system requirements, first start |
+| [Updating](updating.md) | Update to the latest version (Docker / Podman, rootless / rootful, standalone Whisper API) |
 | [Architecture & Technology](architecture.md) | Technical stack, project structure, data model, Celery tasks |
 | [Configuration](configuration.md) | Environment variables, database, Redis, audio storage |
 | [API Reference](api-reference.md) | All REST API endpoints with request/response documentation |
