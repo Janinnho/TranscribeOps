@@ -627,6 +627,9 @@ def delete_job(public_id):
     job = Job.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not job:
         return jsonify({'error': _('Not found.')}), 404
+    if job.celery_task_id and job.status in ('pending', 'processing'):
+        from app.celery_app import celery
+        celery.control.revoke(job.celery_task_id, terminate=True)
     if job.file_path and os.path.exists(job.file_path):
         os.remove(job.file_path)
     ChatMessage.query.filter_by(record_type='job', record_id=job.id).delete()
@@ -745,6 +748,9 @@ def delete_meeting(public_id):
     m = Meeting.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not m:
         return jsonify({'error': _('Not found.')}), 404
+    if m.celery_task_id and m.status in ('pending', 'processing'):
+        from app.celery_app import celery
+        celery.control.revoke(m.celery_task_id, terminate=True)
     if m.file_path and os.path.exists(m.file_path):
         os.remove(m.file_path)
     ChatMessage.query.filter_by(record_type='meeting', record_id=m.id).delete()
@@ -893,6 +899,9 @@ def delete_dictation(public_id):
     d = Dictation.query.filter_by(public_id=public_id, user_id=current_user.id).first()
     if not d:
         return jsonify({'error': _('Not found.')}), 404
+    if d.celery_task_id and d.status in ('pending', 'processing'):
+        from app.celery_app import celery
+        celery.control.revoke(d.celery_task_id, terminate=True)
     if d.file_path and os.path.exists(d.file_path):
         os.remove(d.file_path)
     db.session.delete(d)
