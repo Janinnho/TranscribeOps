@@ -171,12 +171,19 @@ def register_routes(app: Flask, engine, auth_fn: Callable[[], bool], model_alias
                     entry["result"] = result
                     entry["completed_at"] = time.time()
         except Exception as e:
-            logger.exception("Async transcription failed")
+            if isinstance(e, EngineUnavailable):
+                msg = str(e)  # our own crafted message, safe for clients
+                logger.info("Async transcription rejected: %s", e)
+            else:
+                # Same rule as the sync path: no raw exception text to clients.
+                err_id = uuid.uuid4().hex[:8]
+                logger.error("Async transcription failed [err_id=%s]", err_id, exc_info=e)
+                msg = f"Transkription fehlgeschlagen — Details im Server-Log (Fehler-ID: {err_id})."
             with tasks_lock:
                 entry = tasks.get(task_id)
                 if entry is not None and entry["status"] == "processing":
                     entry["status"] = "failed"
-                    entry["error"] = str(e)
+                    entry["error"] = msg
                     entry["completed_at"] = time.time()
         finally:
             if os.path.exists(tmp_path):
@@ -240,15 +247,23 @@ def register_routes(app: Flask, engine, auth_fn: Callable[[], bool], model_alias
         def _error_response(e: Exception):
             if isinstance(e, EngineUnavailable):
                 # Reload in flight or load never succeeded — distinguishable
-                # from a real server error so clients can retry.
+                # from a real server error so clients can retry. The message
+                # is one of our own crafted strings, never raw exception text.
                 logger.info("Transcription rejected: engine temporarily unavailable (%s)", e)
                 return (
                     jsonify({"error": {"message": str(e), "type": "engine_unavailable"}}),
                     503,
                     {"Retry-After": "10"},
                 )
-            logger.error("Transcription failed", exc_info=e)
-            return jsonify({"error": {"message": str(e), "type": "server_error"}}), 500
+            # Don't leak internal exception text (paths, library internals) to
+            # API clients — log the traceback and hand out a reference id.
+            err_id = uuid.uuid4().hex[:8]
+            logger.error("Transcription failed [err_id=%s]", err_id, exc_info=e)
+            return jsonify({"error": {
+                "message": f"Transkription fehlgeschlagen — Details im Server-Log (Fehler-ID: {err_id}).",
+                "type": "server_error",
+                "error_id": err_id,
+            }}), 500
 
         def _success_response(result):
             if "_raw_text" in result:

@@ -115,16 +115,22 @@ class WhisperXEngine(Engine):
 
         segments = []
         text_parts = []
-        for i, seg in enumerate(result.get("segments", [])):
+        for seg in result.get("segments", []):
             seg_words = seg.get("words", [])
             if any(w.get(REPLACED_KEY) for w in seg_words):
                 # Rebuild the text from the corrected words; the original
                 # segment string still holds the uncorrected spelling.
-                seg_text = " " + " ".join(w["word"] for w in seg_words if w.get("word"))
+                joined = " ".join(w["word"] for w in seg_words if w.get("word"))
+                if not joined:
+                    # Replacement rules blanked out every word (e.g. a spoken
+                    # command whose punctuation moved to the previous segment)
+                    # — drop the now-empty segment instead of emitting " ".
+                    continue
+                seg_text = " " + joined
             else:
                 seg_text = seg.get("text", "")
             entry = {
-                "id": i,
+                "id": len(segments),
                 "start": round(seg.get("start", 0), 2),
                 "end": round(seg.get("end", 0), 2),
                 "text": seg_text,
