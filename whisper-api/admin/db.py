@@ -17,6 +17,19 @@ def init_db(db_path: str) -> None:
         with open(MIGRATIONS_PATH) as f:
             conn.executescript(f.read())
         conn.commit()
+        # Lightweight column migrations for DBs created before the columns
+        # existed — same pattern as the web-app: ADD COLUMN and ignore the
+        # "duplicate column name" error.
+        for ddl in (
+            "ALTER TABLE instances ADD COLUMN timeout_secs INTEGER NOT NULL DEFAULT 600",
+            "ALTER TABLE instances ADD COLUMN idle_unload_secs INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE instances ADD COLUMN last_used_at INTEGER",
+        ):
+            try:
+                conn.execute(ddl)
+                conn.commit()
+            except sqlite3.OperationalError:
+                pass
 
 
 @contextmanager
@@ -87,15 +100,34 @@ def count_active_keys(db_path: str) -> int:
 
 # --- instances --------------------------------------------------------------
 def create_instance(db_path: str, *, name: str, engine: str, model: str, purpose: str,
-                    device: str, compute_type: str, port: int, enabled: int = 1) -> int:
+                    device: str, compute_type: str, port: int, enabled: int = 1,
+                    timeout_secs: int = 600, idle_unload_secs: int = 0) -> int:
     with connect(db_path) as c:
         cur = c.execute(
-            "INSERT INTO instances (name, engine, model, purpose, device, compute_type, port, enabled, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (name, engine, model, purpose, device, compute_type, port, enabled, int(time.time())),
+            "INSERT INTO instances (name, engine, model, purpose, device, compute_type, port, enabled, created_at, timeout_secs, idle_unload_secs) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (name, engine, model, purpose, device, compute_type, port, enabled, int(time.time()),
+             int(timeout_secs), int(idle_unload_secs)),
         )
         c.commit()
         return cur.lastrowid
+
+
+def update_instance_settings(db_path: str, instance_id: int, *,
+                             timeout_secs: int, idle_unload_secs: int) -> None:
+    with connect(db_path) as c:
+        c.execute(
+            "UPDATE instances SET timeout_secs = ?, idle_unload_secs = ? WHERE id = ?",
+            (int(timeout_secs), int(idle_unload_secs), instance_id),
+        )
+        c.commit()
+
+
+def touch_instance_last_used(db_path: str, instance_id: int) -> None:
+    with connect(db_path) as c:
+        c.execute("UPDATE instances SET last_used_at = ? WHERE id = ?",
+                  (int(time.time()), instance_id))
+        c.commit()
 
 
 def list_instances(db_path: str, enabled_only: bool = False) -> list[dict]:

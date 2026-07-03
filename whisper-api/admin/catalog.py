@@ -43,6 +43,11 @@ CATALOG: list[CatalogEntry] = [
                  "Parakeet TDT 0.6B v2", "Ältere Parakeet-Variante.", "~1.2 GB"),
     CatalogEntry("parakeet-tdt-1.1b", "nvidia/parakeet-tdt-1.1b", "parakeet", "nemo",
                  "Parakeet TDT 1.1B", "Größeres Parakeet-Modell.", "~2.2 GB"),
+    CatalogEntry("parakeet-primeline", "primeline/parakeet-primeline", "parakeet", "nemo",
+                 "Parakeet Primeline (Deutsch)",
+                 "Deutsch-optimiertes Parakeet-TDT-Finetune (600M, CC-BY-4.0) — "
+                 "sehr präzise deutsche Transkription (2,95% WER auf Tuda-De).",
+                 "~2.5 GB"),
 
     # NOTE: Alignment (wav2vec2) and Diarization (pyannote) are intentionally
     # NOT listed here. Alignment bundles (en/fr/de/es/it) are baked into the

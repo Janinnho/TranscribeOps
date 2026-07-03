@@ -49,7 +49,23 @@ def _build_app(args) -> Flask:
             return True
         return False
 
-    register_routes(app, engine, check_auth, model_alias=args.model)
+    # Timeout + idle bookkeeping live in the instances table so admin-UI
+    # changes apply without restarting the worker. Reads are per-request,
+    # which is negligible next to a transcription.
+    timeout_fn = None
+    activity_cb = None
+    if args.instance_id:
+        from admin.db import get_instance, touch_instance_last_used
+
+        def timeout_fn():
+            row = get_instance(db_path, args.instance_id)
+            return (row or {}).get("timeout_secs") or 0
+
+        def activity_cb():
+            touch_instance_last_used(db_path, args.instance_id)
+
+    register_routes(app, engine, check_auth, model_alias=args.alias or args.model,
+                    timeout_fn=timeout_fn, activity_cb=activity_cb)
     return app
 
 
@@ -58,16 +74,22 @@ def main():
     parser.add_argument("--port", type=int, required=True)
     parser.add_argument("--engine", required=True, choices=["whisperx", "nemo"])
     parser.add_argument("--model", required=True)
+    parser.add_argument("--alias", default=None,
+                        help="Instance name; exposed in /v1/models and used as routing alias.")
+    parser.add_argument("--instance-id", type=int, default=None,
+                        help="Row id in the instances table; enables per-instance timeout and idle tracking.")
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--compute-type", default="int8")
     parser.add_argument("--db-path", required=True)
     args = parser.parse_args()
 
     app = _build_app(args)
-    logger.info(f"Worker listening on 0.0.0.0:{args.port} (engine={args.engine} model={args.model})")
+    # Loopback only: instances are reached exclusively through the router on
+    # the main port; their own ports are an internal implementation detail.
+    logger.info(f"Worker listening on 127.0.0.1:{args.port} (engine={args.engine} model={args.model} alias={args.alias or args.model})")
 
     from werkzeug.serving import run_simple
-    run_simple("0.0.0.0", args.port, app, threaded=True, use_reloader=False)
+    run_simple("127.0.0.1", args.port, app, threaded=True, use_reloader=False)
 
 
 if __name__ == "__main__":

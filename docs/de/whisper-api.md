@@ -1,18 +1,20 @@
-# Whisper API Service
+# TranscribeOps Modell API (Whisper API Service)
 
-Der Whisper API Service ist ein eigenständiger Flask-Server, der eine **OpenAI-kompatible** Transkriptions-API bereitstellt. Er verwendet [WhisperX](https://github.com/m-bain/whisperX) (basierend auf faster-whisper) mit Word-Level-Alignment und optionaler Speaker Diarization.
+Der Modell-API-Service ist ein eigenständiger Flask-Server, der eine **OpenAI-kompatible** Transkriptions-API bereitstellt. Er unterstützt zwei Engines — **WhisperX** (faster-whisper mit Word-Alignment) und **NeMo** (NVIDIA Parakeet) — und kann mehrere Modelle gleichzeitig betreiben. Verwaltet wird alles über ein integriertes **Admin-UI**.
 
 ## Inhaltsverzeichnis
 
 - [Übersicht](#übersicht)
-- [Installation & Start](#installation--start)
+- [Architektur: Main-Engine und Instanzen](#architektur-main-engine-und-instanzen)
+- [Modell-Routing über den model-Parameter](#modell-routing-über-den-model-parameter)
+- [Admin-UI](#admin-ui)
 - [API-Endpunkte](#api-endpunkte)
+- [Wörterbuch und Ersetzungsregeln (prompt)](#wörterbuch-und-ersetzungsregeln-prompt)
+- [Timeout und RAM-Freigabe](#timeout-und-ram-freigabe)
+- [Modellkatalog](#modellkatalog)
 - [Konfiguration](#konfiguration)
-- [Modelle](#modelle)
-- [Ausgabeformate](#ausgabeformate)
 - [Authentifizierung](#authentifizierung)
-- [GPU-Unterstützung](#gpu-unterstützung)
-- [Performance-Tipps](#performance-tipps)
+- [Integration mit TranscribeOps](#integration-mit-transcribeops)
 
 ---
 
@@ -20,44 +22,50 @@ Der Whisper API Service ist ein eigenständiger Flask-Server, der eine **OpenAI-
 
 | Eigenschaft | Wert |
 |------------|------|
-| **Framework** | Flask + Gunicorn |
-| **Engine** | WhisperX (faster-whisper + Alignment + Diarization) |
+| **Framework** | Flask + Gunicorn (Hauptprozess), Werkzeug (Instanz-Worker) |
+| **Engines** | WhisperX (faster-whisper + Alignment + Diarization), NeMo (Parakeet TDT) |
 | **API-Kompatibilität** | OpenAI Whisper API (`/v1/audio/transcriptions`) |
-| **Standard-Port** | 8000 (intern), 8090 (extern) |
-| **Standard-Modell** | `medium` |
-| **Speicherlimit** | 4 GB (Docker) |
+| **Externer Port** | 8000 — einziger Einstiegspunkt für API **und** Admin-UI |
+| **Admin-UI** | `http://<host>:8000/admin` |
+| **Standard-Modell** | `medium` (WhisperX), per Admin-UI änderbar |
 
 ---
 
-## Installation & Start
+## Architektur: Main-Engine und Instanzen
 
-### Docker (empfohlen)
+Der Service besteht aus einem **Hauptprozess** und optionalen **Instanz-Workern**:
 
-```bash
-# Netzwerk erstellen (einmalig)
-docker network create transcribeops-shared
+- **Hauptprozess (Port 8000):** Lädt die Main-Engine (Alias `whisper-1`), beherbergt das Admin-UI und den **Model-Router**, der Anfragen anhand des `model`-Parameters verteilt.
+- **Instanz-Worker:** Eigenständige Prozesse, die je ein weiteres Modell laden (z.B. ein schnelles `tiny` für Diktate und ein deutsches Parakeet für Meetings). Sie werden im Admin-UI angelegt und vom Hauptprozess verwaltet (Start/Stop/Respawn). Ihre internen Ports (Standard 8100–8120) binden **nur an localhost** — von außen läuft alles über Port 8000.
 
-# Service starten
-cd whisper-api
-docker compose up -d
-```
+Prozess-Trennung bedeutet: Ein Absturz oder Speicherproblem einer Instanz reißt weder den Hauptprozess noch andere Modelle mit, und Instanzen können einzeln gestartet, gestoppt oder aus dem RAM entladen werden.
 
-### Health-Check
+---
 
-```bash
-curl http://localhost:8090/health
-```
+## Modell-Routing über den `model`-Parameter
 
-Erwartete Antwort:
-```json
-{
-  "status": "ok",
-  "default_model": "medium",
-  "device": "cpu",
-  "compute_type": "int8",
-  "models_loaded": ["medium"]
-}
-```
+Der `model`-Parameter der API entscheidet, welcher Prozess die Anfrage bearbeitet:
+
+| `model`-Wert | Ziel |
+|--------------|------|
+| leer oder `whisper-1` | Main-Engine (empfohlen für den Standardfall) |
+| Name der Main-Engine (z.B. `medium`) | Main-Engine |
+| Instanz-Name (z.B. `express`) | Die entsprechende Instanz |
+| unbekannter Wert | `404` mit Liste der verfügbaren Modelle |
+
+Der **Instanz-Name ist der Alias**: Eine Instanz namens `diktat-schnell` wird mit `model=diktat-schnell` angesprochen. `GET /v1/models` listet alle verfügbaren Aliase — Clients können die Modelle also automatisch entdecken.
+
+Schlafende Instanzen (siehe [RAM-Freigabe](#timeout-und-ram-freigabe)) werden bei einer Anfrage automatisch gestartet; die Anfrage wartet dann auf das Laden des Modells. Explizit gestoppte Instanzen werden **nicht** automatisch gestartet.
+
+---
+
+## Admin-UI
+
+Erreichbar unter `http://<host>:8000/admin` (Passwort: `ADMIN_PASSWORD`). Drei Bereiche:
+
+1. **Modelle** — Kuratierter Katalog zum Herunterladen (Whisper-Größen, Parakeet-Varianten, deutsch-optimiertes Parakeet Primeline). Zusätzlich lassen sich **eigene HuggingFace-Repos** per `repo_id` laden; NeMo-Modelle funktionieren auch als einzelne `.nemo`-Checkpoint-Datei (Community-Finetunes).
+2. **Instanzen** — Instanzen anlegen (Name = API-Alias, Engine, Modell, Device, Compute-Type, Timeout, RAM-Freigabe), starten/stoppen, Einstellungen ändern. Die Main-Engine erscheint als erste Zeile und kann hier umkonfiguriert werden (löst einen Reload aus; reine Timeout-/RAM-Änderungen nicht).
+3. **API-Keys** — Bearer-Keys erzeugen und widerrufen (gehasht gespeichert).
 
 ---
 
@@ -65,385 +73,120 @@ Erwartete Antwort:
 
 ### `POST /v1/audio/transcriptions`
 
-Transkribiert eine Audiodatei.
-
 **Content-Type:** `multipart/form-data`
-
-**Parameter:**
 
 | Parameter | Typ | Pflicht | Beschreibung | Standard |
 |-----------|-----|---------|-------------|----------|
-| `file` | File | Ja | Audiodatei (beliebiges Format) | — |
-| `model` | String | Nein | Modellgröße oder `whisper-1` | `whisper-1` |
-| `language` | String | Nein | Sprach-Code (ISO 639-1) | Auto-Erkennung |
-| `response_format` | String | Nein | Ausgabeformat | `json` |
+| `file` | File | Ja | Audiodatei (beliebiges Format, ffmpeg-lesbar) | — |
+| `model` | String | Nein | Modell-Alias, siehe [Routing](#modell-routing-über-den-model-parameter) | `whisper-1` |
+| `language` | String | Nein | Sprach-Code (ISO 639-1), z.B. `de` | Auto-Erkennung |
+| `prompt` | String | Nein | Wörterbuch + Ersetzungsregeln, siehe [unten](#wörterbuch-und-ersetzungsregeln-prompt) | — |
+| `response_format` | String | Nein | `json`, `verbose_json`, `text`, `srt`, `vtt` | `json` |
+| `diarize` | Bool | Nein | Sprechererkennung (benötigt `HF_TOKEN`) | `false` |
+| `async` | Bool | Nein | Asynchroner Modus: sofort `202` + `task_id` | `false` |
 
-**Beispiel (cURL):**
+**Beispiel:**
 
 ```bash
-curl -X POST http://localhost:8090/v1/audio/transcriptions \
-  -H "Authorization: Bearer my-secret-key" \
-  -F "file=@interview.mp3" \
-  -F "model=whisper-1" \
+curl -X POST http://localhost:8000/v1/audio/transcriptions \
+  -H "Authorization: Bearer wsk_..." \
+  -F "file=@meeting.mp3" \
+  -F "model=express2" \
   -F "language=de" \
+  -F "prompt=Jannik Baader, IuK" \
+  -F "diarize=true" \
   -F "response_format=verbose_json"
 ```
 
-**Erfolgsantwort (json):**
-```json
-{
-  "text": "Hallo, das ist ein Testtext."
-}
-```
+**Fehlercodes:** `400` (keine Datei), `401` (ungültiger Key), `404` (unbekanntes Modell), `500` (Transkriptionsfehler), `503` (Engine lädt gerade / Instanz nicht startbar, mit `Retry-After`), `504` (Timeout überschritten).
 
-**Erfolgsantwort (verbose_json):**
-```json
-{
-  "text": "Hallo, das ist ein Testtext.",
-  "language": "de",
-  "duration": 5.42,
-  "segments": [
-    {
-      "id": 0,
-      "start": 0.0,
-      "end": 2.5,
-      "text": " Hallo, das ist"
-    },
-    {
-      "id": 1,
-      "start": 2.5,
-      "end": 5.42,
-      "text": " ein Testtext."
-    }
-  ]
-}
-```
+### `GET /v1/audio/transcriptions/<task_id>`
 
-**Fehlerantworten:**
-
-| Code | Beschreibung |
-|------|-------------|
-| `400` | Keine Audiodatei oder leerer Dateiname |
-| `401` | Ungültiger API-Schlüssel |
-| `500` | Transkriptionsfehler (z.B. ungültiges Audioformat) |
-
-```json
-{
-  "error": {
-    "message": "Invalid API key.",
-    "type": "auth_error"
-  }
-}
-```
-
----
+Status-Polling für asynchrone Tasks. Antwort enthält `status` (`processing` / `completed` / `failed`), `progress` (0–100), `progress_step` und bei Abschluss `result` bzw. `error`. Ergebnisse werden nach Abholung bzw. nach 1 Stunde verworfen. Der Hauptprozess leitet Polls automatisch an die zuständige Instanz weiter.
 
 ### `GET /v1/models`
 
-Listet verfügbare Modelle (OpenAI-kompatibel).
+Listet alle nutzbaren Modelle: `whisper-1` + Modell der Main-Engine + alle Instanz-Aliase (laufend oder schlafend), mit `description` = Engine/Modell.
 
-**Authentifizierung:** Erforderlich (falls API-Key konfiguriert)
+### `GET /health`
 
-**Antwort:**
-```json
-{
-  "object": "list",
-  "data": [
-    {"id": "whisper-1", "object": "model", "owned_by": "local", "description": "Default (medium)"},
-    {"id": "tiny", "object": "model", "owned_by": "local"},
-    {"id": "base", "object": "model", "owned_by": "local"},
-    {"id": "small", "object": "model", "owned_by": "local"},
-    {"id": "medium", "object": "model", "owned_by": "local"},
-    {"id": "large-v3", "object": "model", "owned_by": "local"},
-    {"id": "turbo", "object": "model", "owned_by": "local"}
-  ]
-}
+Ohne Authentifizierung. Liefert Engine, Modell, Device, Compute-Type, `main_engine_loaded`, `active_requests` sowie Diarization-/Alignment-Fähigkeiten.
+
+---
+
+## Wörterbuch und Ersetzungsregeln (`prompt`)
+
+Der `prompt`-Parameter transportiert ein kommagetrenntes Wörterbuch. Beide lokalen Engines wenden es als Nachkorrektur auf Wortebene an (Timestamps bleiben erhalten):
+
+- **`Eigenname`** — ähnlich klingende Wörter im Transkript werden auf die exakte Schreibweise gezogen (fuzzy): `Janik Bader` → `Jannik Baader`. Auch Mehrwort-Einträge und Bindestrich-Komposita (`IOK-Abteilung` → `IuK-Abteilung`) werden korrigiert. Kurze Einträge (2–3 Zeichen, z.B. Akronyme wie `IuK`) matchen streng: exakt oder mit maximal einem Buchstaben Unterschied bei gleichem Anfangs-/Endbuchstaben.
+- **`Quelle=Ziel`** — Ersetzungsregel: Wird die Quelle erkannt (auch fuzzy), wird sie komplett durch das Ziel ersetzt, z.B. `Doppelpunkt=:` oder `mfg=mit freundlichen Grüßen`. Besteht das Ziel nur aus Satzzeichen, wird es diktat-typisch an das vorherige Wort angehängt („ist denn Doppelpunkt“ → „ist denn:“). Ein Komma kann bauartbedingt nicht als Ziel dienen (Kommas trennen die Einträge).
+
+```
+prompt=Jannik Baader, IuK, Erika Mustermann, Doppelpunkt=:, mfg=mit freundlichen Grüßen
 ```
 
 ---
 
-### `GET /health`
+## Timeout und RAM-Freigabe
 
-Health-Check-Endpunkt (keine Authentifizierung erforderlich).
+Beides pro Modell im Admin-UI einstellbar (Instanz-Einstellungen bzw. Main-Engine-Dialog), Änderungen gelten sofort ohne Neustart:
 
-**Antwort:**
-```json
-{
-  "status": "ok",
-  "default_model": "medium",
-  "device": "cpu",
-  "compute_type": "int8",
-  "models_loaded": ["medium"]
-}
-```
+- **Timeout** (Standard: 600s, `0` = unbegrenzt): Maximale Verarbeitungszeit pro Anfrage. Synchrone Anfragen erhalten nach Ablauf `504`, asynchrone Tasks werden beim Polling als `failed` markiert.
+- **RAM-Freigabe / Idle-Unload** (Standard: aus, `0` = dauerhaft geladen): Nach X Sekunden ohne Anfrage wird das Modell entladen — bei Instanzen wird der ganze Worker-Prozess gestoppt (Status „Schläft“), bei der Main-Engine das Modell im Prozess freigegeben. Die nächste Anfrage lädt automatisch nach und wartet solange. Laufende Transkriptionen verhindern die Entladung.
+
+---
+
+## Modellkatalog
+
+| Modell | Engine | Größe | Beschreibung |
+|--------|--------|-------|-------------|
+| `tiny` / `base` / `small` | WhisperX | 75 MB – 465 MB | Schnell, CPU-freundlich |
+| `medium` | WhisperX | ~1,5 GB | Standard-Empfehlung |
+| `large-v3` / `large-v3-turbo` | WhisperX | ~3 GB / ~1,5 GB | Beste Whisper-Qualität |
+| `parakeet-tdt-0.6b-v2/v3`, `parakeet-tdt-1.1b` | NeMo | 1,2 – 2,2 GB | NVIDIA Parakeet, sehr schnelles ASR |
+| `parakeet-primeline` | NeMo | ~2,5 GB | **Deutsch-optimiertes** Parakeet-Finetune (CC-BY-4.0) |
+
+Alignment-Modelle (wav2vec2 für en/fr/de/es/it) sind ins Image eingebacken; pyannote-Diarization wird beim ersten Start mit `HF_TOKEN` automatisch geladen. Alle Modelle und die Admin-Datenbank liegen im Volume unter `/root/.cache` und überleben Container-Neustarts.
 
 ---
 
 ## Konfiguration
 
-### Umgebungsvariablen
-
 | Variable | Beschreibung | Standard |
 |----------|-------------|----------|
-| `WHISPER_API_KEY` | API-Schlüssel für Bearer-Auth (leer = kein Auth) | `""` |
-| `WHISPER_MODEL` | Standard-Modellgröße | `medium` |
-| `WHISPER_DEVICE` | Berechnungsgerät | `cpu` |
-| `WHISPER_COMPUTE_TYPE` | Berechnungsgenauigkeit | `int8` |
+| `WHISPER_API_KEY` | Statischer API-Key (zusätzlich zu Admin-UI-Keys) | `""` |
+| `WHISPER_MODEL` | Initiales Main-Engine-Modell | `medium` |
+| `WHISPER_DEVICE` | `cpu`, `cuda` oder `mps` | `cpu` |
+| `WHISPER_COMPUTE_TYPE` | `int8`, `int16`, `float16`, `float32` | `int8` |
+| `WHISPER_BATCH_SIZE` | Batch-Größe der Transkription | `16` |
+| `HF_TOKEN` | HuggingFace-Token (nötig für Diarization/pyannote) | `""` |
+| `ADMIN_PASSWORD` | Admin-UI-Passwort (leer = Admin-UI deaktiviert) | `""` |
+| `ADMIN_SESSION_SECRET` | Session-Secret des Admin-UI | abgeleitet |
+| `ADMIN_DB_PATH` | Pfad der Admin-SQLite-DB | `/root/.cache/transcribeops/admin.db` |
+| `INSTANCE_PORT_RANGE` | Interne Portrange der Instanz-Worker | `8100-8120` |
+| `DISABLE_MAIN_ENGINE` | `1` = Hauptprozess lädt kein Modell (nur Router + Admin) | `0` |
+| `ROUTER_READ_TIMEOUT` | Proxy-Timeout ohne Modell-Timeout (Sekunden) | `3600` |
+| `ROUTER_STARTUP_TIMEOUT` | Max. Wartezeit beim Auto-Start schlafender Instanzen | `300` |
 
-### Docker-Compose
-
-```yaml
-services:
-  whisper:
-    build: .
-    ports:
-      - "8090:8000"
-    environment:
-      - WHISPER_API_KEY=${WHISPER_API_KEY:-my-secret-key}
-      - WHISPER_MODEL=${WHISPER_MODEL:-medium}
-      - WHISPER_DEVICE=cpu
-      - WHISPER_COMPUTE_TYPE=int8
-    volumes:
-      - whisper_cache:/root/.cache     # Hugging Face Modell-Cache
-    networks:
-      - transcribeops
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 4G
-```
-
-### `.env`-Datei (optional)
-
-```env
-WHISPER_API_KEY=mein-sicherer-schlüssel
-WHISPER_MODEL=large-v3
-```
-
----
-
-## Modelle
-
-### Verfügbare Modelle
-
-| Modell | Parameter | RAM (CPU, int8) | Sprachen | Genauigkeit |
-|--------|-----------|----------------|----------|-------------|
-| `tiny` | 39 M | ~1 GB | Alle | Gering |
-| `base` | 74 M | ~1 GB | Alle | Gering-Mittel |
-| `small` | 244 M | ~2 GB | Alle | Mittel |
-| `medium` | 769 M | ~4 GB | Alle | Gut |
-| `large-v3` | 1.55 B | ~6 GB | Alle | Sehr gut |
-| `turbo` | 809 M | ~6 GB | Alle | Sehr gut (schneller als large) |
-
-### Modell-Mapping
-
-| API-Parameter | Tatsächlich verwendetes Modell |
-|--------------|-------------------------------|
-| `whisper-1` | Konfiguriertes Standard-Modell (`WHISPER_MODEL`) |
-| `whisper-large-v3` | Konfiguriertes Standard-Modell |
-| Andere Werte | Direkt als Modellgröße verwendet |
-
-### Modell-Caching
-
-- Modelle werden beim ersten Laden von Hugging Face heruntergeladen
-- Das Docker-Volume `whisper_cache` speichert geladene Modelle persistent
-- Das Standard-Modell wird beim Container-Start vorgeladen
-- Weitere Modelle werden bei Bedarf geladen und gecacht
-
----
-
-## Ausgabeformate
-
-### `json` (Standard)
-
-Einfaches JSON mit dem gesamten Text:
-
-```json
-{
-  "text": "Der vollständige transkribierte Text."
-}
-```
-
-### `verbose_json`
-
-Erweitertes JSON mit Metadaten und Zeitstempel-Segmenten:
-
-```json
-{
-  "text": "Der vollständige transkribierte Text.",
-  "language": "de",
-  "duration": 45.67,
-  "segments": [
-    {
-      "id": 0,
-      "start": 0.0,
-      "end": 3.5,
-      "text": " Der vollständige"
-    },
-    {
-      "id": 1,
-      "start": 3.5,
-      "end": 5.2,
-      "text": " transkribierte Text."
-    }
-  ]
-}
-```
-
-### `text`
-
-Nur der transkribierte Text als Plain-Text:
-
-```
-Der vollständige transkribierte Text.
-```
-
-### `srt`
-
-SubRip Subtitle Format:
-
-```
-1
-00:00:00,000 --> 00:00:03,500
-Der vollständige
-
-2
-00:00:03,500 --> 00:00:05,200
-transkribierte Text.
-```
-
-### `vtt`
-
-WebVTT Format:
-
-```
-WEBVTT
-
-00:00:00.000 --> 00:00:03.500
-Der vollständige
-
-00:00:03.500 --> 00:00:05.200
-transkribierte Text.
-```
+Engine-/Modell-Änderungen über das Admin-UI werden in der Admin-DB persistiert und überschreiben die Env-Defaults. Schema-Migrationen der Admin-DB laufen automatisch beim Start.
 
 ---
 
 ## Authentifizierung
 
-### Bearer Token
-
-Wenn `WHISPER_API_KEY` gesetzt ist, wird ein Bearer Token erwartet:
-
-```
-Authorization: Bearer <api-key>
-```
-
-### Ohne Authentifizierung
-
-Wenn `WHISPER_API_KEY` leer ist (`""`), ist keine Authentifizierung erforderlich. Dies ist sinnvoll in isolierten Docker-Netzwerken ohne externen Zugriff.
-
----
-
-## GPU-Unterstützung
-
-### NVIDIA CUDA
-
-Für GPU-beschleunigte Transkription:
-
-1. **NVIDIA Container Toolkit** installieren:
-   ```bash
-   # Ubuntu/Debian
-   distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
-   curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-   curl -s -L https://nvidia.github.io/libnvidia-container/$distribution/libnvidia-container.list | \
-     sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-     sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-   sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
-   sudo nvidia-ctk runtime configure --runtime=docker && sudo systemctl restart docker
-   ```
-
-2. **docker-compose.yml anpassen:**
-
-   ```yaml
-   services:
-     whisper:
-       build: .
-       environment:
-         - WHISPER_DEVICE=cuda
-         - WHISPER_COMPUTE_TYPE=float16
-       deploy:
-         resources:
-           reservations:
-             devices:
-               - driver: nvidia
-                 count: 1
-                 capabilities: [gpu]
-   ```
-
-3. **Dockerfile anpassen** (für CUDA-Base-Image):
-
-   ```dockerfile
-   FROM nvidia/cuda:12.1-runtime-ubuntu22.04
-   # ... Python und Dependencies installieren
-   ```
-
-### Compute Types mit GPU
-
-| Typ | Beschreibung | Empfehlung |
-|-----|-------------|------------|
-| `float16` | Standard für GPU — guter Kompromiss | Empfohlen |
-| `int8` | Weniger VRAM, minimal geringere Genauigkeit | Für kleinere GPUs |
-| `float32` | Höchste Genauigkeit, mehr VRAM | Selten nötig |
-
----
-
-## Performance-Tipps
-
-### Modellwahl
-
-- **Für Geschwindigkeit:** `tiny` oder `base` — sehr schnell, aber weniger genau
-- **Für Balance:** `medium` — guter Kompromiss (Standard)
-- **Für Genauigkeit:** `large-v3` — beste Ergebnisse, langsamer
-- **Für Genauigkeit + Geschwindigkeit:** `turbo` — ähnlich wie large, aber schneller
-
-### VAD-Filter
-
-Der Service aktiviert automatisch den **Voice Activity Detection (VAD) Filter** (`vad_filter=True`). Dieser filtert Stille-Abschnitte heraus und verbessert die Verarbeitungsgeschwindigkeit, besonders bei Aufnahmen mit langen Pausen.
-
-### Beam Size
-
-Die Standard-Beam-Size ist `5`. Höhere Werte können die Genauigkeit verbessern, verlangsamen aber die Verarbeitung.
-
-### Speicher
-
-- Stellen Sie sicher, dass genügend RAM/VRAM für das gewählte Modell verfügbar ist
-- Das Docker-Speicherlimit (Standard: 4 GB) muss mindestens so groß sein wie der RAM-Bedarf des Modells
-- Bei `large-v3` auf CPU wird empfohlen, das Limit auf 8 GB zu erhöhen
-
-### Concurrency
-
-Der Gunicorn-Server ist mit `--workers 1 --threads 4` konfiguriert:
-- **1 Worker** — Whisper-Modelle sind speicherintensiv; mehrere Worker würden das Modell mehrfach laden
-- **4 Threads** — Ermöglicht parallele Request-Bearbeitung (I/O), die eigentliche Transkription läuft sequenziell
-
-### Sprache angeben
-
-Wenn die Sprache bekannt ist, geben Sie sie explizit an (`language=de`). Dies spart die automatische Spracherkennung und verbessert die Genauigkeit, besonders bei kurzen Aufnahmen.
+Bearer-Token im `Authorization`-Header. Gültig sind der statische `WHISPER_API_KEY` (falls gesetzt) und alle aktiven, im Admin-UI erzeugten Keys. Sind weder Env-Key noch DB-Keys konfiguriert, ist die API offen — nur sinnvoll in isolierten Netzwerken.
 
 ---
 
 ## Integration mit TranscribeOps
 
-In TranscribeOps wird der Whisper API Service als **Sprachmodell** mit Provider `whisper_local` konfiguriert:
+Jedes Modell wird in der Web-App als eigenes **Sprachmodell** mit Provider `whisper_local` angelegt — alle mit derselben Endpunkt-URL, unterschieden nur durch die Modell-ID:
 
 ```
-Name:          whisper-lokal
-Anzeigename:   Lokales Whisper
 Provider:      whisper_local
-Endpunkt-URL:  http://whisper:8000/v1/audio/transcriptions
-API-Schlüssel: my-secret-key (falls konfiguriert)
-Modell-ID:     whisper-1
+Endpunkt-URL:  http://localhost:8000/v1/audio/transcriptions   (Pod/Compose-intern)
+API-Schlüssel: <Key aus dem Admin-UI>
+Modell-ID:     whisper-1        (Main-Engine)  bzw.  <Instanz-Name>
 ```
 
-Die Kommunikation erfolgt über das gemeinsame Docker-Netzwerk `transcribeops-shared`. Der Hostname `whisper` wird automatisch vom Docker DNS aufgelöst.
+Ein neues Modell anbieten heißt also nur: Modell im Admin-UI herunterladen → Instanz anlegen → Sprachmodell-Eintrag in der Web-App mit `model_id` = Instanz-Name. Kein neuer Port, kein neuer Container.

@@ -111,10 +111,10 @@ services:
 
 ```bash
 # Health check
-curl http://localhost:8090/health
+curl http://localhost:8000/health
 
 # Expected response:
-# {"status":"ok","default_model":"medium","device":"cpu","compute_type":"int8","models_loaded":["medium"]}
+# {"status":"ok","engine":"whisperx","model":"medium","device":"cpu","compute_type":"int8","main_engine_loaded":true}
 ```
 
 ---

@@ -3,14 +3,14 @@
 {% block content %}
 <h1 class="page-title">{{ _('Instances') }}</h1>
 <p class="page-subtitle">
-  {{ _('Each instance loads its own model and listens on its own port. Multiple instances run in parallel — ideal for express mode without a separate container.') }}
-  {{ _('Port range: %(range)s', range=('<code>' + port_range|string + '</code>')|safe) | safe }}
+  {{ _('Each instance loads its own model in its own process — multiple instances run in parallel.') }}
+  {{ _('All requests go through the main API port: pass the instance name as the %(param)s parameter and it is routed to the right instance automatically.', param='<code>model</code>'|safe) | safe }}
 </p>
 
 <section class="card">
   <h2>{{ _('New instance') }}</h2>
   <form id="new-instance-form" class="form-grid">
-    <label>{{ _('Name') }} <input type="text" name="name" required placeholder="{{ _('e.g. express') }}"></label>
+    <label>{{ _('Name (used as model parameter)') }} <input type="text" name="name" required placeholder="{{ _('e.g. express') }}" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" maxlength="64" title="{{ _('Letters, digits, dots, hyphens and underscores') }}"></label>
     <label>{{ _('Engine') }}
       <select name="engine" id="engine-select">
         <option value="whisperx">WhisperX</option>
@@ -39,7 +39,12 @@
         <option value="float32">float32</option>
       </select>
     </label>
-    <label>{{ _('Port (empty = automatic)') }} <input type="number" name="port" min="1024" max="65535"></label>
+    <label>{{ _('Timeout in seconds (0 = unlimited)') }}
+      <input type="number" name="timeout_secs" min="0" max="86400" value="600">
+    </label>
+    <label>{{ _('Unload from RAM after idle seconds (0 = keep loaded)') }}
+      <input type="number" name="idle_unload_secs" min="0" max="604800" value="0">
+    </label>
     <div class="form-actions">
       <button type="submit" class="btn btn-primary">{{ _('Create instance') }}</button>
     </div>
@@ -55,8 +60,9 @@
 <table class="data-table" id="instances-table">
   <thead>
     <tr>
-      <th>{{ _('Name') }}</th><th>{{ _('Engine / Model') }}</th><th>{{ _('Port') }}</th>
-      <th>{{ _('Status') }}</th><th>PID</th><th>CPU</th><th>RAM</th><th>{{ _('Actions') }}</th>
+      <th>{{ _('Name') }}</th><th>{{ _('Engine / Model') }}</th><th>{{ _('API model') }}</th>
+      <th>{{ _('Status') }}</th><th>{{ _('Timeout') }}</th><th>{{ _('Idle unload') }}</th>
+      <th>CPU</th><th>RAM</th><th>{{ _('Actions') }}</th>
     </tr>
   </thead>
   <tbody>
@@ -67,7 +73,7 @@
         {% if inst.is_main %}<br><span class="pill pill-blue" title="{{ _('Main process on port 8000 — managed by Gunicorn') }}">{{ _('Default') }}</span>{% endif %}
       </td>
       <td>{{ inst.engine }} / {{ inst.model or '—' }}</td>
-      <td><code>:{{ inst.port }}</code></td>
+      <td>{% if inst.is_main %}<code>whisper-1</code>{% else %}<code>{{ inst.name }}</code>{% endif %}</td>
       <td>
         {% if inst.status == 'running' %}
           <span class="pill pill-green">{{ _('Running') }}</span>
@@ -79,11 +85,14 @@
           <span class="pill pill-gray">{{ _('Disabled') }}</span>
         {% elif inst.status == 'crashed' %}
           <span class="pill pill-red">{{ _('crashed') }}</span>
+        {% elif inst.status == 'sleeping' %}
+          <span class="pill pill-gray" title="{{ _('Unloaded after idle time — starts automatically on the next request.') }}">{{ _('Sleeping') }}</span>
         {% else %}
           <span class="pill pill-gray">{{ _('Stopped') }}</span>
         {% endif %}
       </td>
-      <td>{{ inst.pid or '—' }}</td>
+      <td>{% if inst.timeout_secs %}{{ inst.timeout_secs }}s{% else %}—{% endif %}</td>
+      <td>{% if inst.idle_unload_secs %}{{ inst.idle_unload_secs }}s{% else %}—{% endif %}</td>
       <td>{% if inst.cpu_pct is not none %}{{ inst.cpu_pct }}%{% else %}—{% endif %}</td>
       <td>{% if inst.rss_mb is not none %}{{ inst.rss_mb }} MB{% else %}—{% endif %}</td>
       <td class="row-actions">
@@ -93,7 +102,9 @@
                     data-engine="{{ inst.engine }}"
                     data-model="{{ inst.model }}"
                     data-device="{{ inst.device }}"
-                    data-compute-type="{{ inst.compute_type }}">{{ _('Edit') }}</button>
+                    data-compute-type="{{ inst.compute_type }}"
+                    data-timeout-secs="{{ inst.timeout_secs }}"
+                    data-idle-unload-secs="{{ inst.idle_unload_secs }}">{{ _('Edit') }}</button>
             <button class="btn btn-sm" data-action="reload-main">{{ _('Reload') }}</button>
           {% else %}
             <span class="text-muted">{{ _('disabled via %(var)s', var='<code>DISABLE_MAIN_ENGINE=1</code>'|safe) | safe }}</span>
@@ -104,12 +115,16 @@
           {% else %}
             <button class="btn btn-sm btn-primary" data-action="start" data-id="{{ inst.id }}">{{ _('Start') }}</button>
           {% endif %}
+          <button class="btn btn-sm" data-action="edit-settings" data-id="{{ inst.id }}"
+                  data-name="{{ inst.name }}"
+                  data-timeout-secs="{{ inst.timeout_secs }}"
+                  data-idle-unload-secs="{{ inst.idle_unload_secs }}">{{ _('Settings') }}</button>
           <button class="btn btn-sm btn-danger" data-action="delete" data-id="{{ inst.id }}">{{ _('Delete') }}</button>
         {% endif %}
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="8" class="text-muted text-center">{{ _('No instances created yet.') }}</td></tr>
+    <tr><td colspan="9" class="text-muted text-center">{{ _('No instances created yet.') }}</td></tr>
     {% endfor %}
   </tbody>
 </table>
@@ -149,6 +164,15 @@
         <option value="float32">float32</option>
       </select>
     </label>
+    <label>{{ _('Timeout in seconds (0 = unlimited)') }}
+      <input type="number" name="timeout_secs" id="edit-main-timeout" min="0" max="86400" value="0">
+    </label>
+    <label>{{ _('Unload from RAM after idle seconds (0 = keep loaded)') }}
+      <input type="number" name="idle_unload_secs" id="edit-main-idle" min="0" max="604800" value="0">
+    </label>
+    <p class="hint" style="grid-column: 1 / -1;">
+      {{ _('Timeout and idle unload apply immediately without a reload. Engine/model changes trigger a reload.') }}
+    </p>
     {% if not downloaded_models %}
     <p class="hint" style="grid-column: 1 / -1;">
       {{ _('No models downloaded yet — please load one under "Models" first.') }}
@@ -160,6 +184,26 @@
     </div>
   </form>
 </dialog>
+
+<!-- Settings dialog for instances (timeout / idle unload) -->
+<dialog id="instance-settings-dialog" class="modal">
+  <form id="instance-settings-form" class="form-grid" method="dialog">
+    <h2 style="grid-column: 1 / -1;">{{ _('Instance settings') }}: <span id="instance-settings-name"></span></h2>
+    <label>{{ _('Timeout in seconds (0 = unlimited)') }}
+      <input type="number" name="timeout_secs" min="0" max="86400" value="0">
+    </label>
+    <label>{{ _('Unload from RAM after idle seconds (0 = keep loaded)') }}
+      <input type="number" name="idle_unload_secs" min="0" max="604800" value="0">
+    </label>
+    <p class="hint" style="grid-column: 1 / -1;">
+      {{ _('Applies immediately, no restart needed. A sleeping instance is started automatically on the next request — that request then waits for the model to load.') }}
+    </p>
+    <div class="form-actions" style="grid-column: 1 / -1;">
+      <button type="button" class="btn" data-action="cancel-instance-settings">{{ _('Cancel') }}</button>
+      <button type="submit" class="btn btn-primary">{{ _('Save') }}</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
 
 {% block scripts %}
@@ -167,5 +211,6 @@
   AdminUI.wireInstanceActions();
   AdminUI.wireNewInstanceForm();
   AdminUI.wireMainEngineActions();
+  AdminUI.wireInstanceSettings();
 </script>
 {% endblock %}

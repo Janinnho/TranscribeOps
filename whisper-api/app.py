@@ -12,6 +12,7 @@ from flask import Flask, request, jsonify, session, redirect, url_for
 from flask_babel import Babel
 
 from engines import get_engine, EngineUnavailable, EngineBusy
+from router import InstanceRouter
 from transcription_core import register_routes
 from admin import create_admin_blueprint
 from admin.db import init_db, touch_api_key_last_used, key_is_active
@@ -148,6 +149,43 @@ class _EngineProxy:
         self._config = dict(initial_config)
         self._reload = {"status": "idle", "error": None, "started_at": None}
         self._lock = threading.Lock()
+        # On-demand wake-up after idle unload: `loader` builds+loads an
+        # engine synchronously; `_wake_lock` serialises concurrent wakers.
+        self._loader = None
+        self._wake_lock = threading.Lock()
+
+    def set_loader(self, loader) -> None:
+        self._loader = loader
+
+    def update_config(self, config: dict) -> None:
+        """Refresh the config snapshot without touching the loaded engine."""
+        with self._lock:
+            self._config = dict(config)
+
+    def _wake(self):
+        """Blocking on-demand load after an idle unload ("sleeping")."""
+        with self._wake_lock:
+            with self._lock:
+                if self._real is not None:
+                    return self._real
+            logger.info("Main engine was idle-unloaded — loading on demand.")
+            self.set_reload("loading")
+            try:
+                engine, cfg = self._loader()
+            except Exception as e:
+                logger.exception("On-demand load of main engine failed")
+                self.set_reload("sleeping", str(e))
+                raise EngineUnavailable(f"Main-Engine konnte nicht geladen werden: {e}")
+            self.set_real(engine, cfg)
+            self.set_reload("idle")
+            return engine
+
+    def unload(self) -> None:
+        """Drop the engine to free RAM; next transcribe() reloads it."""
+        with self._lock:
+            self._real = None
+            self._reload = {"status": "sleeping", "error": None, "started_at": None}
+        gc.collect()
 
     def set_real(self, engine, config: dict | None = None) -> None:
         with self._lock:
@@ -204,12 +242,19 @@ class _EngineProxy:
         with self._lock:
             real = self._real
             reload_status = self._reload.get("status")
+        if real is None and reload_status == "sleeping" and self._loader is not None:
+            real = self._wake()
         if real is None:
             # Distinguish transient (reload in flight) from terminal (load
             # never succeeded). Both map to 503, but the message differs so
             # clients can log something useful.
             if reload_status == "loading":
                 raise EngineUnavailable("Main-Engine wird gerade neu geladen.")
+            if reload_status == "disabled":
+                raise EngineUnavailable(
+                    "Main-Engine ist deaktiviert (DISABLE_MAIN_ENGINE=1). "
+                    "Bitte über den model-Parameter eine Instanz ansprechen."
+                )
             raise EngineUnavailable(
                 "Main-Engine nicht geladen "
                 "(letzter Reload fehlgeschlagen oder Konfiguration ungültig)."
@@ -224,12 +269,20 @@ def _resolve_main_config() -> dict:
         "model": DEFAULT_MODEL_SIZE,
         "device": DEVICE,
         "compute_type": COMPUTE_TYPE,
+        "timeout_secs": 600,      # Default wie das frühere gunicorn-Timeout; 0 = unbegrenzt
+        "idle_unload_secs": 0,    # 0 = dauerhaft im RAM
     }
     saved = admin_db.kv_get_json(ADMIN_DB_PATH, MAIN_CFG_KEY)
     if isinstance(saved, dict):
         for k in ("engine", "model", "device", "compute_type"):
             if saved.get(k):
                 cfg[k] = saved[k]
+        for k in ("timeout_secs", "idle_unload_secs"):
+            if k in saved:  # absent = pre-feature config -> keep the default
+                try:
+                    cfg[k] = max(0, int(saved[k] or 0))
+                except (TypeError, ValueError):
+                    pass
     return cfg
 
 
@@ -258,6 +311,7 @@ def _start_main_engine_blocking() -> None:
     """
     if DISABLE_MAIN_ENGINE:
         logger.info("DISABLE_MAIN_ENGINE=1 — main process will not preload a model.")
+        _main_proxy.set_reload("disabled")
         return
 
     # Ensure pyannote diarization models are present before the engine loads.
@@ -344,7 +398,32 @@ def update_main_engine_config(new_cfg: dict) -> dict:
     device = (new_cfg.get("device") or DEVICE).strip()
     compute_type = (new_cfg.get("compute_type") or COMPUTE_TYPE).strip()
 
-    cfg = {"engine": engine, "model": model, "device": device, "compute_type": compute_type}
+    old_cfg = _resolve_main_config()
+
+    def _secs(key: str) -> int:
+        raw = new_cfg.get(key)
+        if raw is None or raw == "":
+            return old_cfg.get(key, 0)
+        try:
+            val = int(raw)
+        except (TypeError, ValueError):
+            raise ValueError(f"'{key}' muss eine Zahl in Sekunden sein (0 = aus).")
+        if val < 0:
+            raise ValueError(f"'{key}' darf nicht negativ sein.")
+        return val
+
+    cfg = {
+        "engine": engine, "model": model, "device": device, "compute_type": compute_type,
+        "timeout_secs": _secs("timeout_secs"),
+        "idle_unload_secs": _secs("idle_unload_secs"),
+    }
+
+    # Timeout/Idle-only changes don't touch the loaded model — persist and
+    # return without the disruptive reload (they're read per request anyway).
+    if all(cfg[k] == old_cfg.get(k) for k in ("engine", "model", "device", "compute_type")):
+        admin_db.kv_set_json(ADMIN_DB_PATH, MAIN_CFG_KEY, cfg)
+        _main_proxy.update_config(cfg)
+        return {"status": "idle"}
 
     # Reserve the reload slot under the proxy lock *before* persisting. If
     # another reload is mid-flight, refuse — caller must retry once it ends.
@@ -378,30 +457,84 @@ def get_main_engine_state() -> dict:
 # --- Engine + routes ---------------------------------------------------------
 _start_main_engine_blocking()
 
-if not DISABLE_MAIN_ENGINE:
-    # Always register routes against the proxy — even if the initial load
-    # failed. The proxy raises a clear error on transcribe() until a
-    # subsequent reload succeeds.
-    register_routes(app, _main_proxy, check_auth, model_alias=None)
-else:
-    @app.route("/v1/audio/transcriptions", methods=["POST"])
-    def _no_engine_transcribe():
-        return jsonify({
-            "error": {
-                "message": "Main process has no engine loaded. Use an instance port instead.",
-                "type": "config_error",
-            }
-        }), 503
 
-    @app.route("/v1/models", methods=["GET"])
-    def _no_engine_models():
-        if not check_auth():
-            return jsonify({"error": {"message": "Invalid API key.", "type": "auth_error"}}), 401
-        return jsonify({"object": "list", "data": []})
+def _load_main_engine_for_wake():
+    """Loader for on-demand wake-up after an idle unload (blocking)."""
+    cfg = _resolve_main_config()
+    engine = _build_engine(cfg)
+    engine.load()
+    return engine, cfg
 
-    @app.route("/health", methods=["GET"])
-    def _no_engine_health():
-        return jsonify({"status": "ok", "engine": None, "mode": "admin-only"})
+
+_main_proxy.set_loader(_load_main_engine_for_wake)
+
+# Last-activity timestamp for the main engine's idle unload.
+_main_activity = {"last": time.time()}
+_main_activity_lock = threading.Lock()
+
+
+def _touch_main_activity():
+    with _main_activity_lock:
+        _main_activity["last"] = time.time()
+
+
+# Model-parameter router: port 8000 is the single entry point; requests whose
+# `model` names an instance alias are proxied to that instance's worker.
+# `local_aliases_fn` is evaluated per request so a hot-swapped main model
+# keeps resolving to the main engine.
+_router = InstanceRouter(
+    ADMIN_DB_PATH,
+    local_aliases_fn=lambda: {m for m in (_main_proxy.model,) if m and not DISABLE_MAIN_ENGINE},
+)
+
+# Always register routes against the proxy — even if the initial load failed
+# or the main engine is disabled. The proxy raises a clear 503 on transcribe()
+# for local models; instance models are proxied by the router either way.
+_core = register_routes(
+    app,
+    _main_proxy,
+    check_auth,
+    model_alias=None,
+    router=_router,
+    advertise_local_models=not DISABLE_MAIN_ENGINE,
+    health_extra=lambda: {
+        "main_engine_loaded": _main_proxy.state()["loaded"],
+        "mode": "admin-only" if DISABLE_MAIN_ENGINE else "full",
+    },
+    timeout_fn=lambda: _resolve_main_config().get("timeout_secs", 0),
+    activity_cb=_touch_main_activity,
+)
+
+
+def _main_idle_watchdog():
+    """Unload the main engine after idle_unload_secs without traffic.
+
+    The next transcription request wakes it up via the proxy's loader
+    (blocking load in-request). Active transcriptions block the unload.
+    """
+    while True:
+        time.sleep(60)
+        try:
+            if DISABLE_MAIN_ENGINE:
+                continue
+            idle = _resolve_main_config().get("idle_unload_secs") or 0
+            if idle <= 0:
+                continue
+            if not _main_proxy.state()["loaded"]:
+                continue
+            if _core["active_count"]() > 0:
+                continue
+            with _main_activity_lock:
+                last = _main_activity["last"]
+            if time.time() - last < idle:
+                continue
+            logger.info(f"Idle-unload: dropping main engine after {int(time.time() - last)}s without traffic.")
+            _main_proxy.unload()
+        except Exception:
+            logger.exception("Main idle watchdog tick failed")
+
+
+threading.Thread(target=_main_idle_watchdog, daemon=True, name="main-idle-watchdog").start()
 
 # --- Admin blueprint ---------------------------------------------------------
 app.register_blueprint(
@@ -433,6 +566,9 @@ def _maybe_respawn():
         supervisor.respawn_enabled()
     except Exception as e:
         logger.error(f"Failed to respawn instances: {e}", exc_info=True)
+    # After respawn: watch for idle instances to unload (frees RAM; the
+    # router restarts them on demand).
+    supervisor.start_idle_watchdog()
 
 threading.Thread(target=_maybe_respawn, daemon=True).start()
 

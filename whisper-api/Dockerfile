@@ -46,11 +46,10 @@ ENV INSTANCE_PORT_RANGE="8100-8120"
 
 ENV PYTHONUNBUFFERED=1
 
-# Port 8000 = Admin-UI + Haupt-API.
-# Instanz-Ports (Standard 8100-8120) werden zur Laufzeit gebunden und sind bei
-# network_mode: host automatisch vom Host aus erreichbar. Bei bridged Network
-# muss die Range zusätzlich per `ports:` veröffentlicht werden.
+# Port 8000 = Admin-UI + Haupt-API + Model-Router.
+# Instanz-Ports (Standard 8100-8120) sind an 127.0.0.1 gebunden und nur noch
+# intern erreichbar — Requests laufen über den model-Parameter auf Port 8000.
 EXPOSE 8000
-EXPOSE 8100-8120
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "4", "--timeout", "600", "app:app"]
+# Threads großzügig: Proxy-Threads für Instanz-Routing warten fast nur auf I/O.
+CMD ["gunicorn", "--bind", "0.0.0.0:8000", "--workers", "1", "--threads", "8", "--timeout", "600", "app:app"]

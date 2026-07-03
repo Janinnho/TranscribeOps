@@ -32,7 +32,6 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             "default_device": config["default_device"],
             "default_compute_type": config["default_compute_type"],
             "default_batch_size": config["default_batch_size"],
-            "port_range": config["port_range"],
             "hf_token_set": config["hf_token_set"],
             "api_key_env_set": config["api_key_env_set"],
             "main_engine_disabled": config["main_engine_disabled"],
@@ -85,6 +84,8 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             main_status = "loading"
         elif main_state.get("reload", {}).get("status") == "failed":
             main_status = "failed"
+        elif main_state.get("reload", {}).get("status") == "sleeping":
+            main_status = "sleeping"
         elif main_state.get("loaded"):
             main_status = "running"
         else:
@@ -97,6 +98,8 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             "model": main_cfg.get("model", ""),
             "device": main_cfg.get("device", config["default_device"]),
             "compute_type": main_cfg.get("compute_type", config["default_compute_type"]),
+            "timeout_secs": main_cfg.get("timeout_secs", 0),
+            "idle_unload_secs": main_cfg.get("idle_unload_secs", 0),
             "port": main_state.get("port", 8000),
             "pid": None,
             "enabled": not main_state.get("disabled"),
@@ -112,7 +115,6 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             "instances.html",
             instances=statuses,
             downloaded_models=downloaded,
-            port_range=config["port_range"],
             default_device=config["default_device"],
             default_compute_type=config["default_compute_type"],
             main_disabled=bool(main_state.get("disabled")),

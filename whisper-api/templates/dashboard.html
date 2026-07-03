@@ -33,7 +33,6 @@
     <div class="sys-item"><dt>{{ _('Device') }}</dt><dd><code>{{ system_info.main_device }}</code></dd></div>
     <div class="sys-item"><dt>{{ _('Compute type') }}</dt><dd><code>{{ system_info.main_compute_type }}</code></dd></div>
     <div class="sys-item"><dt>{{ _('Batch size') }}</dt><dd><code>{{ system_info.default_batch_size }}</code></dd></div>
-    <div class="sys-item"><dt>{{ _('Instance ports') }}</dt><dd><code>{{ system_info.port_range }}</code></dd></div>
     <div class="sys-item"><dt>HF_TOKEN</dt><dd>{% if system_info.hf_token_set %}<span class="dot-green"></span> {{ _('set (required for diarization)') }}{% else %}<span class="dot-red"></span> {{ _('not set — pyannote unavailable') }}{% endif %}</dd></div>
     <div class="sys-item"><dt>WHISPER_API_KEY</dt><dd>{% if system_info.api_key_env_set %}<span class="dot-green"></span> {{ _('set (env)') }}{% else %}<span class="dot-gray"></span> {{ _('empty — only DB keys active') }}{% endif %}</dd></div>
   </div>
@@ -117,7 +116,7 @@
               {% if e.instances %}
                 <div><dt>{{ _('Instances') }}</dt><dd>
                   {% for inst in e.instances %}
-                    <span class="pill">:{{ inst.port }} — {{ inst.name }}</span>
+                    <span class="pill">{{ inst.name }}</span>
                   {% endfor %}
                 </dd></div>
               {% endif %}

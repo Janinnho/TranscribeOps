@@ -10,8 +10,9 @@
 #   8000 → Whisper API + Admin UI (http://localhost:8000)
 #
 # Redis is not published; it stays internal to the Docker network.
-# Whisper instance workers (managed via the admin UI) listen on ports 8100-8120
-# inside the container; expose them only if you need direct access from the host.
+# Whisper instance workers (managed via the admin UI) are container-internal
+# (localhost-only, ports 8100-8120). All requests go through port 8000 — the
+# model is selected via the `model` parameter (instance name = alias).
 
 services:
   web:
@@ -64,9 +65,10 @@ services:
     build: ./whisper-api
     container_name: transcribeops-whisper
     ports:
+      # Single entry point: API + model router + admin UI. Instance workers
+      # bind to localhost inside the container and are reached via the
+      # `model` parameter — no extra ports needed.
       - "8000:8000"
-      # Uncomment to expose admin-UI managed instance workers on the host:
-      # - "8100-8120:8100-8120"
     environment:
       - WHISPER_API_KEY=${WHISPER_API_KEY:-}
       - WHISPER_MODEL=medium
