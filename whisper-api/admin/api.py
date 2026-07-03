@@ -1,5 +1,6 @@
 """Admin UI JSON endpoints under /admin/api/*."""
 import logging
+import re
 import secrets
 import uuid
 
@@ -16,6 +17,11 @@ from .catalog import by_id, by_repo_id, CATALOG
 from .engines_list import engines_choices
 
 logger = logging.getLogger("whisper-api.admin.api")
+
+# Instance names double as routing aliases for the `model` API parameter, so
+# they must be unique and safe to put in form fields / URLs.
+_INSTANCE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+_RESERVED_INSTANCE_NAMES = {"whisper-1"}
 
 
 def register_api_routes(bp: Blueprint, config: dict) -> None:
@@ -104,9 +110,25 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
         compute_type = (data.get("compute_type") or config["default_compute_type"]).strip()
         purpose = (data.get("purpose") or "transcription").strip()
         port_raw = data.get("port")
+        try:
+            # Absent/empty -> defaults (600s timeout, no idle unload);
+            # an explicit 0 means "unlimited" / "keep loaded".
+            raw_timeout = data.get("timeout_secs")
+            timeout_secs = 600 if raw_timeout in (None, "") else max(0, int(raw_timeout))
+            raw_idle = data.get("idle_unload_secs")
+            idle_unload_secs = 0 if raw_idle in (None, "") else max(0, int(raw_idle))
+        except (TypeError, ValueError):
+            return jsonify({"error": "timeout_secs/idle_unload_secs must be integers (seconds, 0 = off)"}), 400
 
         if not name or not model:
             return jsonify({"error": "name and model are required"}), 400
+        if not _INSTANCE_NAME_RE.match(name):
+            return jsonify({"error": "name must match [A-Za-z0-9][A-Za-z0-9._-]* (max 64 chars) — "
+                                     "it is used as the model alias for API routing"}), 400
+        if name.lower() in _RESERVED_INSTANCE_NAMES:
+            return jsonify({"error": f"name '{name}' is reserved"}), 400
+        if any(r["name"].lower() == name.lower() for r in admin_db.list_instances(db_path)):
+            return jsonify({"error": f"name '{name}' is already in use"}), 400
         if engine not in {"whisperx", "nemo"}:
             return jsonify({"error": f"unknown engine '{engine}'"}), 400
 
@@ -120,6 +142,7 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
                 db_path,
                 name=name, engine=engine, model=model, purpose=purpose,
                 device=device, compute_type=compute_type, port=port,
+                timeout_secs=timeout_secs, idle_unload_secs=idle_unload_secs,
             )
         except Exception as e:
             return jsonify({"error": f"db error: {e}"}), 400
@@ -157,6 +180,30 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
     def api_instances_delete(inst_id: int):
         supervisor.delete_instance(inst_id)
         return jsonify({"ok": True})
+
+    @bp.route("/api/instances/<int:inst_id>/settings", methods=["POST"])
+    @login_required
+    def api_instances_settings(inst_id: int):
+        """Update timeout/idle-unload. Applies immediately — the worker reads
+        these per request from the DB, no restart needed."""
+        current = admin_db.get_instance(db_path, inst_id)
+        if current is None:
+            return jsonify({"error": "instance not found"}), 404
+        data = request.get_json(silent=True) or {}
+        try:
+            # Absent/empty -> keep current value; explicit 0 = off.
+            raw_timeout = data.get("timeout_secs")
+            timeout_secs = (current.get("timeout_secs") or 0) if raw_timeout in (None, "") else max(0, int(raw_timeout))
+            raw_idle = data.get("idle_unload_secs")
+            idle_unload_secs = (current.get("idle_unload_secs") or 0) if raw_idle in (None, "") else max(0, int(raw_idle))
+        except (TypeError, ValueError):
+            return jsonify({"error": "timeout_secs/idle_unload_secs must be integers (seconds, 0 = off)"}), 400
+        admin_db.update_instance_settings(
+            db_path, inst_id,
+            timeout_secs=timeout_secs, idle_unload_secs=idle_unload_secs,
+        )
+        row = admin_db.get_instance(db_path, inst_id)
+        return jsonify(supervisor.instance_status(row))
 
     @bp.route("/api/engines", methods=["GET"])
     @login_required

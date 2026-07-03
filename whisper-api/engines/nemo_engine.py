@@ -2,140 +2,12 @@ import logging
 import os
 import subprocess
 import tempfile
-import unicodedata
-from difflib import SequenceMatcher
 from typing import Optional, Callable
 
 from .base import Engine, TranscriptionResult
+from .dictionary import apply_dictionary, parse_prompt
 
 logger = logging.getLogger("whisper-api.engine.nemo")
-
-_DICT_MIN_LEN = 4
-_DICT_MIN_RATIO = 0.78
-_DICT_LEN_TOLERANCE = 0.30
-_PUNCT_CHARS = ",.!?:;\"'„""—–-…()[]{}«»‚'"
-
-
-def _normalize_for_match(s: str) -> str:
-    """Lowercase + strip diacritics + ß→ss for fuzzy comparison."""
-    s = unicodedata.normalize("NFKD", s).lower().replace("ß", "ss")
-    return "".join(c for c in s if not unicodedata.combining(c))
-
-
-def _split_punct(token: str) -> tuple[str, str, str]:
-    """Split (leading_punct, core, trailing_punct)."""
-    i = 0
-    while i < len(token) and token[i] in _PUNCT_CHARS:
-        i += 1
-    j = len(token)
-    while j > i and token[j - 1] in _PUNCT_CHARS:
-        j -= 1
-    return token[:i], token[i:j], token[j:]
-
-
-def _parse_prompt(prompt: str) -> list[str]:
-    """Split a comma-separated dictionary prompt into clean entries."""
-    if not prompt:
-        return []
-    out: list[str] = []
-    seen: set[str] = set()
-    for raw in prompt.split(","):
-        w = raw.strip()
-        if len(w) < _DICT_MIN_LEN:
-            continue
-        key = w.lower()
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(w)
-    return out
-
-
-def _apply_dictionary(words: list[dict], dict_words: list[str]) -> int:
-    """Replace ASR'd words with phonetically-similar dictionary entries.
-
-    Mutates `words` in place. Multi-token entries (e.g. "Erika Mustermann")
-    are matched against sliding N-word windows of the transcript and
-    replaced token-for-token so that timestamps stay aligned. Single-token
-    entries match individual words. Each transcript word is replaced at
-    most once; longer entries take precedence (greedy). Preserves outer
-    punctuation. Returns total number of replacements.
-    """
-    if not words or not dict_words:
-        return 0
-
-    multi: list[tuple[list[str], list[str]]] = []  # (tokens_orig, tokens_norm)
-    single: list[tuple[str, str]] = []             # (orig, norm)
-    for entry in dict_words:
-        toks = entry.split()
-        if len(toks) >= 2:
-            multi.append((toks, [_normalize_for_match(t) for t in toks]))
-        elif toks:
-            single.append((toks[0], _normalize_for_match(toks[0])))
-
-    replaced: set[int] = set()
-    n_repl = 0
-
-    # Multi-word pass first, longer entries first (greedy: a 3-token entry
-    # mustn't be blocked by a 2-token entry consuming the first two words).
-    multi.sort(key=lambda x: -len(x[0]))
-    for tokens_orig, tokens_norm in multi:
-        m = len(tokens_orig)
-        cand_joined = " ".join(tokens_norm)
-        cand_len = len(cand_joined)
-        max_diff = max(1, _DICT_LEN_TOLERANCE * cand_len)
-        for i in range(0, len(words) - m + 1):
-            if any((i + k) in replaced for k in range(m)):
-                continue
-            cores: list[str] = []
-            ok = True
-            for k in range(m):
-                _, core, _ = _split_punct(words[i + k]["word"])
-                if not core:
-                    ok = False
-                    break
-                cores.append(core)
-            if not ok:
-                continue
-            joined_core = " ".join(_normalize_for_match(c) for c in cores)
-            if abs(len(joined_core) - cand_len) > max_diff:
-                continue
-            if joined_core == cand_joined:
-                continue  # already correct
-            score = SequenceMatcher(a=joined_core, b=cand_joined).ratio()
-            if score >= _DICT_MIN_RATIO:
-                for k in range(m):
-                    leading, _, trailing = _split_punct(words[i + k]["word"])
-                    words[i + k]["word"] = leading + tokens_orig[k] + trailing
-                    replaced.add(i + k)
-                n_repl += m
-
-    # Single-word pass — skip indices already touched by the multi-word pass.
-    for idx, word_obj in enumerate(words):
-        if idx in replaced:
-            continue
-        leading, core, trailing = _split_punct(word_obj["word"])
-        if len(core) < _DICT_MIN_LEN:
-            continue
-        core_norm = _normalize_for_match(core)
-        best_orig = None
-        best_score = 0.0
-        for orig, cand_norm in single:
-            if abs(len(core_norm) - len(cand_norm)) > max(1, _DICT_LEN_TOLERANCE * len(cand_norm)):
-                continue
-            if cand_norm == core_norm:
-                if orig != core:
-                    best_orig, best_score = orig, 1.0
-                break
-            score = SequenceMatcher(a=core_norm, b=cand_norm).ratio()
-            if score > best_score:
-                best_score = score
-                best_orig = orig
-        if best_orig is not None and best_score >= _DICT_MIN_RATIO and best_orig != core:
-            word_obj["word"] = leading + best_orig + trailing
-            n_repl += 1
-
-    return n_repl
 
 
 def _to_mono_wav(src_path: str) -> tuple[str, bool]:
@@ -182,15 +54,30 @@ _SENTENCE_END = (".", "?", "!")
 def _words_from_hypothesis(hyp, tokenizer, frame_time_s: float) -> list[dict]:
     """Build word-level [{word, start, end}] from a NeMo Hypothesis.
 
-    NeMo 2.0.0 cannot expose word/segment timestamps for TDT models — the
-    built-in compute_rnnt_timestamps path crashes on merged BPE tokens.
-    Instead we read the raw fields: y_sequence (token ids) + timestep
-    (encoder-frame index per token), and group BPE pieces into words by
-    the SentencePiece "▁" prefix. Frame→seconds is window_stride ×
-    subsampling_factor (0.08 s for parakeet-tdt-0.6b-v3).
+    Preferred path: `transcribe(..., timestamps=True)` fills
+    `hyp.timestamp["word"]` with native word timestamps (works for TDT
+    since ~NeMo 2.3; the 2.0.0 crash on merged BPE tokens is fixed).
+
+    Fallback: read the raw fields y_sequence (token ids) + per-token
+    encoder-frame indices and group BPE pieces into words by the
+    SentencePiece "▁" prefix. The frame field was renamed `timestep` →
+    `timestamp` in NeMo 2.x, so we accept both. Frame→seconds is
+    window_stride × subsampling_factor (0.08 s for parakeet-tdt-0.6b-v3).
     """
+    ts = getattr(hyp, "timestamp", None)
+    if isinstance(ts, dict):
+        native = [
+            {"word": str(w.get("word", "")), "start": float(w.get("start", 0.0)), "end": float(w.get("end", 0.0))}
+            for w in ts.get("word") or []
+            if w.get("word")
+        ]
+        if native:
+            return native
+
     y_seq = getattr(hyp, "y_sequence", None)
     timestep = getattr(hyp, "timestep", None)
+    if timestep is None and not isinstance(ts, dict):
+        timestep = ts  # NeMo >= 2.x: raw frame tensor lives in `timestamp`
     if y_seq is None or timestep is None:
         return []
     try:
@@ -308,6 +195,7 @@ class NeMoEngine(Engine):
         "parakeet-tdt-0.6b-v3": "nvidia/parakeet-tdt-0.6b-v3",
         "parakeet-tdt-0.6b-v2": "nvidia/parakeet-tdt-0.6b-v2",
         "parakeet-tdt-1.1b": "nvidia/parakeet-tdt-1.1b",
+        "parakeet-primeline": "primeline/parakeet-primeline",
     }
 
     def __init__(self, *args, **kwargs):
@@ -315,6 +203,31 @@ class NeMoEngine(Engine):
         self._model = None
         self._diarize_pipeline = None
         self._frame_time_s: Optional[float] = None
+
+    @staticmethod
+    def _find_cached_nemo_file(repo: str) -> Optional[str]:
+        """Locate a .nemo checkpoint for `repo` in the local HF snapshot cache."""
+        import glob
+        hf_home = os.environ.get("HF_HOME", os.path.expanduser("~/.cache/huggingface"))
+        slug = "models--" + repo.replace("/", "--")
+        for base in (os.path.join(hf_home, "hub", slug), os.path.join(hf_home, slug)):
+            hits = sorted(glob.glob(os.path.join(base, "snapshots", "*", "*.nemo")))
+            if hits:
+                return hits[0]
+        return None
+
+    @staticmethod
+    def _restore_from_hub(asr_model_cls, repo: str):
+        """Download the repo's .nemo checkpoint from HuggingFace and restore it."""
+        from huggingface_hub import hf_hub_download, list_repo_files
+        nemo_files = [f for f in list_repo_files(repo) if f.endswith(".nemo")]
+        if not nemo_files:
+            raise RuntimeError(
+                f"Repo '{repo}' enthält keine .nemo-Checkpoint-Datei — "
+                "kein für die NeMo-Engine ladbares Modell."
+            )
+        path = hf_hub_download(repo_id=repo, filename=nemo_files[0])
+        return asr_model_cls.restore_from(path, map_location="cpu")
 
     def load(self) -> None:
         try:
@@ -327,7 +240,25 @@ class NeMoEngine(Engine):
 
         repo = self.MODEL_ID_MAP.get(self.model, self.model)
         logger.info(f"Loading NeMo ASR model '{repo}' on {self.device}...")
-        self._model = ASRModel.from_pretrained(model_name=repo)
+
+        # Community fine-tunes (e.g. primeline/parakeet-primeline) publish a
+        # bare .nemo checkpoint with an arbitrary filename — from_pretrained()
+        # can't resolve those. Prefer a .nemo file from the local HF snapshot
+        # cache (populated by the admin download), then fall back to
+        # from_pretrained (works for the nvidia/* repos), then to fetching
+        # the repo's .nemo file directly.
+        nemo_path = self._find_cached_nemo_file(repo) if "/" in repo else None
+        if nemo_path:
+            logger.info(f"Restoring NeMo model from cached checkpoint: {nemo_path}")
+            self._model = ASRModel.restore_from(nemo_path, map_location="cpu")
+        else:
+            try:
+                self._model = ASRModel.from_pretrained(model_name=repo)
+            except Exception as e:
+                if "/" not in repo:
+                    raise
+                logger.info(f"from_pretrained failed for '{repo}' ({e}) — looking for a .nemo file in the repo.")
+                self._model = self._restore_from_hub(ASRModel, repo)
         try:
             self._model = self._model.to(self.device)
         except Exception as e:
@@ -382,7 +313,15 @@ class NeMoEngine(Engine):
         # (batch, time). Cheap and format-agnostic — any container works.
         mono_path, is_tmp = _to_mono_wav(audio_path)
         try:
-            outputs = self._model.transcribe([mono_path], return_hypotheses=True)
+            # timestamps=True is required since NeMo 2.x for word-level
+            # timestamps (dictionary replacement + diarization depend on
+            # them). Older NeMo versions don't know the kwarg — fall back.
+            try:
+                outputs = self._model.transcribe(
+                    [mono_path], return_hypotheses=True, timestamps=True
+                )
+            except TypeError:
+                outputs = self._model.transcribe([mono_path], return_hypotheses=True)
             _prog(70, "postprocess")
 
             # Normalise NeMo's wildly inconsistent return shape:
@@ -405,11 +344,13 @@ class NeMoEngine(Engine):
                 text = getattr(hyp, "text", "") or ""
                 words = _words_from_hypothesis(hyp, self._model.tokenizer, self._frame_time_s or 0.08)
 
-            dict_words = _parse_prompt(prompt) if prompt else []
+            dict_words = parse_prompt(prompt) if prompt else []
             if dict_words and words:
-                replacements = _apply_dictionary(words, dict_words)
+                replacements = apply_dictionary(words, dict_words)
                 if replacements:
                     logger.info(f"Applied {replacements} dictionary replacement(s).")
+                    # Mapping targets can blank out spoken-command tokens.
+                    words = [w for w in words if w["word"]]
                     text = " ".join(w["word"] for w in words)
 
             with_speaker = False

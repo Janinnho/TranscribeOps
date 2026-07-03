@@ -2,6 +2,7 @@ import logging
 from typing import Optional, Callable
 
 from .base import Engine, TranscriptionResult
+from .dictionary import REPLACED_KEY, apply_dictionary, parse_prompt
 
 logger = logging.getLogger("whisper-api.engine.whisperx")
 
@@ -53,9 +54,10 @@ class WhisperXEngine(Engine):
         prompt: Optional[str] = None,
         progress_cb: Optional[Callable[[int, str], None]] = None,
     ) -> TranscriptionResult:
-        # `prompt` is accepted for API parity but ignored — Whisper-style
-        # prompt biasing happens via the OpenAI/Azure paths in the web-app,
-        # not against the local whisperx model.
+        # `prompt` carries comma-separated dictionary terms. faster-whisper
+        # gets no decode-time biasing here; instead the aligned word-level
+        # output is post-corrected against the dictionary (same fuzzy logic
+        # as the NeMo engine), which needs alignment to have succeeded.
         import whisperx
         if self._model is None:
             self.load()
@@ -98,14 +100,40 @@ class WhisperXEngine(Engine):
 
         _prog(100)
 
+        dict_words = parse_prompt(prompt) if prompt else []
+        if dict_words:
+            flat = [
+                w for seg in result.get("segments", [])
+                for w in seg.get("words", []) if w.get("word")
+            ]
+            if flat:
+                replacements = apply_dictionary(flat, dict_words)
+                if replacements:
+                    logger.info(f"Applied {replacements} dictionary replacement(s).")
+            else:
+                logger.info("Dictionary prompt given but no word-level output (alignment failed?) — skipping.")
+
         segments = []
         text_parts = []
-        for i, seg in enumerate(result.get("segments", [])):
+        for seg in result.get("segments", []):
+            seg_words = seg.get("words", [])
+            if any(w.get(REPLACED_KEY) for w in seg_words):
+                # Rebuild the text from the corrected words; the original
+                # segment string still holds the uncorrected spelling.
+                joined = " ".join(w["word"] for w in seg_words if w.get("word"))
+                if not joined:
+                    # Replacement rules blanked out every word (e.g. a spoken
+                    # command whose punctuation moved to the previous segment)
+                    # — drop the now-empty segment instead of emitting " ".
+                    continue
+                seg_text = " " + joined
+            else:
+                seg_text = seg.get("text", "")
             entry = {
-                "id": i,
+                "id": len(segments),
                 "start": round(seg.get("start", 0), 2),
                 "end": round(seg.get("end", 0), 2),
-                "text": seg.get("text", ""),
+                "text": seg_text,
             }
             if "speaker" in seg:
                 entry["speaker"] = seg["speaker"]
@@ -117,10 +145,12 @@ class WhisperXEngine(Engine):
                         "end": round(w.get("end", 0), 2),
                     }
                     for w in seg["words"]
-                    if "start" in w and "end" in w
+                    # Mapping targets can blank out spoken-command tokens —
+                    # drop those alongside unaligned words.
+                    if "start" in w and "end" in w and w.get("word")
                 ]
             segments.append(entry)
-            text_parts.append(seg.get("text", ""))
+            text_parts.append(seg_text)
 
         return TranscriptionResult(
             text="".join(text_parts).strip(),

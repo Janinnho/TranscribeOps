@@ -2,7 +2,19 @@
 
 This guide covers updating an existing TranscribeOps deployment to the latest version from GitHub. Your local configuration (`docker-compose.yml`, `.env`) and named volumes (database, uploads, model cache) are preserved.
 
-Database migrations run automatically on app start (`_apply_migrations()` in `app/__init__.py`) — no manual schema steps required.
+Database migrations run automatically on app start — both for the web app (`_apply_migrations()` in `app/__init__.py`) and for the Model API's admin DB (`init_db()` in `whisper-api/admin/db.py`). No manual schema steps required.
+
+---
+
+## Release notes 1.2.2
+
+The Model API (whisper-api) has been restructured: **port 8000 is now the single entry point**, and the model is selected via the `model` parameter (instance name = alias). Details in the [Model API docs](whisper-api.md). For existing deployments this means:
+
+1. **Instance ports (8100–8120) are internal-only now.** Workers bind to localhost and are no longer reachable from outside. Clients that used to call an instance port directly must switch to `http://<host>:8000` + `model=<instance name>`. Inside the same pod/compose network the old URLs keep working for a transition period. Publishing the port range (e.g. `-p 8100-8120:8100-8120`) can simply be removed.
+2. **Unknown `model` values now return `404`** instead of silently transcribing with the loaded model. Valid values remain `whisper-1` (main engine), the main engine's model name, and all instance names. Check external clients if in doubt.
+3. **The admin DB migrates automatically** (new columns `timeout_secs`, `idle_unload_secs`, `last_used_at` on the instances table). Existing instances get the default timeout of 600 s — matching the previous behavior (gunicorn timeout). The web app database has no schema changes in 1.2.2.
+4. **Recommended follow-up:** speech-model entries in the web app that point at instance ports (e.g. `http://localhost:8110/...`) should be switched to `http://localhost:8000/v1/audio/transcriptions` with `model_id` = instance name.
+5. **New, no migration needed:** per-model timeout + RAM unloading in the admin UI, dictionary correction for the main engine (WhisperX) and NeMo ≥ 2.x, replacement rules (`source=target`) in the dictionary, and the "Parakeet Primeline (German)" catalog model.
 
 ---
 

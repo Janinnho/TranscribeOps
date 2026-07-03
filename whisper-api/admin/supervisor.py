@@ -83,6 +83,8 @@ def start_instance(instance_id: int) -> Optional[int]:
         "--port", str(row["port"]),
         "--engine", row["engine"],
         "--model", row["model"],
+        "--alias", row["name"],
+        "--instance-id", str(row["id"]),
         "--device", row["device"],
         "--compute-type", row["compute_type"],
         "--db-path", _config["db_path"],
@@ -133,6 +135,78 @@ def respawn_enabled() -> None:
             start_instance(row["id"])
         except Exception as e:
             logger.error(f"Failed to respawn instance {row['id']}: {e}")
+
+
+def ensure_running(instance_id: int, wait_secs: int = 300) -> bool:
+    """Start an instance if needed and wait until /health answers.
+
+    Used by the router to wake sleeping (idle-unloaded) instances on demand.
+    Returns True once the worker serves /health, False on timeout/failure.
+    """
+    row = admin_db.get_instance(_config["db_path"], instance_id)
+    if row is None:
+        return False
+    pid = row.get("pid")
+    if not (pid and _pid_alive(pid)):
+        try:
+            start_instance(instance_id)
+        except Exception as e:
+            logger.error(f"ensure_running: start of instance {instance_id} failed: {e}")
+            return False
+    deadline = time.time() + wait_secs
+    while time.time() < deadline:
+        try:
+            r = requests.get(f"http://127.0.0.1:{row['port']}/health", timeout=2)
+            if r.status_code == 200:
+                return True
+        except Exception:
+            pass
+        time.sleep(2)
+    logger.error(f"ensure_running: instance {instance_id} did not become healthy within {wait_secs}s")
+    return False
+
+
+def idle_watchdog_tick() -> None:
+    """Stop instances that exceeded their idle_unload_secs without traffic.
+
+    Only stops workers that are reachable and report zero active requests —
+    a long-running transcription updates last_used_at only at start/end, so
+    the health check is what protects mid-flight work.
+    """
+    now = time.time()
+    for row in admin_db.list_instances(_config["db_path"], enabled_only=True):
+        idle = row.get("idle_unload_secs") or 0
+        if idle <= 0:
+            continue
+        pid = row.get("pid")
+        if not (pid and _pid_alive(pid)):
+            continue
+        last = row.get("last_used_at") or row.get("created_at") or 0
+        if now - last < idle:
+            continue
+        try:
+            r = requests.get(f"http://127.0.0.1:{row['port']}/health", timeout=2)
+            if not r.ok or r.json().get("active_requests", 0) > 0:
+                continue
+        except Exception:
+            continue  # unreachable/starting — don't kill blindly
+        logger.info(f"Idle-unload: stopping instance {row['id']} ({row['name']}) "
+                    f"after {int(now - last)}s without traffic.")
+        stop_instance(row["id"], disable=False)
+
+
+def start_idle_watchdog(interval_secs: int = 60) -> None:
+    import threading
+
+    def _loop():
+        while True:
+            time.sleep(interval_secs)
+            try:
+                idle_watchdog_tick()
+            except Exception:
+                logger.exception("idle_watchdog_tick failed")
+
+    threading.Thread(target=_loop, daemon=True, name="instance-idle-watchdog").start()
 
 
 def stop_all() -> None:
@@ -195,7 +269,11 @@ def instance_status(row: dict) -> dict:
             pass
 
     if not alive and row.get("enabled"):
-        status = "crashed"
+        # With idle-unload configured, "enabled but not running" is the
+        # expected resting state (the router starts it on demand) — a real
+        # crash is indistinguishable here and also just gets restarted on
+        # the next request.
+        status = "sleeping" if (row.get("idle_unload_secs") or 0) > 0 else "crashed"
     elif alive:
         status = "running"
     else:
@@ -216,4 +294,7 @@ def instance_status(row: dict) -> dict:
         "health": health,
         "cpu_pct": cpu_pct,
         "rss_mb": rss_mb,
+        "timeout_secs": row.get("timeout_secs") or 0,
+        "idle_unload_secs": row.get("idle_unload_secs") or 0,
+        "last_used_at": row.get("last_used_at"),
     }

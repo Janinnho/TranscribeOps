@@ -19,8 +19,13 @@ CREATE TABLE IF NOT EXISTS instances (
     port         INTEGER NOT NULL UNIQUE,
     enabled      INTEGER NOT NULL DEFAULT 1,
     pid          INTEGER,
-    created_at   INTEGER NOT NULL
+    created_at   INTEGER NOT NULL,
+    timeout_secs     INTEGER NOT NULL DEFAULT 600,  -- 0 = unbegrenzt
+    idle_unload_secs INTEGER NOT NULL DEFAULT 0,    -- 0 = dauerhaft im RAM
+    last_used_at     INTEGER
 );
+-- Spalten-Nachrüstung für bestehende DBs passiert in db.init_db() via
+-- fehlertolerante ALTER TABLE (Spalte existiert bereits -> ignoriert).
 
 CREATE TABLE IF NOT EXISTS model_downloads (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,

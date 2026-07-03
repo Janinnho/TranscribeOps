@@ -11,7 +11,7 @@ TranscribeOps is a self-hosted Flask web application for audio transcription, me
 Two independent services:
 
 - **web-app/**: Flask app with Celery workers (the main application)
-- **whisper-api/**: Standalone Flask API wrapping faster-whisper, OpenAI-compatible endpoints
+- **whisper-api/**: Standalone Flask API with OpenAI-compatible endpoints. Two engines (WhisperX/faster-whisper and NeMo/Parakeet), an admin UI (`/admin`), and a model router: port 8000 is the single entry point, the `model` form parameter selects the main engine (`whisper-1`) or an instance worker by name. Instance workers are subprocesses on localhost-only ports (8100-8120), managed by `admin/supervisor.py`; per-model timeout and idle-unload live in the admin SQLite DB (`admin/db.py`, auto-migrated on start). The dictionary/replacement logic for the `prompt` parameter is shared in `engines/dictionary.py`.
 
 ### Web-App Structure
 

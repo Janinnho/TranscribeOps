@@ -2,7 +2,19 @@
 
 Diese Anleitung beschreibt das Update einer bestehenden TranscribeOps-Installation auf die neueste Version von GitHub. Deine lokale Konfiguration (`docker-compose.yml`, `.env`) und Named Volumes (Datenbank, Uploads, Modell-Cache) bleiben erhalten.
 
-Datenbank-Migrationen laufen automatisch beim App-Start (`_apply_migrations()` in `app/__init__.py`) — keine manuellen Schema-Schritte nötig.
+Datenbank-Migrationen laufen automatisch beim App-Start — sowohl für die Web-App (`_apply_migrations()` in `app/__init__.py`) als auch für die Admin-DB der Modell-API (`init_db()` in `whisper-api/admin/db.py`). Keine manuellen Schema-Schritte nötig.
+
+---
+
+## Versionshinweise 1.2.2
+
+Die Modell-API (whisper-api) wurde umgebaut: **Port 8000 ist jetzt der einzige Einstiegspunkt**, das Modell wird über den `model`-Parameter gewählt (Instanz-Name = Alias). Details in der [Modell-API-Doku](whisper-api.md). Für bestehende Installationen bedeutet das:
+
+1. **Instanz-Ports (8100–8120) sind nur noch intern.** Die Worker binden an localhost; von außen sind sie nicht mehr erreichbar. Clients, die bisher direkt einen Instanz-Port ansprachen, auf `http://<host>:8000` + `model=<Instanz-Name>` umstellen. Innerhalb desselben Pods/Compose-Netzwerks funktionieren die alten URLs übergangsweise weiter. Ein Port-Publishing der Range (z.B. `-p 8100-8120:8100-8120`) kann ersatzlos entfallen.
+2. **Unbekannte `model`-Werte geben jetzt `404`** statt stillschweigend mit dem geladenen Modell zu transkribieren. Gültig bleiben `whisper-1` (Main-Engine), der Modellname der Main-Engine sowie alle Instanz-Namen. Externe Clients ggf. prüfen.
+3. **Admin-DB wird automatisch migriert** (neue Spalten `timeout_secs`, `idle_unload_secs`, `last_used_at` in der Instanz-Tabelle). Bestehende Instanzen erhalten das Standard-Timeout von 600 s — das entspricht dem bisherigen Verhalten (gunicorn-Timeout). Die Web-App-Datenbank hat in 1.2.2 keine Schema-Änderungen.
+4. **Empfohlene Nacharbeit:** Sprachmodell-Einträge in der Web-App, die auf Instanz-Ports zeigen (z.B. `http://localhost:8110/...`), auf `http://localhost:8000/v1/audio/transcriptions` mit `model_id` = Instanz-Name umstellen.
+5. **Neu und ohne Migrationsbedarf:** Timeout + RAM-Freigabe pro Modell im Admin-UI, Wörterbuch-Korrektur auch für die Main-Engine (WhisperX) und NeMo ≥ 2.x, Ersetzungsregeln (`Quelle=Ziel`) im Wörterbuch, Modell „Parakeet Primeline (Deutsch)" im Katalog.
 
 ---
 

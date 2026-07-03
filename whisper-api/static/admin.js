@@ -189,6 +189,10 @@ const AdminUI = (() => {
       refilterModels(currentModel);
       deviceSel.value = editBtn.dataset.device || "cpu";
       computeSel.value = editBtn.dataset.computeType || "int8";
+      const timeoutInput = document.getElementById("edit-main-timeout");
+      const idleInput = document.getElementById("edit-main-idle");
+      if (timeoutInput) timeoutInput.value = editBtn.dataset.timeoutSecs || "0";
+      if (idleInput) idleInput.value = editBtn.dataset.idleUnloadSecs || "0";
       if (typeof dialog.showModal === "function") dialog.showModal();
       else dialog.setAttribute("open", "");
     });
@@ -203,6 +207,8 @@ const AdminUI = (() => {
         model: modelSel.value,
         device: deviceSel.value,
         compute_type: computeSel.value,
+        timeout_secs: parseInt(form.timeout_secs.value || "0", 10),
+        idle_unload_secs: parseInt(form.idle_unload_secs.value || "0", 10),
       };
       try {
         await api("/admin/api/main-engine", {
@@ -211,6 +217,45 @@ const AdminUI = (() => {
         });
         dialog.close();
         pollMainReloadAndReload();
+      } catch (e) {
+        alert(window.tr("Error: {msg}", {msg: e.message}));
+      }
+    });
+  }
+
+  function wireInstanceSettings() {
+    const dialog = document.getElementById("instance-settings-dialog");
+    const form = document.getElementById("instance-settings-form");
+    if (!dialog || !form) return;
+    let currentId = null;
+
+    document.querySelectorAll('[data-action="edit-settings"]').forEach((btn) => {
+      btn.addEventListener("click", () => {
+        currentId = btn.dataset.id;
+        document.getElementById("instance-settings-name").textContent = btn.dataset.name || "";
+        form.timeout_secs.value = btn.dataset.timeoutSecs || "0";
+        form.idle_unload_secs.value = btn.dataset.idleUnloadSecs || "0";
+        if (typeof dialog.showModal === "function") dialog.showModal();
+        else dialog.setAttribute("open", "");
+      });
+    });
+
+    form.querySelector('[data-action="cancel-instance-settings"]')
+        .addEventListener("click", () => dialog.close());
+
+    form.addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      if (!currentId) return;
+      try {
+        await api(`/admin/api/instances/${currentId}/settings`, {
+          method: "POST",
+          body: JSON.stringify({
+            timeout_secs: parseInt(form.timeout_secs.value || "0", 10),
+            idle_unload_secs: parseInt(form.idle_unload_secs.value || "0", 10),
+          }),
+        });
+        dialog.close();
+        location.reload();
       } catch (e) {
         alert(window.tr("Error: {msg}", {msg: e.message}));
       }
@@ -265,7 +310,8 @@ const AdminUI = (() => {
         model: form.model.value,
         device: form.device.value,
         compute_type: form.compute_type.value,
-        port: form.port.value ? parseInt(form.port.value, 10) : null,
+        timeout_secs: parseInt(form.timeout_secs.value || "0", 10),
+        idle_unload_secs: parseInt(form.idle_unload_secs.value || "0", 10),
       };
       try {
         await api("/admin/api/instances", {
@@ -283,6 +329,6 @@ const AdminUI = (() => {
     wireKeyActions, wireNewKeyForm,
     wireDownloadButtons, wireCustomDownloadForm,
     wireInstanceActions, wireNewInstanceForm,
-    wireMainEngineActions,
+    wireMainEngineActions, wireInstanceSettings,
   };
 })();
