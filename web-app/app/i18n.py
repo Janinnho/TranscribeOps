@@ -871,6 +871,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "Grammar": "Grammatik",
 
         # === API keys / OpenAI-compatible API ===
+        "API": "API",
         "API Keys": "API-Keys",
         "API access (API keys)": "API-Zugriff (API-Keys)",
         "No access to API keys.": "Kein Zugriff auf API-Keys.",

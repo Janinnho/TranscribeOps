@@ -12,6 +12,7 @@ Error responses use the OpenAI envelope and stay in English (machine interface).
 """
 import hashlib
 import json
+import logging
 import os
 import time
 import uuid
@@ -25,6 +26,7 @@ from app import db
 from app.models import ApiKey
 
 v1_bp = Blueprint('v1', __name__)
+logger = logging.getLogger('transcribeops.v1')
 
 TEXT_ACTIONS = ('rewrite', 'grammar', 'translate', 'summarize')
 RESPONSE_FORMATS = ('json', 'verbose_json', 'text')
@@ -79,9 +81,12 @@ def list_models():
     def entry(model_id):
         return {'id': model_id, 'object': 'model', 'created': created, 'owned_by': 'transcribeops'}
 
-    data = [entry(m.name) for m in g.api_user.get_available_speech_models()]
-    for m in g.api_user.get_available_text_models():
-        data.append(entry(m.name))
+    # Per-function group restrictions apply, matching the web UI:
+    # transcription for speech, chat for plain completions, text_tools
+    # for the Textmuster pseudo-models.
+    data = [entry(m.name) for m in g.api_user.get_available_speech_models(function='transcription')]
+    data.extend(entry(m.name) for m in g.api_user.get_available_text_models(function='chat'))
+    for m in g.api_user.get_available_text_models(function='text_tools'):
         data.extend(entry(f'{m.name}:{action}') for action in TEXT_ACTIONS)
     return jsonify({'object': 'list', 'data': data})
 
@@ -100,7 +105,7 @@ def create_transcription():
     if not allowed_file(file.filename):
         return _api_error('File type not allowed.')
 
-    speech_models = g.api_user.get_available_speech_models()
+    speech_models = g.api_user.get_available_speech_models(function='transcription')
     model_name = request.form.get('model', '').strip()
     model = _find_by_name(speech_models, model_name)
     if not model:
@@ -144,7 +149,8 @@ def create_transcription():
 
     if run_async:
         task_id = uuid.uuid4().hex
-        _api_task_update(task_id, user_id=g.api_user.id, status='pending', progress=0)
+        _api_task_update(task_id, user_id=g.api_user.id, status='pending', progress=0,
+                         created=int(time.time()))
         process_api_transcription.delay(task_id, filepath, filename, model.id,
                                         g.api_user.id, language, client_prompt, response_format)
         return jsonify({'task_id': task_id, 'status': 'pending'}), 202
@@ -164,8 +170,9 @@ def create_transcription():
             multi_speaker=bool(model.supports_diarize),
             original_filename=filename, dictionary_prompt=prompt,
         )
-    except Exception as e:
-        return _api_error(f'Transcription failed: {e}', 'api_error', 502)
+    except Exception:
+        logger.exception('Blocking /v1 transcription failed (model %s)', model.name)
+        return _api_error('Transcription failed due to an internal error.', 'api_error', 502)
     finally:
         _release_slot('speech', model.id, limit=limit)
         if os.path.exists(filepath):
@@ -222,12 +229,13 @@ def chat_completions():
         action = suffix
         base_name = base
 
-    text_models = g.api_user.get_available_text_models()
+    # Per-function group restrictions, matching the web UI: plain chat maps
+    # to the chat function, Textmuster suffixes to text_tools.
+    text_models = g.api_user.get_available_text_models(function='text_tools' if action else 'chat')
     model = _find_by_name(text_models, base_name)
     if not model:
-        available = []
-        for m in text_models:
-            available.append(m.name)
+        available = [m.name for m in g.api_user.get_available_text_models(function='chat')]
+        for m in g.api_user.get_available_text_models(function='text_tools'):
             available.extend(f'{m.name}:{a}' for a in TEXT_ACTIONS)
         return _api_error(f'Unknown model "{model_name}". Available models: '
                           f'{", ".join(available) or "(none)"}',
@@ -280,8 +288,10 @@ def chat_completions():
                          'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}]}
                 yield f'data: {json.dumps(final)}\n\n'
                 yield 'data: [DONE]\n\n'
-            except Exception as e:
-                err = {'error': {'message': f'Chat completion failed: {e}', 'type': 'api_error'}}
+            except Exception:
+                logger.exception('Streaming /v1 chat completion failed (model %s)', model.name)
+                err = {'error': {'message': 'Chat completion failed due to an internal error.',
+                                 'type': 'api_error'}}
                 yield f'data: {json.dumps(err)}\n\n'
             finally:
                 _release_slot('text', model.id, limit=limit)
@@ -289,8 +299,9 @@ def chat_completions():
 
     try:
         content = _call_chat_api(model, clean)
-    except Exception as e:
-        return _api_error(f'Chat completion failed: {e}', 'api_error', 502)
+    except Exception:
+        logger.exception('/v1 chat completion failed (model %s)', model.name)
+        return _api_error('Chat completion failed due to an internal error.', 'api_error', 502)
     finally:
         _release_slot('text', model.id, limit=limit)
 

@@ -365,6 +365,20 @@ def process_api_transcription(self, task_id, file_path, original_filename,
                               speech_model_id, user_id, language, prompt, response_format):
     """Async transcription for the /v1 API. Ephemeral: state lives in Redis, no DB record."""
     if not _acquire_slot('speech', speech_model_id):
+        # Give up once the task's Redis state has expired or its 24h window
+        # has passed — otherwise a saturated model would keep the retry loop
+        # and the uploaded file alive forever.
+        state = _api_task_get(task_id)
+        if not state or time.time() - state.get('created', 0) > API_TASK_TTL_SECS:
+            if state:
+                _api_task_update(task_id, status='failed', progress=100,
+                                 error='Timed out waiting for a free processing slot.')
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
+            return {'status': 'failed', 'task_id': task_id}
         raise self.retry(countdown=5)
     app = get_app()
     try:
@@ -386,8 +400,12 @@ def process_api_transcription(self, task_id, file_path, original_filename,
                     dictionary_prompt=merged_prompt,
                     progress_callback=lambda p: _api_task_update(task_id, progress=int(p)),
                 )
-            except Exception as e:
-                _api_task_update(task_id, status='failed', progress=100, error=str(e))
+            except Exception:
+                import logging
+                logging.getLogger('transcribeops.tasks').exception(
+                    'Async /v1 transcription failed (task %s, model %s)', task_id, model.name)
+                _api_task_update(task_id, status='failed', progress=100,
+                                 error='Transcription failed due to an internal error.')
                 return {'status': 'failed', 'task_id': task_id}
 
             _api_task_update(task_id, status='completed', progress=100,
