@@ -7,7 +7,7 @@ from flask_login import login_required, current_user
 from flask_babel import gettext as _
 from werkzeug.utils import secure_filename
 from app import db
-from app.models import Job, Meeting, Dictation, TextTask, DictionaryEntry, ChatMessage, SpeechModel, Conversation, ConversationMessage, TextModel
+from app.models import Job, Meeting, Dictation, TextTask, DictionaryEntry, ChatMessage, SpeechModel, Conversation, ConversationMessage, TextModel, ApiKey
 from app.utils import format_dt, now_local
 
 api_bp = Blueprint('api', __name__)
@@ -1269,3 +1269,69 @@ def poll_conversation_messages(public_id):
         'has_pending': has_pending,
         'title': conv.title,
     })
+
+
+# --- API keys (personal keys for the OpenAI-compatible /v1 API) ---
+
+MAX_API_KEYS_PER_USER = 20
+
+
+def _api_key_to_dict(k):
+    return {
+        'id': k.id,
+        'name': k.name,
+        'prefix': k.prefix,
+        'created_at': format_dt(k.created_at),
+        'last_used_at': format_dt(k.last_used_at) if k.last_used_at else None,
+    }
+
+
+@api_bp.route('/keys')
+@login_required
+def get_api_keys():
+    if not current_user.has_api_access():
+        return jsonify({'error': _('No access to API keys.')}), 403
+    keys = ApiKey.query.filter_by(user_id=current_user.id).order_by(ApiKey.created_at.desc()).all()
+    return jsonify([_api_key_to_dict(k) for k in keys])
+
+
+@api_bp.route('/keys', methods=['POST'])
+@login_required
+def create_api_key():
+    import hashlib
+    import secrets
+    if not current_user.has_api_access():
+        return jsonify({'error': _('No access to API keys.')}), 403
+    data = request.get_json()
+    name = ((data or {}).get('name') or '').strip()
+    if not name:
+        return jsonify({'error': _('Name is required.')}), 400
+    count = ApiKey.query.filter_by(user_id=current_user.id).count()
+    if count >= MAX_API_KEYS_PER_USER:
+        return jsonify({'error': _('Maximum number of API keys reached.')}), 400
+
+    raw = 'sk-' + secrets.token_urlsafe(32)
+    key = ApiKey(
+        user_id=current_user.id,
+        name=name[:100],
+        key_hash=hashlib.sha256(raw.encode()).hexdigest(),
+        prefix=raw[:7] + '…' + raw[-4:],
+    )
+    db.session.add(key)
+    db.session.commit()
+    result = _api_key_to_dict(key)
+    result['key'] = raw  # only returned once, at creation
+    return jsonify(result), 201
+
+
+@api_bp.route('/keys/<int:key_id>', methods=['DELETE'])
+@login_required
+def delete_api_key(key_id):
+    if not current_user.has_api_access():
+        return jsonify({'error': _('No access to API keys.')}), 403
+    key = ApiKey.query.filter_by(id=key_id, user_id=current_user.id).first()
+    if not key:
+        return jsonify({'error': _('Not found.')}), 404
+    db.session.delete(key)
+    db.session.commit()
+    return jsonify({'status': 'deleted'})

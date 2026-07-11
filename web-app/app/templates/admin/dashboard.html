@@ -105,6 +105,7 @@
                             {% if group.text_tools_enabled %}<span class="badge bg-success me-1" title="{{ _('Text Tools') }}">{{ _('Text') }}</span>{% endif %}
                             {% if group.chat_enabled %}<span class="badge bg-success me-1" title="{{ _('Chat') }}">{{ _('Chat') }}</span>{% endif %}
                             {% if group.dictionary_enabled %}<span class="badge bg-success me-1" title="{{ _('Dictionary') }}">{{ _('Dict.') }}</span>{% endif %}
+                            {% if group.api_keys_enabled %}<span class="badge bg-success me-1" title="{{ _('API access (API keys)') }}">API</span>{% endif %}
                         </td>
                         <td>
                             {% if group.auto_title_enabled %}<span class="badge bg-info me-1">{{ _('Auto-title') }}</span>{% endif %}
@@ -716,7 +717,8 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="dictation_enabled" id="newGroupDict2" checked><label class="form-check-label" for="newGroupDict2">{{ _('Dictation') }}</label></div>
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="text_tools_enabled" id="newGroupText" checked><label class="form-check-label" for="newGroupText">{{ _('Text Tools') }}</label></div>
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="chat_enabled" id="newGroupChat" checked><label class="form-check-label" for="newGroupChat">{{ _('Chat') }}</label></div>
-                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" id="newGroupDict" checked><label class="form-check-label" for="newGroupDict">{{ _('Dictionary') }}</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="dictionary_enabled" id="newGroupDict" checked><label class="form-check-label" for="newGroupDict">{{ _('Dictionary') }}</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="api_keys_enabled" id="newGroupApiKeys"><label class="form-check-label" for="newGroupApiKeys">{{ _('API access (API keys)') }}</label></div>
                     <hr>
                     <label class="form-label fw-medium">{{ _('Automation') }}</label>
                     <div class="form-check mb-1">
@@ -829,7 +831,8 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="dictation_enabled" {{ 'checked' if group.dictation_enabled }}><label class="form-check-label">{{ _('Dictation') }}</label></div>
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="text_tools_enabled" {{ 'checked' if group.text_tools_enabled }}><label class="form-check-label">{{ _('Text Tools') }}</label></div>
                     <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="chat_enabled" {{ 'checked' if group.chat_enabled }}><label class="form-check-label">{{ _('Chat') }}</label></div>
-                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="dictionary_enabled" {{ 'checked' if group.dictionary_enabled }}><label class="form-check-label">{{ _('Dictionary') }}</label></div>
+                    <div class="form-check mb-1"><input class="form-check-input" type="checkbox" name="dictionary_enabled" {{ 'checked' if group.dictionary_enabled }}><label class="form-check-label">{{ _('Dictionary') }}</label></div>
+                    <div class="form-check mb-3"><input class="form-check-input" type="checkbox" name="api_keys_enabled" {{ 'checked' if group.api_keys_enabled }}><label class="form-check-label">{{ _('API access (API keys)') }}</label></div>
                     <hr>
                     <label class="form-label fw-medium">{{ _('Automation') }}</label>
                     <div class="form-check mb-1">

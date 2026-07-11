@@ -64,11 +64,26 @@ def create_app(config_class=Config):
     from app.routes.main import main_bp
     from app.routes.admin import admin_bp
     from app.routes.api import api_bp
+    from app.routes.openai_compat import v1_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(main_bp)
     app.register_blueprint(admin_bp, url_prefix='/admin')
     app.register_blueprint(api_bp, url_prefix='/api')
+    app.register_blueprint(v1_bp, url_prefix='/v1')
+    # /v1 is authenticated via bearer API keys (external clients, no session
+    # cookie) — CSRF protection must stay on for everything else.
+    csrf.exempt(v1_bp)
+
+    @app.errorhandler(413)
+    def _request_too_large(e):
+        # MAX_CONTENT_LENGTH aborts fire during request parsing, before any
+        # blueprint handler — give /v1 clients the OpenAI error envelope.
+        if request.path.startswith('/v1/'):
+            from flask import jsonify
+            return jsonify({'error': {'message': 'Request body too large.',
+                                      'type': 'invalid_request_error'}}), 413
+        return e
 
     from app.sso import init_oidc
     init_oidc(app)
@@ -329,6 +344,15 @@ def _apply_migrations():
         # Groups: chat feature toggle
         if _has_table('groups') and not _has_column('groups', 'chat_enabled'):
             _safe_execute(conn, "ALTER TABLE groups ADD COLUMN chat_enabled BOOLEAN DEFAULT 1")
+
+        # Groups: API keys feature toggle
+        if _has_table('groups') and not _has_column('groups', 'api_keys_enabled'):
+            _safe_execute(conn, "ALTER TABLE groups ADD COLUMN api_keys_enabled BOOLEAN DEFAULT 0")
+
+        # API keys table
+        if not _has_table('api_keys'):
+            from app.models import ApiKey
+            ApiKey.__table__.create(db.engine)
 
 
 def _seed_defaults(app):

@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block title %}{{ _('API Keys') }} - TranscribeOps{% endblock %}
+{% block page_title %}{{ _('API Keys') }}{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-9">
+
+        <!-- Key management -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h5 class="card-title mb-1"><i class="bi bi-key me-2"></i>{{ _('Personal API keys') }}</h5>
+                        <p class="text-muted small mb-0">{{ _('Use these keys to connect third-party apps to the OpenAI-compatible API.') }}</p>
+                    </div>
+                </div>
+
+                <!-- Newly created key (shown once) -->
+                <div id="newKeyAlert" class="alert alert-success d-none">
+                    <div class="fw-medium mb-1"><i class="bi bi-check-circle me-1"></i>{{ _('This key is only shown once. Copy it now.') }}</div>
+                    <div class="input-group">
+                        <input type="text" class="form-control font-monospace" id="newKeyValue" readonly>
+                        <button class="btn btn-outline-secondary" type="button" onclick="copyNewKey()" title="{{ _('Copy') }}"><i class="bi bi-clipboard"></i></button>
+                    </div>
+                </div>
+
+                <!-- Create form -->
+                <form class="mb-4" onsubmit="createKey(event)">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-sm">
+                            <label class="form-label small fw-medium">{{ _('Key name') }}</label>
+                            <input type="text" class="form-control" id="newKeyName" placeholder="{{ _('e.g. My dictation app') }}" maxlength="100" required>
+                        </div>
+                        <div class="col-sm-auto">
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i>{{ _('Create API key') }}</button>
+                        </div>
+                    </div>
+                </form>
+
+                <!-- Keys list -->
+                <div id="keysList"></div>
+                <div id="emptyState" class="d-none text-center py-5">
+                    <i class="bi bi-key text-muted" style="font-size: 3rem;"></i>
+                    <p class="text-muted mt-3 mb-0">{{ _('No API keys yet.') }}</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- API documentation -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-body p-4">
+                <h5 class="card-title mb-3"><i class="bi bi-braces me-2"></i>{{ _('API documentation') }}</h5>
+
+                <h6>{{ _('Base URL') }}</h6>
+                <pre class="bg-body-tertiary p-2 rounded"><code>{{ base_url }}</code></pre>
+                <p class="small text-muted">{{ _('Authentication via header:') }} <code>Authorization: Bearer &lt;{{ _('API key') }}&gt;</code></p>
+
+                <hr>
+                <h6>{{ _('Transcription') }} — <code>POST /audio/transcriptions</code></h6>
+                <p class="small text-muted mb-2">{{ _('OpenAI-compatible. The model parameter selects one of your speech models (table below). Your dictionary is applied automatically if the model supports prompts.') }}</p>
+                <pre class="bg-body-tertiary p-2 rounded overflow-auto"><code>curl {{ base_url }}/audio/transcriptions \
+  -H "Authorization: Bearer $API_KEY" \
+  -F file=@aufnahme.mp3 \
+  -F model="{{ speech_models[0].name if speech_models else 'Local Whisper' }}"</code></pre>
+                <ul class="small text-muted mb-2">
+                    <li><code>language</code> — {{ _('optional, e.g. "de"') }}</li>
+                    <li><code>prompt</code> — {{ _('optional, additional spellings (comma-separated); merged with your dictionary') }}</li>
+                    <li><code>response_format</code> — <code>json</code> ({{ _('default') }}), <code>verbose_json</code> ({{ _('with segments/speakers') }}), <code>text</code></li>
+                    <li><code>async</code> — <code>true</code> {{ _('returns a task_id immediately; poll the result at') }} <code>GET /audio/transcriptions/&lt;task_id&gt;</code></li>
+                </ul>
+                <div class="alert alert-warning small py-2">
+                    <i class="bi bi-exclamation-triangle me-1"></i>{{ _('Synchronous requests are limited to about 10 minutes of processing time. Use async=true for long recordings.') }}
+                </div>
+
+                <h6 class="mt-3">{{ _('Available speech models') }}</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle">
+                        <thead><tr>
+                            <th><code>model</code></th>
+                            <th>{{ _('Provider') }}</th>
+                            <th>{{ _('Dictionary') }}</th>
+                            <th>{{ _('Speakers') }}</th>
+                            <th>{{ _('Upload limit') }}</th>
+                        </tr></thead>
+                        <tbody>
+                        {% for m in speech_models %}
+                        <tr>
+                            <td><code>{{ m.name }}</code></td>
+                            <td class="text-muted small">{{ m.provider }}</td>
+                            <td>{% if m.supports_prompt %}<i class="bi bi-check text-success"></i>{% else %}<i class="bi bi-x text-muted"></i>{% endif %}</td>
+                            <td>{% if m.supports_diarize %}<i class="bi bi-check text-success"></i>{% else %}<i class="bi bi-x text-muted"></i>{% endif %}</td>
+                            <td class="small text-muted">
+                                {% if m.max_upload_size_mb %}{{ m.max_upload_size_mb }} MB{% endif %}
+                                {% if m.max_upload_duration_secs %}{% if m.max_upload_size_mb %} / {% endif %}{{ (m.max_upload_duration_secs / 60) | round(0) | int }} min{% endif %}
+                                {% if not m.max_upload_size_mb and not m.max_upload_duration_secs %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="5" class="text-muted small">{{ _('No models available.') }}</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <hr>
+                <h6>{{ _('Chat & text patterns') }} — <code>POST /chat/completions</code></h6>
+                <p class="small text-muted mb-2">{{ _('OpenAI-compatible (incl. streaming). The model parameter selects a text model. Append a suffix to apply a text pattern to your message:') }}</p>
+                <ul class="small text-muted mb-2">
+                    <li><code>:rewrite</code> — {{ _('Rewrite text') }}</li>
+                    <li><code>:grammar</code> — {{ _('Fix grammar') }}</li>
+                    <li><code>:translate</code> — {{ _('Translate') }} ({{ _('optional field') }} <code>target_language</code>, {{ _('default') }}: "Englisch")</li>
+                    <li><code>:summarize</code> — {{ _('Summarize') }}</li>
+                </ul>
+                <pre class="bg-body-tertiary p-2 rounded overflow-auto"><code>curl {{ base_url }}/chat/completions \
+  -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "{{ text_models[0].name if text_models else 'Local Ollama' }}:grammar",
+       "messages": [{"role": "user", "content": "Das ist ein Text mit Feler."}]}'</code></pre>
+
+                <h6 class="mt-3">{{ _('Available text models') }}</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover align-middle">
+                        <thead><tr>
+                            <th><code>model</code></th>
+                            <th>{{ _('Provider') }}</th>
+                            <th>{{ _('Text patterns') }}</th>
+                        </tr></thead>
+                        <tbody>
+                        {% for m in text_models %}
+                        <tr>
+                            <td><code>{{ m.name }}</code></td>
+                            <td class="text-muted small">{{ m.provider }}</td>
+                            <td class="small">{% for a in text_actions %}<code>{{ m.name }}:{{ a }}</code>{% if not loop.last %}<br>{% endif %}{% endfor %}</td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="3" class="text-muted small">{{ _('No models available.') }}</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <hr>
+                <h6>{{ _('Model list') }} — <code>GET /models</code></h6>
+                <p class="small text-muted mb-0">{{ _('Returns all model names available to you in the OpenAI list format.') }}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadKeys() {
+    try {
+        const resp = await fetch('/api/keys');
+        const keys = await resp.json();
+        renderKeys(keys);
+    } catch (err) {
+        console.error('Failed to load API keys:', err);
+    }
+}
+
+function renderKeys(keys) {
+    const container = document.getElementById('keysList');
+    const emptyState = document.getElementById('emptyState');
+    if (!keys.length) {
+        container.innerHTML = '';
+        emptyState.classList.remove('d-none');
+        return;
+    }
+    emptyState.classList.add('d-none');
+    container.innerHTML = `<div class="table-responsive"><table class="table table-hover mb-0 align-middle">
+        <thead><tr><th>${window.tr('Name')}</th><th>${window.tr('Key')}</th><th>${window.tr('Created')}</th><th>${window.tr('Last used')}</th><th style="width:80px">${window.tr('Actions')}</th></tr></thead>
+        <tbody>${keys.map(k => `<tr>
+            <td><strong>${escapeHtml(k.name)}</strong></td>
+            <td class="font-monospace text-muted">${escapeHtml(k.prefix)}</td>
+            <td class="small text-muted">${escapeHtml(k.created_at || '')}</td>
+            <td class="small text-muted">${escapeHtml(k.last_used_at || window.tr('Never'))}</td>
+            <td><button class="btn btn-sm btn-outline-danger" onclick="revokeKey(${k.id})" title="${window.tr('Revoke')}"><i class="bi bi-trash"></i></button></td>
+        </tr>`).join('')}</tbody></table></div>`;
+}
+
+async function createKey(event) {
+    event.preventDefault();
+    const name = document.getElementById('newKeyName').value.trim();
+    if (!name) return;
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    try {
+        const resp = await fetch('/api/keys', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-CSRFToken': token},
+            body: JSON.stringify({name})
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            showToast(data.error || window.tr('Error'), 'danger');
+            return;
+        }
+        document.getElementById('newKeyName').value = '';
+        document.getElementById('newKeyValue').value = data.key;
+        document.getElementById('newKeyAlert').classList.remove('d-none');
+        loadKeys();
+    } catch (err) {
+        showToast(window.tr('Error while saving'), 'danger');
+    }
+}
+
+function copyNewKey() {
+    const input = document.getElementById('newKeyValue');
+    input.select();
+    navigator.clipboard.writeText(input.value).then(() => showToast(window.tr('Copied!'), 'success'));
+}
+
+async function revokeKey(id) {
+    if (!confirm(window.tr('Revoke this API key?'))) return;
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    try {
+        await fetch(`/api/keys/${id}`, {method: 'DELETE', headers: {'X-CSRFToken': token}});
+        loadKeys();
+    } catch (err) {
+        showToast(window.tr('Error while deleting'), 'danger');
+    }
+}
+
+function showToast(message, type) {
+    const toast = document.createElement('div');
+    toast.className = `position-fixed bottom-0 end-0 m-3 p-2 px-3 bg-${type} text-white rounded shadow`;
+    toast.style.zIndex = '9999';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text || '';
+    return div.innerHTML;
+}
+
+document.addEventListener('DOMContentLoaded', loadKeys);
+</script>
+{% endblock %}
