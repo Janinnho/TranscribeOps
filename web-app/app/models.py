@@ -144,6 +144,11 @@ class User(UserMixin, db.Model):
             return True
         return any(g.chat_enabled for g in self.groups)
 
+    def has_api_access(self):
+        if self.is_admin:
+            return True
+        return any(g.api_keys_enabled for g in self.groups)
+
     def get_auto_title_settings(self):
         """Return (enabled, model_id) from user's groups."""
         for g in self.groups:
@@ -202,6 +207,7 @@ class Group(db.Model):
     dictation_enabled = db.Column(db.Boolean, default=True)
     text_tools_enabled = db.Column(db.Boolean, default=True)
     chat_enabled = db.Column(db.Boolean, default=True)
+    api_keys_enabled = db.Column(db.Boolean, default=False)
     auto_title_enabled = db.Column(db.Boolean, default=False)
     auto_title_model_id = db.Column(db.Integer, db.ForeignKey('text_models.id'), nullable=True)
     auto_summary_enabled = db.Column(db.Boolean, default=False)
@@ -438,3 +444,17 @@ class ConversationMessage(db.Model):
     content = db.Column(db.Text, nullable=False, default='')
     status = db.Column(db.String(20), default='completed')    # 'completed', 'processing', 'failed'
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class ApiKey(db.Model):
+    __tablename__ = 'api_keys'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False)
+    key_hash = db.Column(db.String(64), unique=True, nullable=False, index=True)  # sha256 hex of the raw key
+    prefix = db.Column(db.String(16), nullable=False)  # display hint, e.g. "sk-a1b2…wxyz"
+    is_active = db.Column(db.Boolean, default=True)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+
+    user = db.relationship('User', backref=db.backref('api_keys', lazy='dynamic'))

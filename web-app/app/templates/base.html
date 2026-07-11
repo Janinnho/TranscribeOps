@@ -96,6 +96,9 @@
                     </a>
                     <ul class="dropdown-menu dropdown-menu-end shadow">
                         <li><a class="dropdown-item" href="{{ url_for('main.settings') }}"><i class="bi bi-sliders me-2"></i>{{ _('Settings') }}</a></li>
+                        {% if current_user.has_api_access() %}
+                        <li><a class="dropdown-item" href="{{ url_for('main.api_keys') }}"><i class="bi bi-key me-2"></i>{{ _('API Keys') }}</a></li>
+                        {% endif %}
                         <li><hr class="dropdown-divider"></li>
                         <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right me-2"></i>{{ _('Log out') }}</a></li>
                     </ul>

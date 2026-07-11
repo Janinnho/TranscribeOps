@@ -217,3 +217,31 @@ def settings():
     global_days = int(hist_setting.value) if hist_setting else 30
     global_history_label = _('Unlimited') if global_days == 0 else _('%(days)s days', days=global_days)
     return render_template('main/settings.html', global_history_label=global_history_label)
+
+
+@main_bp.route('/api-keys')
+@login_required
+def api_keys():
+    if not current_user.has_api_access():
+        flash(_('No access to API keys.'), 'danger')
+        return redirect(url_for('main.settings'))
+    # Same per-function restrictions as the /v1 API itself: transcription
+    # for speech, chat for plain completions, text_tools for Textmuster.
+    speech_models = current_user.get_available_speech_models(function='transcription')
+    chat_models = current_user.get_available_text_models(function='chat')
+    pattern_models = current_user.get_available_text_models(function='text_tools')
+    chat_ids = {m.id for m in chat_models}
+    pattern_ids = {m.id for m in pattern_models}
+    text_model_rows = []
+    seen = set()
+    for m in chat_models + pattern_models:
+        if m.id in seen:
+            continue
+        seen.add(m.id)
+        text_model_rows.append((m, m.id in chat_ids, m.id in pattern_ids))
+    base_url = request.url_root.rstrip('/') + '/v1'
+    return render_template('main/api_keys.html',
+                           speech_models=speech_models,
+                           text_model_rows=text_model_rows,
+                           base_url=base_url,
+                           text_actions=['rewrite', 'grammar', 'translate', 'summarize'])

@@ -40,9 +40,13 @@ def _get_concurrency_limit(model_type, model_id):
     return 0  # 0 = kein Limit
 
 
-def _acquire_slot(model_type, model_id):
-    """Try to acquire a concurrency slot. Returns True if acquired."""
-    limit = _get_concurrency_limit(model_type, model_id)
+def _acquire_slot(model_type, model_id, limit=None):
+    """Try to acquire a concurrency slot. Returns True if acquired.
+
+    Pass limit (the model's max_parallel_tasks) when calling from a web
+    request — _get_concurrency_limit() bootstraps a full app instance."""
+    if limit is None:
+        limit = _get_concurrency_limit(model_type, model_id)
     if limit <= 0:
         return True  # kein Limit
     r = _get_redis()
@@ -55,9 +59,10 @@ def _acquire_slot(model_type, model_id):
     return False
 
 
-def _release_slot(model_type, model_id):
+def _release_slot(model_type, model_id, limit=None):
     """Release a concurrency slot."""
-    limit = _get_concurrency_limit(model_type, model_id)
+    if limit is None:
+        limit = _get_concurrency_limit(model_type, model_id)
     if limit <= 0:
         return
     r = _get_redis()
@@ -305,6 +310,114 @@ def process_dictation(self, dictation_id):
             return {'status': dictation.status, 'dictation_id': dictation_id}
     finally:
         _release_slot('speech', model_id)
+
+
+# --- OpenAI-compatible API (/v1): async transcription state in Redis ---
+
+API_TASK_TTL_SECS = 86400
+
+
+def _api_task_key(task_id):
+    return f'transcribeops:apitask:{task_id}'
+
+
+def _api_task_update(task_id, **fields):
+    """Merge fields into the Redis-held state of an API transcription task."""
+    r = _get_redis()
+    key = _api_task_key(task_id)
+    raw = r.get(key)
+    state = json.loads(raw) if raw else {}
+    state.update(fields)
+    r.setex(key, API_TASK_TTL_SECS, json.dumps(state))
+
+
+def _api_task_get(task_id):
+    raw = _get_redis().get(_api_task_key(task_id))
+    return json.loads(raw) if raw else None
+
+
+def merge_dictionary_prompt(model, user_id, client_prompt):
+    """Combine the user's dictionary with a client-supplied prompt.
+    Returns None if the model does not support prompts."""
+    if not model.supports_prompt:
+        return None
+    parts = [p for p in (_get_dictionary_prompt(user_id), (client_prompt or '').strip() or None) if p]
+    return ', '.join(parts) if parts else None
+
+
+def format_transcription_result(result, response_format='json'):
+    """Shape a _call_speech_api result for the OpenAI-compatible API."""
+    if isinstance(result, dict):
+        text = result.get('text', '')
+        segments = result.get('segments', [])
+    else:
+        text = result or ''
+        segments = []
+    if response_format == 'text':
+        return text
+    if response_format == 'verbose_json':
+        return {'text': text, 'segments': segments}
+    return {'text': text}
+
+
+@celery.task(bind=True, max_retries=None)
+def process_api_transcription(self, task_id, file_path, original_filename,
+                              speech_model_id, user_id, language, prompt, response_format):
+    """Async transcription for the /v1 API. Ephemeral: state lives in Redis, no DB record."""
+    if not _acquire_slot('speech', speech_model_id):
+        # Give up once the task's Redis state has expired or its 24h window
+        # has passed — otherwise a saturated model would keep the retry loop
+        # and the uploaded file alive forever.
+        state = _api_task_get(task_id)
+        if not state or time.time() - state.get('created', 0) > API_TASK_TTL_SECS:
+            if state:
+                _api_task_update(task_id, status='failed', progress=100,
+                                 error='Timed out waiting for a free processing slot.')
+            if file_path and os.path.exists(file_path):
+                try:
+                    os.remove(file_path)
+                except OSError:
+                    pass
+            return {'status': 'failed', 'task_id': task_id}
+        raise self.retry(countdown=5)
+    app = get_app()
+    try:
+        with app.app_context():
+            from app import db
+            from app.models import SpeechModel
+            model = db.session.get(SpeechModel, speech_model_id)
+            if not model:
+                _api_task_update(task_id, status='failed', error='Model not found')
+                return {'status': 'failed', 'task_id': task_id}
+
+            _api_task_update(task_id, status='processing', progress=0)
+            merged_prompt = merge_dictionary_prompt(model, user_id, prompt)
+            try:
+                result = _call_speech_api(
+                    model, file_path, language=language,
+                    multi_speaker=bool(model.supports_diarize),
+                    original_filename=original_filename,
+                    dictionary_prompt=merged_prompt,
+                    progress_callback=lambda p: _api_task_update(task_id, progress=int(p)),
+                )
+            except Exception:
+                import logging
+                logging.getLogger('transcribeops.tasks').exception(
+                    'Async /v1 transcription failed (task %s, model %s)', task_id, model.name)
+                _api_task_update(task_id, status='failed', progress=100,
+                                 error='Transcription failed due to an internal error.')
+                return {'status': 'failed', 'task_id': task_id}
+
+            _api_task_update(task_id, status='completed', progress=100,
+                             result=format_transcription_result(result, response_format))
+            return {'status': 'completed', 'task_id': task_id}
+    finally:
+        _release_slot('speech', speech_model_id)
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
 
 
 @celery.task(bind=True, max_retries=None)
