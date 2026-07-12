@@ -1214,7 +1214,7 @@ function updateApiParamsPreview(form) {
         } else if (timestamps) {
             params.push('response_format=verbose_json');
         }
-        if (prompt) params.push('prompt=&lt;' + window.tr('Dictionary') + '&gt;');
+        if (prompt) params.push('prompt=<' + window.tr('Dictionary') + '>');
         info = window.tr('Local WhisperX server');
     } else if (provider === 'openai') {
         params.push(`model=${modelId}`);
@@ -1224,7 +1224,7 @@ function updateApiParamsPreview(form) {
         } else if (timestamps) {
             params.push('response_format=verbose_json');
         }
-        if (prompt) params.push('prompt=&lt;' + window.tr('Dictionary') + '&gt;');
+        if (prompt) params.push('prompt=<' + window.tr('Dictionary') + '>');
         info = window.tr('OpenAI API');
     } else if (provider === 'azure') {
         if (diarize) {
@@ -1233,14 +1233,28 @@ function updateApiParamsPreview(form) {
         } else if (timestamps) {
             params.push('response_format=verbose_json');
         }
-        if (prompt) params.push('prompt=&lt;' + window.tr('Dictionary') + '&gt;');
+        if (prompt) params.push('prompt=<' + window.tr('Dictionary') + '>');
         info = window.tr('Azure OpenAI');
     }
 
     params.push('timeout=' + timeout + 's');
 
-    preview.innerHTML = '<div class="text-muted mb-1"><i class="bi bi-send me-1"></i>' + window.tr('API parameters') + ' (' + info + '):</div>' +
-        params.map(p => '<span class="badge bg-secondary me-1 mb-1">' + p + '</span>').join('');
+    // Build via DOM APIs — params/info contain form-field text (e.g. model_id)
+    // that must never be parsed as HTML.
+    preview.replaceChildren();
+    const header = document.createElement('div');
+    header.className = 'text-muted mb-1';
+    const icon = document.createElement('i');
+    icon.className = 'bi bi-send me-1';
+    header.appendChild(icon);
+    header.appendChild(document.createTextNode(window.tr('API parameters') + ' (' + info + '):'));
+    preview.appendChild(header);
+    params.forEach(p => {
+        const badge = document.createElement('span');
+        badge.className = 'badge bg-secondary me-1 mb-1';
+        badge.textContent = p;
+        preview.appendChild(badge);
+    });
 }
 
 document.querySelectorAll('form').forEach(form => {

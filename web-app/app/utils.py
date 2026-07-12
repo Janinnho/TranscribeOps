@@ -1,4 +1,22 @@
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
+
+
+def safe_next_url(nxt):
+    """Return `nxt` only if it's a safe relative path on this host.
+
+    Blocks open redirects: rejects absolute URLs (scheme/netloc), protocol-
+    relative URLs (`//evil.com`) and backslash variants (`/\\evil.com`) that
+    browsers normalize to slashes.
+    """
+    if not nxt or not isinstance(nxt, str):
+        return None
+    if '\\' in nxt or not nxt.startswith('/') or nxt.startswith('//'):
+        return None
+    parsed = urlparse(nxt)
+    if parsed.scheme or parsed.netloc:
+        return None
+    return nxt
 
 
 def get_system_timezone():

@@ -43,6 +43,9 @@ def _passthrough(resp: requests.Response) -> Response:
             out.headers[h] = resp.headers[h]
     if "Content-Type" not in resp.headers:
         out.headers["Content-Type"] = "application/json"
+    # Instance workers only ever return JSON/plain text — nosniff keeps
+    # browsers from ever reinterpreting a proxied body as HTML.
+    out.headers["X-Content-Type-Options"] = "nosniff"
     return out
 
 

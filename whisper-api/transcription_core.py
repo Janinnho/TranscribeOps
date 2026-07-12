@@ -4,6 +4,7 @@ Registers /v1/audio/transcriptions (sync + async), /v1/audio/transcriptions/<tas
 /v1/models and /health against a given Engine instance.
 """
 import os
+import re
 import tempfile
 import time
 import uuid
@@ -16,6 +17,15 @@ from flask import Flask, request, jsonify
 from engines import EngineUnavailable
 
 logger = logging.getLogger("whisper-api.core")
+
+# The upload filename is client-controlled; only a plain extension may reach
+# NamedTemporaryFile(suffix=...).
+_SAFE_SUFFIX_RE = re.compile(r"^\.[A-Za-z0-9]{1,10}$")
+
+
+def _safe_suffix(filename: str) -> str:
+    ext = os.path.splitext(filename or "")[1]
+    return ext if _SAFE_SUFFIX_RE.match(ext) else ".wav"
 
 
 def _to_srt(segments):
@@ -221,7 +231,7 @@ def register_routes(app: Flask, engine, auth_fn: Callable[[], bool], model_alias
         prompt = request.form.get("prompt") or None
         async_mode = request.form.get("async", "false").lower() == "true"
 
-        suffix = os.path.splitext(audio_file.filename)[1] or ".wav"
+        suffix = _safe_suffix(audio_file.filename)
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
             audio_file.save(tmp)
             tmp_path = tmp.name

@@ -14,12 +14,13 @@ def _safe_next_url(nxt: str | None) -> str | None:
 
     Blocks open-redirect via `?next=https://evil.com` by rejecting any value
     with a scheme, netloc, or that doesn't start with a single '/'. Protocol-
-    relative URLs (`//evil.com/x`) also get filtered.
+    relative URLs (`//evil.com/x`) and backslash variants (`/\\evil.com`,
+    which browsers normalize to slashes) also get filtered.
     """
     if not nxt:
         return None
     # Reject anything that isn't a plain absolute path on our own origin.
-    if not nxt.startswith("/") or nxt.startswith("//"):
+    if "\\" in nxt or not nxt.startswith("/") or nxt.startswith("//"):
         return None
     parsed = urlparse(nxt)
     if parsed.scheme or parsed.netloc:
