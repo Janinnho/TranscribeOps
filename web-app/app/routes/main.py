@@ -3,6 +3,7 @@ from flask_login import login_required, current_user
 from flask_babel import gettext as _
 from app import db
 from app.models import Job, Meeting, Dictation, DictionaryEntry
+from app.utils import safe_next_url
 
 main_bp = Blueprint('main', __name__)
 
@@ -16,11 +17,9 @@ def set_language(code):
         current_user.language = code
         db.session.commit()
     session['lang'] = code
-    next_url = request.args.get('next') or request.referrer or url_for('main.transcription')
     # Reject open redirects: only allow relative URLs on this host.
-    if next_url.startswith('/') and not next_url.startswith('//'):
-        return redirect(next_url)
-    return redirect(url_for('main.transcription'))
+    next_url = safe_next_url(request.args.get('next')) or safe_next_url(request.referrer)
+    return redirect(next_url or url_for('main.transcription'))
 
 
 @main_bp.route('/')

@@ -7,6 +7,7 @@ from app.sso import (
     is_sso_enabled, get_sso_method,
     try_header_sso_login, oidc_authorize_redirect, oidc_handle_callback,
 )
+from app.utils import safe_next_url
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -28,7 +29,7 @@ def login():
         user, error = try_header_sso_login()
         if user:
             login_user(user, remember=True)
-            next_page = request.args.get('next')
+            next_page = safe_next_url(request.args.get('next'))
             return redirect(next_page or url_for('main.transcription'))
         if error:
             flash(error, 'danger')
@@ -86,7 +87,7 @@ def _handle_local_login(template='auth/login.html'):
         user = User.query.filter_by(email=email).first()
         if user and user.check_password(password) and user.is_active_user:
             login_user(user, remember=True)
-            next_page = request.args.get('next')
+            next_page = safe_next_url(request.args.get('next'))
             return redirect(next_page or url_for('main.transcription'))
         flash(_('Invalid email address or password.'), 'danger')
     return render_template(template)

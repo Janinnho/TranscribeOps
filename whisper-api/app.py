@@ -44,9 +44,16 @@ app = Flask(__name__)
 if ADMIN_SESSION_SECRET:
     app.secret_key = ADMIN_SESSION_SECRET
 elif ADMIN_PASSWORD:
-    app.secret_key = hashlib.sha256((ADMIN_PASSWORD + "::session").encode()).hexdigest()
+    # Derive the cookie-signing key from the admin password with a slow KDF —
+    # a fast hash would let anyone holding a signed session cookie brute-force
+    # the password offline. Deterministic on purpose: sessions survive restarts
+    # without requiring ADMIN_SESSION_SECRET to be set.
+    app.secret_key = hashlib.scrypt(
+        ADMIN_PASSWORD.encode(), salt=b"transcribeops::admin-session",
+        n=2**14, r=8, p=1, dklen=32,
+    )
 else:
-    app.secret_key = hashlib.sha256(os.urandom(32)).hexdigest()
+    app.secret_key = os.urandom(32)
 
 # --- i18n --------------------------------------------------------------------
 _TRANSLATIONS_DIR = os.path.join(os.path.dirname(__file__), "translations")
@@ -70,13 +77,12 @@ babel = Babel(app, locale_selector=_select_locale)
 
 @app.route("/lang/<code>")
 def set_language(code):
+    from admin.auth import _safe_next_url
     if code not in ("en", "de"):
         code = "en"
     session["lang"] = code
-    nxt = request.args.get("next") or request.referrer or url_for("admin.dashboard")
-    if isinstance(nxt, str) and nxt.startswith("/") and not nxt.startswith("//"):
-        return redirect(nxt)
-    return redirect(url_for("admin.dashboard"))
+    nxt = _safe_next_url(request.args.get("next")) or _safe_next_url(request.referrer)
+    return redirect(nxt or url_for("admin.dashboard"))
 
 
 @app.context_processor
