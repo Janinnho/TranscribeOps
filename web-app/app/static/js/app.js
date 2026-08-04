@@ -130,6 +130,22 @@ function initUpload(formId, fileInputId, dropZoneId, selectedFileId, fileNameId,
         xhr.addEventListener('load', () => {
             progress.classList.add('d-none');
             bar.style.width = '0%';
+
+            // load fires for every completed response, including HTTP errors.
+            // Without this check a 413 from a proxy or a 302 to a login page
+            // looks exactly like a successful upload.
+            if (xhr.status < 200 || xhr.status >= 300) {
+                let msg = '';
+                try {
+                    msg = JSON.parse(xhr.responseText).error || '';
+                } catch (e) {
+                    // Proxy error pages are HTML, not JSON — fall back to the status.
+                }
+                alert(msg || window.tr('Upload failed.') + ' (HTTP ' + xhr.status + ')');
+                uploadBtn.disabled = false;
+                return;
+            }
+
             fileInput.value = '';
             selectedFile.classList.add('d-none');
             dropZone.classList.remove('d-none');
