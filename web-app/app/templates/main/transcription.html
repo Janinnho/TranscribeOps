@@ -24,17 +24,17 @@
                         <div class="col-md-4">
                             <label class="form-label">{{ _('Language (optional)') }}</label>
                             <select class="form-select" id="language" name="language">
-                                <option value="">{{ _('Automatic') }}</option>
-                                <option value="de">{{ _('German') }}</option>
-                                <option value="en">{{ _('English') }}</option>
-                                <option value="fr">{{ _('French') }}</option>
-                                <option value="es">{{ _('Spanish') }}</option>
-                                <option value="it">{{ _('Italian') }}</option>
-                                <option value="pt">{{ _('Portuguese') }}</option>
-                                <option value="nl">{{ _('Dutch') }}</option>
-                                <option value="pl">{{ _('Polish') }}</option>
-                                <option value="ja">{{ _('Japanese') }}</option>
-                                <option value="zh">{{ _('Chinese') }}</option>
+                                <option value="" {{ 'selected' if not default_language }}>{{ _('Automatic') }}</option>
+                                <option value="de" {{ 'selected' if default_language == 'de' }}>{{ _('German') }}</option>
+                                <option value="en" {{ 'selected' if default_language == 'en' }}>{{ _('English') }}</option>
+                                <option value="fr" {{ 'selected' if default_language == 'fr' }}>{{ _('French') }}</option>
+                                <option value="es" {{ 'selected' if default_language == 'es' }}>{{ _('Spanish') }}</option>
+                                <option value="it" {{ 'selected' if default_language == 'it' }}>{{ _('Italian') }}</option>
+                                <option value="pt" {{ 'selected' if default_language == 'pt' }}>{{ _('Portuguese') }}</option>
+                                <option value="nl" {{ 'selected' if default_language == 'nl' }}>{{ _('Dutch') }}</option>
+                                <option value="pl" {{ 'selected' if default_language == 'pl' }}>{{ _('Polish') }}</option>
+                                <option value="ja" {{ 'selected' if default_language == 'ja' }}>{{ _('Japanese') }}</option>
+                                <option value="zh" {{ 'selected' if default_language == 'zh' }}>{{ _('Chinese') }}</option>
                             </select>
                         </div>
                     </div>

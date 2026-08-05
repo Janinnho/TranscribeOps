@@ -45,7 +45,8 @@ def transcription():
                            text_models=text_models,
                            audio_save_enabled=audio_save_enabled,
                            audio_save_default=audio_save_default,
-                           hide_single_model=hide_single_model)
+                           hide_single_model=hide_single_model,
+                           default_language=current_user.get_default_language())
 
 
 @main_bp.route('/meeting')
@@ -63,7 +64,8 @@ def meeting():
                            text_models=text_models,
                            audio_save_enabled=audio_save_enabled,
                            audio_save_default=audio_save_default,
-                           hide_single_model=hide_single_model)
+                           hide_single_model=hide_single_model,
+                           default_language=current_user.get_default_language())
 
 
 @main_bp.route('/dictation')
@@ -76,7 +78,8 @@ def dictation():
     hide_single_model = current_user.get_hide_single_model()
     return render_template('main/dictation.html',
                            speech_models=speech_models,
-                           hide_single_model=hide_single_model)
+                           hide_single_model=hide_single_model,
+                           default_language=current_user.get_default_language())
 
 
 @main_bp.route('/text-tools')

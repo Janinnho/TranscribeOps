@@ -129,7 +129,10 @@ def upload():
 
     job_type = request.form.get('job_type', 'transcription')
     speech_model_id = request.form.get('speech_model_id', type=int)
-    language = request.form.get('language', '').strip() or None
+    # Fall back to the group default so the setting also applies to callers
+    # that never render the form (API clients).
+    language = (request.form.get('language', '').strip()
+                or current_user.get_default_language() or None)
     multi_speaker = request.form.get('multi_speaker') == 'true'
     save_audio = request.form.get('save_audio') == '1'
 
@@ -235,7 +238,9 @@ def upload_audio():
 
     job_type = request.form.get('job_type', 'dictation')
     speech_model_id = request.form.get('speech_model_id', type=int)
-    language = request.form.get('language', '').strip() or None
+    # Same group-default fallback as /upload.
+    language = (request.form.get('language', '').strip()
+                or current_user.get_default_language() or None)
     save_audio = request.form.get('save_audio') == '1'
 
     # Validate feature access based on job_type

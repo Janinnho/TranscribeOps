@@ -22,9 +22,9 @@
             <div class="d-flex align-items-center gap-2">
                 <label class="form-label mb-0 text-nowrap fw-medium"><i class="bi bi-globe me-1"></i>{{ _('Language:') }}</label>
                 <select class="form-select form-select-sm" id="language" style="max-width: 180px;">
-                    <option value="">{{ _('Automatic') }}</option>
-                    <option value="de">{{ _('German') }}</option>
-                    <option value="en">{{ _('English') }}</option>
+                    <option value="" {{ 'selected' if not default_language }}>{{ _('Automatic') }}</option>
+                    <option value="de" {{ 'selected' if default_language == 'de' }}>{{ _('German') }}</option>
+                    <option value="en" {{ 'selected' if default_language == 'en' }}>{{ _('English') }}</option>
                 </select>
             </div>
         </div>

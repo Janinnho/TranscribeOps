@@ -25,11 +25,11 @@
                     <div class="{{ 'col-md-4' if not (hide_single_model and speech_models|length <= 1) else 'col-md-6' }}">
                         <label class="form-label">{{ _('Language (optional)') }}</label>
                         <select class="form-select" id="language">
-                            <option value="">{{ _('Automatic') }}</option>
-                            <option value="de">{{ _('German') }}</option>
-                            <option value="en">{{ _('English') }}</option>
-                            <option value="fr">{{ _('French') }}</option>
-                            <option value="es">{{ _('Spanish') }}</option>
+                            <option value="" {{ 'selected' if not default_language }}>{{ _('Automatic') }}</option>
+                            <option value="de" {{ 'selected' if default_language == 'de' }}>{{ _('German') }}</option>
+                            <option value="en" {{ 'selected' if default_language == 'en' }}>{{ _('English') }}</option>
+                            <option value="fr" {{ 'selected' if default_language == 'fr' }}>{{ _('French') }}</option>
+                            <option value="es" {{ 'selected' if default_language == 'es' }}>{{ _('Spanish') }}</option>
                         </select>
                     </div>
                     <div class="{{ 'col-md-4' if not (hide_single_model and speech_models|length <= 1) else 'col-md-6' }}">

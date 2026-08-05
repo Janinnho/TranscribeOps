@@ -9,7 +9,7 @@ import requests
 from flask import current_app
 from app import db
 from app.models import (User, Group, SpeechModel, TextModel, SystemSetting, Job, Meeting, Dictation, TextTask,
-                        ChatMessage, Conversation, ConversationMessage,
+                        ChatMessage, Conversation, ConversationMessage, SPEECH_LANGUAGES,
                         group_speech_model_functions, group_text_model_functions)
 
 admin_bp = Blueprint('admin', __name__)
@@ -226,6 +226,7 @@ def dashboard():
                            upload_disk_usage=_fmt_size(_dir_size(upload_path)),
                            stats=stats,
                            sso_settings=sso_settings,
+                           speech_languages=SPEECH_LANGUAGES,
                            all_records=all_records)
 
 
@@ -348,6 +349,11 @@ def create_group():
     # Upload limit
     group.max_upload_size_mb = request.form.get('max_upload_size_mb', 0, type=int)
 
+    # Default speech language ('' = auto-detect). Anything not on the offered
+    # list falls back to auto rather than reaching the engine unchecked.
+    lang = request.form.get('default_language', '').strip()
+    group.default_language = lang if lang in dict(SPEECH_LANGUAGES) else ''
+
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)
     group.speech_models = SpeechModel.query.filter(SpeechModel.id.in_(speech_model_ids)).all() if speech_model_ids else []
@@ -430,6 +436,11 @@ def update_group(group_id):
 
     # Upload limit
     group.max_upload_size_mb = request.form.get('max_upload_size_mb', 0, type=int)
+
+    # Default speech language ('' = auto-detect). Anything not on the offered
+    # list falls back to auto rather than reaching the engine unchecked.
+    lang = request.form.get('default_language', '').strip()
+    group.default_language = lang if lang in dict(SPEECH_LANGUAGES) else ''
 
     speech_model_ids = request.form.getlist('speech_model_ids', type=int)
     text_model_ids = request.form.getlist('text_model_ids', type=int)

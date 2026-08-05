@@ -767,6 +767,16 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                         <input class="form-check-input" type="checkbox" name="hide_single_model" id="newGroupHideSingleModel" checked>
                         <label class="form-check-label" for="newGroupHideSingleModel">{{ _('Hide model selection when only one model is available') }}</label>
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="newGroupDefaultLanguage">{{ _('Default language') }}</label>
+                        <select class="form-select" name="default_language" id="newGroupDefaultLanguage">
+                            <option value="" selected>{{ _('Automatic') }}</option>
+                            {% for code, label in speech_languages %}
+                            <option value="{{ code }}">{{ _(label) }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">{{ _('Preselected language for transcription, meeting and dictation. Automatic detection only samples the first 30 seconds and misfires on a silent start — a fixed language avoids that. Users can still change it per upload.') }}</small>
+                    </div>
                     <hr>
                     <label class="form-label fw-medium">{{ _('Upload limit') }}</label>
                     <div class="mb-3">
@@ -880,6 +890,16 @@ document.addEventListener('DOMContentLoaded', toggleSsoFields);
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="checkbox" name="hide_single_model" id="editHideSingleModel{{ group.id }}" {{ 'checked' if group.hide_single_model }}>
                         <label class="form-check-label" for="editHideSingleModel{{ group.id }}">{{ _('Hide model selection when only one model is available') }}</label>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="editDefaultLanguage{{ group.id }}">{{ _('Default language') }}</label>
+                        <select class="form-select" name="default_language" id="editDefaultLanguage{{ group.id }}">
+                            <option value="" {{ 'selected' if not group.default_language }}>{{ _('Automatic') }}</option>
+                            {% for code, label in speech_languages %}
+                            <option value="{{ code }}" {{ 'selected' if group.default_language == code }}>{{ _(label) }}</option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">{{ _('Preselected language for transcription, meeting and dictation. Automatic detection only samples the first 30 seconds and misfires on a silent start — a fixed language avoids that. Users can still change it per upload.') }}</small>
                     </div>
                     <hr>
                     <label class="form-label fw-medium">{{ _('Upload limit') }}</label>

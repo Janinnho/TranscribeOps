@@ -247,6 +247,10 @@ def _apply_migrations():
         if _has_table('groups') and not _has_column('groups', 'max_upload_size_mb'):
             _safe_execute(conn, "ALTER TABLE groups ADD COLUMN max_upload_size_mb INTEGER DEFAULT 0")
 
+        # Groups: default_language ('' = auto-detect)
+        if _has_table('groups') and not _has_column('groups', 'default_language'):
+            _safe_execute(conn, "ALTER TABLE groups ADD COLUMN default_language VARCHAR(10) DEFAULT ''")
+
         # Users: auth_source and external_id for SSO
         if _has_table('users'):
             if not _has_column('users', 'auth_source'):

@@ -4,6 +4,21 @@ from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from app import db
 
+# Languages offered for speech recognition. Defined once so the admin group
+# form and the upload forms cannot drift apart. Empty value = auto-detect.
+SPEECH_LANGUAGES = [
+    ('de', 'German'),
+    ('en', 'English'),
+    ('fr', 'French'),
+    ('es', 'Spanish'),
+    ('it', 'Italian'),
+    ('pt', 'Portuguese'),
+    ('nl', 'Dutch'),
+    ('pl', 'Polish'),
+    ('ja', 'Japanese'),
+    ('zh', 'Chinese'),
+]
+
 # Association tables
 user_groups = db.Table('user_groups',
     db.Column('user_id', db.Integer, db.ForeignKey('users.id'), primary_key=True),
@@ -194,6 +209,16 @@ class User(UserMixin, db.Model):
                 max_size = g.max_upload_size_mb
         return max_size
 
+    def get_default_language(self):
+        """Return the speech language preset by the user's groups ('' = automatic).
+
+        First group with a value wins; admins without a group get automatic.
+        """
+        for g in self.groups:
+            if g.default_language:
+                return g.default_language
+        return ''
+
 
 class Group(db.Model):
     __tablename__ = 'groups'
@@ -218,6 +243,7 @@ class Group(db.Model):
     audio_save_default = db.Column(db.Boolean, default=True)
     hide_single_model = db.Column(db.Boolean, default=True)
     max_upload_size_mb = db.Column(db.Integer, default=0)  # 0 = use global MAX_CONTENT_LENGTH
+    default_language = db.Column(db.String(10), default='')  # '' = auto-detect
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     speech_models = db.relationship('SpeechModel', secondary=group_speech_models,
