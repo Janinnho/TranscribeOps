@@ -47,6 +47,69 @@ def _to_mono_wav(src_path: str) -> tuple[str, bool]:
     return dst, True
 
 
+def _slice_wav(src: str, start: float, length: float) -> str:
+    """Extract [start, start+length) of a PCM-WAV into a new tempfile."""
+    fd, dst = tempfile.mkstemp(suffix=".wav", prefix="nemo_chunk_")
+    os.close(fd)
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-nostdin", "-y", "-loglevel", "error",
+                "-ss", f"{start:.3f}", "-t", f"{length:.3f}",
+                "-i", src,
+                "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le",
+                dst,
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+    except subprocess.CalledProcessError as e:
+        try:
+            os.unlink(dst)
+        except OSError:
+            pass
+        stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
+        raise RuntimeError(f"ffmpeg failed to slice {src}: {stderr.strip()}") from e
+    return dst
+
+
+def _wav_duration_secs(path: str) -> Optional[float]:
+    """Duration in seconds of a WAV written by _to_mono_wav / _slice_wav.
+
+    Falls back to deriving it from the file size, which is exact for the
+    mono/16 kHz/s16le format those two produce — without a duration the
+    caller cannot slice, and an unsliced multi-hour file exhausts memory.
+    """
+    import wave
+    try:
+        with wave.open(path, "rb") as w:
+            rate = w.getframerate()
+            if rate:
+                return w.getnframes() / rate
+    except Exception:
+        pass
+    try:
+        return os.path.getsize(path) / (16000 * 2)
+    except OSError:
+        return None
+
+
+# Parakeet's encoder attends globally, so attention cost grows with the
+# *square* of the audio length: a 2h50 file is ~127k encoder frames, i.e. tens
+# of GB per head, and the OOM killer ends it long before it finishes. Slicing
+# caps that — peak memory then depends on the slice, not the recording.
+# Measured on parakeet-primeline (CPU), same 900 s of speech:
+#   300 s slices ->  7.6 GB peak,  9.6x realtime
+#   450 s slices -> 11.5 GB peak,  7.4x realtime
+#   900 s, unsliced -> 32.6 GB peak, 4.4x realtime
+# Whisper never needs this: its encoder is hard-capped at 30 s (N_FRAMES=3000)
+# and WhisperX feeds it VAD chunks, so tensor sizes are length-independent.
+_CHUNK_SECS = float(os.environ.get("NEMO_CHUNK_SECS", "300"))
+# Slices overlap so a word straddling a boundary is transcribed intact; the
+# duplicate half is dropped at the midpoint when the words are stitched.
+_CHUNK_OVERLAP_SECS = float(os.environ.get("NEMO_CHUNK_OVERLAP_SECS", "5"))
+
 _WORD_BOUNDARY = "▁"  # SentencePiece marker for "starts new word"
 _SENTENCE_END = (".", "?", "!")
 
@@ -275,6 +338,102 @@ class NeMoEngine(Engine):
             self._frame_time_s = 0.08
         logger.info(f"NeMo model '{repo}' loaded (frame_time={self._frame_time_s:.4f}s).")
 
+    def _transcribe_one(self, path: str) -> tuple[str, list[dict]]:
+        """Run NeMo over one audio file, returning (text, word list)."""
+        # timestamps=True is required since NeMo 2.x for word-level timestamps
+        # (dictionary replacement + diarization depend on them). Older NeMo
+        # versions don't know the kwarg — fall back.
+        try:
+            outputs = self._model.transcribe(
+                [path], return_hypotheses=True, timestamps=True
+            )
+        except TypeError:
+            outputs = self._model.transcribe([path], return_hypotheses=True)
+
+        # Normalise NeMo's wildly inconsistent return shape:
+        #   [hyp1, hyp2, ...]                            (plain list)
+        #   ([hyp1, hyp2, ...], [all_hyps_per_sample])   (RNNT/TDT tuple)
+        #   [[hyp1], [hyp2]]                             (nested per sample)
+        if isinstance(outputs, tuple):
+            outputs = outputs[0] if outputs else None
+        if outputs and isinstance(outputs, list) and outputs and isinstance(outputs[0], list):
+            outputs = outputs[0]
+        hyp = outputs[0] if outputs else None
+
+        if hyp is None:
+            return "", []
+        if isinstance(hyp, str):
+            return hyp, []
+        text = getattr(hyp, "text", "") or ""
+        words = _words_from_hypothesis(
+            hyp, self._model.tokenizer, self._frame_time_s or 0.08
+        )
+        return text, words
+
+    def _transcribe_chunked(
+        self, path: str, duration: float, prog: Callable[[int, Optional[str]], None]
+    ) -> tuple[str, list[dict]]:
+        """Transcribe long audio slice by slice and stitch the words together.
+
+        Peak memory is set by the slice length, not the file length, so a
+        three-hour recording costs the same as a fifteen-minute one. Slices
+        overlap by _CHUNK_OVERLAP_SECS; where two slices both transcribed the
+        same moment, the seam is placed in the middle of the overlap and each
+        side keeps only its own half.
+        """
+        starts: list[float] = []
+        t = 0.0
+        while t < duration:
+            starts.append(t)
+            t += _CHUNK_SECS
+        # A tail shorter than the overlap was already covered in full by the
+        # previous slice; slicing it again would hand NeMo a near-empty file.
+        if len(starts) > 1 and duration - starts[-1] <= _CHUNK_OVERLAP_SECS:
+            starts.pop()
+        logger.info(
+            f"Audio is {duration:.0f}s — transcribing in {len(starts)} slice(s) "
+            f"of {_CHUNK_SECS:.0f}s (+{_CHUNK_OVERLAP_SECS:.0f}s overlap)."
+        )
+
+        all_words: list[dict] = []
+        texts: list[str] = []
+        for i, start in enumerate(starts):
+            length = min(_CHUNK_SECS + _CHUNK_OVERLAP_SECS, duration - start)
+            chunk = _slice_wav(path, start, length)
+            try:
+                text, words = self._transcribe_one(chunk)
+            finally:
+                try:
+                    os.unlink(chunk)
+                except OSError:
+                    pass
+
+            for w in words:
+                w["start"] += start
+                w["end"] += start
+
+            if i > 0:
+                # Everything before the seam belongs to the previous slice,
+                # everything from it on to this one.
+                seam = start + _CHUNK_OVERLAP_SECS / 2.0
+                while all_words and all_words[-1]["start"] >= seam:
+                    all_words.pop()
+                words = [w for w in words if w["start"] >= seam]
+
+            all_words.extend(words)
+            if text:
+                texts.append(text)
+            # Spread the transcription phase over 5..65 so long files visibly
+            # advance instead of sitting at 5 % for hours.
+            prog(5 + int(60 * (i + 1) / len(starts)), "transcribe")
+
+        # Words are the stitched source of truth; the per-slice texts still
+        # contain the overlap duplicates, so they only serve as a fallback for
+        # models that return no timestamps at all.
+        if all_words:
+            return " ".join(w["word"] for w in all_words), all_words
+        return " ".join(t for t in texts if t), []
+
     def _get_diarize_pipeline(self):
         if self._diarize_pipeline is not None:
             return self._diarize_pipeline
@@ -313,36 +472,12 @@ class NeMoEngine(Engine):
         # (batch, time). Cheap and format-agnostic — any container works.
         mono_path, is_tmp = _to_mono_wav(audio_path)
         try:
-            # timestamps=True is required since NeMo 2.x for word-level
-            # timestamps (dictionary replacement + diarization depend on
-            # them). Older NeMo versions don't know the kwarg — fall back.
-            try:
-                outputs = self._model.transcribe(
-                    [mono_path], return_hypotheses=True, timestamps=True
-                )
-            except TypeError:
-                outputs = self._model.transcribe([mono_path], return_hypotheses=True)
-            _prog(70, "postprocess")
-
-            # Normalise NeMo's wildly inconsistent return shape:
-            #   [hyp1, hyp2, ...]                            (plain list)
-            #   ([hyp1, hyp2, ...], [all_hyps_per_sample])   (RNNT/TDT tuple)
-            #   [[hyp1], [hyp2]]                             (nested per sample)
-            if isinstance(outputs, tuple):
-                outputs = outputs[0] if outputs else None
-            if outputs and isinstance(outputs, list) and outputs and isinstance(outputs[0], list):
-                outputs = outputs[0]
-            hyp = outputs[0] if outputs else None
-
-            text = ""
-            words: list[dict] = []
-            if hyp is None:
-                pass
-            elif isinstance(hyp, str):
-                text = hyp
+            duration = _wav_duration_secs(mono_path)
+            if duration is not None and duration > _CHUNK_SECS:
+                text, words = self._transcribe_chunked(mono_path, duration, _prog)
             else:
-                text = getattr(hyp, "text", "") or ""
-                words = _words_from_hypothesis(hyp, self._model.tokenizer, self._frame_time_s or 0.08)
+                text, words = self._transcribe_one(mono_path)
+            _prog(70, "postprocess")
 
             dict_words = parse_prompt(prompt) if prompt else []
             if dict_words and words:
