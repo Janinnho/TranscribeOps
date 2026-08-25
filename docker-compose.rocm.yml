@@ -49,4 +49,5 @@ services:
       #   RX 6600 / 6700 / 6800 / 6900 (RDNA2)   -> 10.3.0
       #   RX 7600 / 7700 / 7800 (RDNA3)          -> 11.0.0
       #   Ryzen APUs w/ Radeon 780M etc.         -> 11.0.0
+      # Full guide: docs/en/amd-gpu.md (deutsch: docs/de/amd-gpu.md)
       # - HSA_OVERRIDE_GFX_VERSION=11.0.0

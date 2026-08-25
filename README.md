@@ -290,7 +290,10 @@ docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d --build
 Requires ROCm drivers on the host and membership in the `video`/`render`
 groups. Note that **only NeMo/Parakeet models run on AMD GPUs** — Whisper
 models go through CTranslate2, which has no ROCm backend, and stay on the CPU.
-See [`docs/en/installation.md`](docs/en/installation.md) for details.
+
+Full walkthrough — drivers, `HSA_OVERRIDE_GFX_VERSION`, verification and
+troubleshooting: **[AMD GPU guide](docs/en/amd-gpu.md)**
+([deutsch](docs/de/amd-gpu.md))
 
 ---
 
@@ -308,6 +311,7 @@ See [`docs/en/installation.md`](docs/en/installation.md) for details.
 | [Admin Guide](docs/admin-guide.md) | Users, groups, models |
 | [User Guide](docs/user-guide.md) | How to use the features |
 | [Whisper API](docs/whisper-api.md) | Standalone Model API |
+| [AMD GPU (ROCm)](docs/en/amd-gpu.md) | Running transcription on an AMD graphics card |
 | [SSO Setup](docs/sso-setup.md) | Header-based SSO and OIDC |
 
 ---

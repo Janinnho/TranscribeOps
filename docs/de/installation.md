@@ -109,27 +109,17 @@ services:
 
 ### GPU-Unterstützung (AMD / ROCm)
 
-AMD-Karten brauchen einen anderen PyTorch-Build, deshalb ein eigenes
-Compose-Override statt einer Env-Variable:
+AMD-Karten brauchen einen anderen PyTorch-Build und ein eigenes Compose-Override:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d --build
 ```
 
-Voraussetzungen auf dem Host: ROCm-Treiber (`amdgpu-dkms`) installiert, der
-ausführende Benutzer in den Gruppen `video` und `render`. Prüfen mit
-`rocminfo | grep gfx`.
+Auf AMD-GPUs laufen **nur NeMo-/Parakeet-Modelle**. Whisper-Modelle nutzen
+CTranslate2, das kein ROCm-Backend hat, und bleiben auf der CPU.
 
-Karten, die ROCm nicht offiziell unterstützt, brauchen zusätzlich
-`HSA_OVERRIDE_GFX_VERSION` in der `.env` (RX 6000er: `10.3.0`,
-RX 7600/7700/7800 und Ryzen-APUs: `11.0.0`). Offiziell unterstützte Karten
-(RX 7900 XT/XTX, W7900, MI-Serie) brauchen die Variable nicht.
-
-> **Wichtig:** Auf AMD-GPUs laufen nur **NeMo-/Parakeet-Modelle**. Die
-> Whisper-Modelle nutzen faster-whisper/CTranslate2, das kein ROCm-Backend
-> besitzt — sie bleiben auf der CPU, unabhängig vom eingestellten Gerät. Das
-> Admin-Dashboard weist explizit darauf hin. Für deutsche Transkription ist
-> `parakeet-primeline` ohnehin das stärkste verfügbare Modell.
+> Vollständige Schritt-für-Schritt-Anleitung inklusive Treiber, `HSA_OVERRIDE_GFX_VERSION`,
+> Überprüfung und Fehlerbehebung: **[TranscribeOps auf einer AMD-GPU](amd-gpu.md)**
 
 ### Gerät auswählen
 
