@@ -258,7 +258,11 @@ Before exposing TranscribeOps publicly:
 
 ## 🖥️ GPU Acceleration (optional)
 
-Local Whisper runs on CPU by default. For GPU (NVIDIA):
+Transcription runs on CPU by default. `WHISPER_DEVICE` accepts `cpu`, `auto`
+(pick the best available device), `cuda` and `mps`; the admin dashboard shows
+the detected hardware and the device each engine actually ended up on.
+
+### NVIDIA
 
 1. Install the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html)
 2. In `docker-compose.yml` under the `whisper` service:
@@ -274,6 +278,19 @@ Local Whisper runs on CPU by default. For GPU (NVIDIA):
              count: 1
              capabilities: [gpu]
    ```
+
+### AMD (ROCm)
+
+AMD needs a different PyTorch build, so it ships as a compose override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d --build
+```
+
+Requires ROCm drivers on the host and membership in the `video`/`render`
+groups. Note that **only NeMo/Parakeet models run on AMD GPUs** — Whisper
+models go through CTranslate2, which has no ROCm backend, and stay on the CPU.
+See [`docs/en/installation.md`](docs/en/installation.md) for details.
 
 ---
 

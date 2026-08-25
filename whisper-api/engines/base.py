@@ -2,6 +2,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Optional, Callable
 
+from hardware import resolve_device
+
 
 class EngineUnavailable(RuntimeError):
     """Engine is temporarily unavailable (e.g. mid-reload).
@@ -33,10 +35,17 @@ class Engine(ABC):
 
     def __init__(self, model: str, device: str, compute_type: str, hf_token: str = "", batch_size: int = 16):
         self.model = model
-        self.device = device
+        # `requested_device` keeps what the admin configured (possibly "auto");
+        # `device` is the concrete torch device the engine actually targets.
+        self.requested_device = device
+        self.device = resolve_device(device)
         self.compute_type = compute_type
         self.hf_token = hf_token
         self.batch_size = batch_size
+        # Set by an engine that could not honour the requested device and fell
+        # back. Surfaced through /health so the admin UI can say so out loud
+        # instead of leaving a "GPU" instance silently crawling on CPU.
+        self.device_note: Optional[str] = None
 
     @abstractmethod
     def load(self) -> None:

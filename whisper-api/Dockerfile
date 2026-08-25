@@ -17,6 +17,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Torch flavour. Empty (the default) means "leave whatever pip resolved from
+# PyPI alone" — on linux/amd64 that is the CUDA build, i.e. exactly what this
+# image shipped before this argument existed. Existing CPU and NVIDIA builds
+# are therefore unaffected. Set it to a PyTorch wheel index to swap the build:
+#   --build-arg TORCH_INDEX=https://download.pytorch.org/whl/rocm6.3  (AMD/ROCm)
+#   --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cpu      (slim, CPU-only)
+# See docker-compose.rocm.yml for the AMD setup.
+ARG TORCH_INDEX=""
+RUN if [ -n "$TORCH_INDEX" ]; then \
+      echo "Installing torch from $TORCH_INDEX" && \
+      pip install --no-cache-dir --force-reinstall \
+          torch torchaudio --index-url "$TORCH_INDEX"; \
+    else \
+      echo "TORCH_INDEX unset — keeping the torch build resolved from PyPI"; \
+    fi
+
 # NumPy 2.0 removed `np.sctypes`, but NeMo 2.0.0 still references it in
 # preprocessing/segment.py. Patch it in-place to use explicit dtype lists.
 COPY patch_nemo_numpy2.py /tmp/patch_nemo_numpy2.py
@@ -33,6 +49,8 @@ COPY . .
 # Default environment — per-instance settings werden ab jetzt über das Admin-UI verwaltet.
 ENV WHISPER_API_KEY=""
 ENV WHISPER_MODEL="medium"
+# Unchanged default: "cpu". "auto" picks the best available device (CUDA,
+# ROCm or MPS) — opt-in, so existing deployments keep behaving as before.
 ENV WHISPER_DEVICE="cpu"
 ENV WHISPER_COMPUTE_TYPE="int8"
 ENV WHISPER_BATCH_SIZE="16"

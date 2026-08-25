@@ -26,10 +26,12 @@
     </label>
     <label>{{ _('Device') }}
       <select name="device">
+        <option value="auto" {% if default_device == 'auto' %}selected{% endif %}>{{ _('Automatic') }} &rarr; {{ hardware_device }}</option>
         <option value="cpu" {% if default_device == 'cpu' %}selected{% endif %}>CPU</option>
-        <option value="cuda" {% if default_device == 'cuda' %}selected{% endif %}>CUDA (GPU)</option>
+        <option value="cuda" {% if default_device == 'cuda' %}selected{% endif %}>CUDA / ROCm (GPU)</option>
         <option value="mps" {% if default_device == 'mps' %}selected{% endif %}>MPS (Apple)</option>
       </select>
+      <span class="hint">{{ _('Detected hardware: %(hw)s', hw=hardware_summary) }}</span>
     </label>
     <label>{{ _('Compute type') }}
       <select name="compute_type">
@@ -61,7 +63,7 @@
   <thead>
     <tr>
       <th>{{ _('Name') }}</th><th>{{ _('Engine / Model') }}</th><th>{{ _('API model') }}</th>
-      <th>{{ _('Status') }}</th><th>{{ _('Timeout') }}</th><th>{{ _('Idle unload') }}</th>
+      <th>{{ _('Device') }}</th><th>{{ _('Status') }}</th><th>{{ _('Timeout') }}</th><th>{{ _('Idle unload') }}</th>
       <th>CPU</th><th>RAM</th><th>{{ _('Actions') }}</th>
     </tr>
   </thead>
@@ -74,6 +76,19 @@
       </td>
       <td>{{ inst.engine }} / {{ inst.model or '—' }}</td>
       <td>{% if inst.is_main %}<code>whisper-1</code>{% else %}<code>{{ inst.name }}</code>{% endif %}</td>
+      {# Configured device vs. what the engine reports through /health. They
+         differ for "auto" and whenever an engine had to fall back to CPU. #}
+      {% set h = inst.health or {} %}
+      {% set effective = h.get('device') or inst.device %}
+      <td>
+        <code>{{ effective }}</code>
+        {% if inst.device and inst.device != effective %}
+          <br><span class="text-muted" style="font-size: 0.85em;">{{ _('configured') }}: {{ inst.device }}</span>
+        {% endif %}
+        {% if h.get('device_note') %}
+          <br><span class="pill pill-red" title="{{ h.get('device_note') }}">{{ _('CPU fallback') }}</span>
+        {% endif %}
+      </td>
       <td>
         {% if inst.status == 'running' %}
           <span class="pill pill-green">{{ _('Running') }}</span>
@@ -124,7 +139,7 @@
       </td>
     </tr>
     {% else %}
-    <tr><td colspan="9" class="text-muted text-center">{{ _('No instances created yet.') }}</td></tr>
+    <tr><td colspan="10" class="text-muted text-center">{{ _('No instances created yet.') }}</td></tr>
     {% endfor %}
   </tbody>
 </table>
@@ -151,8 +166,9 @@
     </label>
     <label>{{ _('Device') }}
       <select name="device">
+        <option value="auto">{{ _('Automatic') }} &rarr; {{ hardware_device }}</option>
         <option value="cpu">CPU</option>
-        <option value="cuda">CUDA (GPU)</option>
+        <option value="cuda">CUDA / ROCm (GPU)</option>
         <option value="mps">MPS (Apple)</option>
       </select>
     </label>

@@ -22,7 +22,7 @@
 | RAM | 4 GB | 8 GB+ (für lokales Whisper) |
 | Speicher | 5 GB | 20 GB+ (Modelle + Audio-Archiv) |
 | CPU | 2 Kerne | 4+ Kerne |
-| GPU (optional) | — | NVIDIA CUDA-fähig |
+| GPU (optional) | — | NVIDIA (CUDA) oder AMD (ROCm, nur Parakeet) |
 
 ### Softwareabhängigkeiten
 
@@ -69,7 +69,7 @@ Die Konfiguration erfolgt über Umgebungsvariablen in `docker-compose.yml`:
 environment:
   - WHISPER_API_KEY=${WHISPER_API_KEY:-my-secret-key}  # API-Schlüssel (optional)
   - WHISPER_MODEL=${WHISPER_MODEL:-medium}              # Modellgröße
-  - WHISPER_DEVICE=cpu                                  # cpu oder cuda
+  - WHISPER_DEVICE=cpu                                  # cpu, auto, cuda oder mps
   - WHISPER_COMPUTE_TYPE=int8                           # Rechengenauigkeit
 ```
 
@@ -106,6 +106,45 @@ services:
               count: 1
               capabilities: [gpu]
 ```
+
+### GPU-Unterstützung (AMD / ROCm)
+
+AMD-Karten brauchen einen anderen PyTorch-Build, deshalb ein eigenes
+Compose-Override statt einer Env-Variable:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d --build
+```
+
+Voraussetzungen auf dem Host: ROCm-Treiber (`amdgpu-dkms`) installiert, der
+ausführende Benutzer in den Gruppen `video` und `render`. Prüfen mit
+`rocminfo | grep gfx`.
+
+Karten, die ROCm nicht offiziell unterstützt, brauchen zusätzlich
+`HSA_OVERRIDE_GFX_VERSION` in der `.env` (RX 6000er: `10.3.0`,
+RX 7600/7700/7800 und Ryzen-APUs: `11.0.0`). Offiziell unterstützte Karten
+(RX 7900 XT/XTX, W7900, MI-Serie) brauchen die Variable nicht.
+
+> **Wichtig:** Auf AMD-GPUs laufen nur **NeMo-/Parakeet-Modelle**. Die
+> Whisper-Modelle nutzen faster-whisper/CTranslate2, das kein ROCm-Backend
+> besitzt — sie bleiben auf der CPU, unabhängig vom eingestellten Gerät. Das
+> Admin-Dashboard weist explizit darauf hin. Für deutsche Transkription ist
+> `parakeet-primeline` ohnehin das stärkste verfügbare Modell.
+
+### Gerät auswählen
+
+`WHISPER_DEVICE` akzeptiert:
+
+| Wert | Bedeutung |
+|---|---|
+| `cpu` | CPU (Standard, unverändert) |
+| `auto` | bestes verfügbares Gerät — CUDA, ROCm oder MPS, sonst CPU |
+| `cuda` | NVIDIA-GPU **oder** AMD-GPU unter ROCm (PyTorch bildet HIP auf `cuda` ab) |
+| `mps` | Apple Silicon |
+
+Der Wert ist pro Instanz im Admin-UI überschreibbar. Das Dashboard zeigt die
+erkannte Hardware und das Gerät, auf dem die Engine **tatsächlich** läuft —
+inklusive Hinweis, falls sie auf CPU zurückfallen musste.
 
 ### Überprüfung
 

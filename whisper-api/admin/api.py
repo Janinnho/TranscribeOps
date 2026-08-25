@@ -7,6 +7,7 @@ import uuid
 from flask import Blueprint, jsonify, request
 from flask_babel import gettext as _
 
+import hardware
 from engines import EngineBusy
 
 from .auth import login_required
@@ -131,6 +132,12 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
             return jsonify({"error": f"name '{name}' is already in use"}), 400
         if engine not in {"whisperx", "nemo"}:
             return jsonify({"error": f"unknown engine '{engine}'"}), 400
+        # Permissive on purpose: "cuda:1" and friends must still reach torch
+        # untouched. This only catches typos before they become a worker that
+        # crash-loops with a stack trace nobody reads.
+        if device.lower() not in hardware.KNOWN_DEVICES and not device.lower().startswith("cuda"):
+            return jsonify({"error": f"unknown device '{device}' — "
+                                     f"expected one of {', '.join(hardware.KNOWN_DEVICES)} or 'cuda:N'"}), 400
 
         try:
             port = int(port_raw) if port_raw else supervisor.allocate_port()

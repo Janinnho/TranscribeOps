@@ -156,7 +156,7 @@ Alignment models (wav2vec2 for en/fr/de/es/it) are baked into the image; pyannot
 |----------|-------------|---------|
 | `WHISPER_API_KEY` | Static API key (in addition to admin-UI keys) | `""` |
 | `WHISPER_MODEL` | Initial main engine model | `medium` |
-| `WHISPER_DEVICE` | `cpu`, `cuda`, or `mps` | `cpu` |
+| `WHISPER_DEVICE` | `cpu`, `auto`, `cuda` (NVIDIA/ROCm), or `mps` | `cpu` |
 | `WHISPER_COMPUTE_TYPE` | `int8`, `int16`, `float16`, `float32` | `int8` |
 | `WHISPER_BATCH_SIZE` | Transcription batch size | `16` |
 | `HF_TOKEN` | HuggingFace token (needed for diarization/pyannote) | `""` |

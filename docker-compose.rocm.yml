@@ -1,0 +1,52 @@
+# TranscribeOps — AMD GPU (ROCm) override
+#
+# Usage — always pass BOTH files, this one second:
+#   docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d --build
+#
+# What it changes, and nothing else:
+#   * builds the whisper image against the ROCm PyTorch wheels
+#   * hands the container the AMD kernel driver (/dev/kfd) and the render node
+#   * switches WHISPER_DEVICE to "auto" so the GPU is picked up without
+#     configuring every instance by hand
+#
+# Your plain `docker compose up` stays exactly as it was — CPU and NVIDIA
+# setups never load this file.
+#
+# IMPORTANT — what actually runs on the GPU:
+#   NeMo/Parakeet models  -> GPU. This is the reason to use this file.
+#   Whisper models        -> CPU, always. WhisperX runs on faster-whisper /
+#                            CTranslate2, which has no ROCm backend. The admin
+#                            dashboard says so out loud instead of pretending.
+#
+# Podman equivalent (rootful), if you are not using compose:
+#   --device /dev/kfd --device /dev/dri \
+#   --group-add keep-groups --security-opt seccomp=unconfined --ipc=host
+
+services:
+  whisper:
+    build:
+      context: ./whisper-api
+      args:
+        # Match this to the ROCm version your driver provides. Check the
+        # available indexes at https://pytorch.org/get-started/locally/
+        TORCH_INDEX: ${TORCH_INDEX:-https://download.pytorch.org/whl/rocm6.3}
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - render
+    security_opt:
+      - seccomp:unconfined
+    ipc: host
+    environment:
+      # "auto" resolves to the ROCm GPU when torch can see it, CPU otherwise.
+      - WHISPER_DEVICE=auto
+      # Cards ROCm does not support officially need their gfx arch spoofed.
+      # Uncomment the line matching your GPU — a wrong value is worse than
+      # none, so leave it out if your card is officially supported
+      # (RX 7900 XT/XTX, W7900, MI-series).
+      #   RX 6600 / 6700 / 6800 / 6900 (RDNA2)   -> 10.3.0
+      #   RX 7600 / 7700 / 7800 (RDNA3)          -> 11.0.0
+      #   Ryzen APUs w/ Radeon 780M etc.         -> 11.0.0
+      # - HSA_OVERRIDE_GFX_VERSION=11.0.0
