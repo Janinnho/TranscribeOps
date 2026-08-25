@@ -167,7 +167,9 @@ podman run -d --name transcribeops-whisper \
   transcribeops-whisper
 ```
 
-> Der Build lädt rund 3 GB ROCm-Wheels und dauert deutlich länger als der CPU-Build. Plane 10–20 Minuten ein.
+> Der Build lädt rund 5 GB ROCm-Wheels (allein das torch-Wheel ist 4,9 GB) und dauert deutlich länger als der CPU-Build. Plane 10–20 Minuten ein.
+
+Der Build tauscht dabei ausschließlich das torch-Backend: die Version bleibt identisch zum CPU-Build, und alle übrigen Pakete werden über eine Constraints-Datei festgehalten. Zum Abschluss laufen `import torch` und `pip check` — schlägt eines davon fehl, bricht der Build ab, statt ein Image mit kaputten Abhängigkeiten auszuliefern.
 
 ---
 
@@ -248,7 +250,7 @@ Als Anhaltspunkt (auf CPU gemessen, 900 s Sprache): 300-s-Stücke → 7,6 GB Spi
 | Instanz zeigt rotes **CPU-Fallback** | Tooltip lesen. Bei einer NeMo-Instanz nennt er die Original-Fehlermeldung von PyTorch. |
 | Whisper-Instanz bleibt auf CPU | Erwartetes Verhalten, kein Fehler — siehe [Hintergrund](#hintergrund-warum-laufen-whisper-modelle-nicht). |
 | `Permission denied` auf `/dev/kfd` (rootless) | Benutzer nicht in der Gruppe `render`. Schritt 2 nachholen und neu anmelden. |
-| Build bricht mit „No matching distribution" ab | Die ROCm-Version im `TORCH_INDEX` gibt es nicht (mehr). Verfügbare Indizes auf [pytorch.org](https://pytorch.org/get-started/locally/) prüfen. |
+| Build bricht mit „No matching distribution" ab | Der gewählte ROCm-Index führt die benötigte PyTorch-Version nicht. Der Build installiert bewusst **genau die Version**, die auch der CPU-Build nutzt (aktuell 2.8.0) — bietet dein Index die nicht an, hilft ein anderer `TORCH_INDEX`. Verfügbare Indizes auf [pytorch.org](https://pytorch.org/get-started/locally/). |
 | Out-of-Memory auf der GPU | `NEMO_CHUNK_SECS` verkleinern, siehe [Tuning](#tuning). |
 
 ---

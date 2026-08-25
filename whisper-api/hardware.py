@@ -103,14 +103,24 @@ def resolve_device(device: str) -> str:
     Explicit values are never second-guessed — someone who wrote 'cuda' gets
     'cuda', even on a box where the probe finds nothing. Downgrading that
     silently is how a misconfiguration turns into a mystery.
+
+    Known device names are lower-cased on the way out. Everything that accepts
+    a device (the admin API, WHISPER_DEVICE) compares case-insensitively, while
+    torch and the `startswith("cuda")` checks downstream are case-sensitive —
+    without this, a configured "CUDA" would pass validation, slip past the
+    CTranslate2 fallback guard and then die inside torch. Unrecognised strings
+    are passed through untouched so a future backend name still reaches torch.
     """
     d = (device or "").strip()
     if not d:
         return "cpu"
-    if d.lower() == AUTO:
+    low = d.lower()
+    if low == AUTO:
         resolved = detect_device()
         logger.info(f"device=auto resolved to '{resolved}' ({probe()['backend']}).")
         return resolved
+    if low in KNOWN_DEVICES or low.startswith("cuda:"):
+        return low
     return d
 
 

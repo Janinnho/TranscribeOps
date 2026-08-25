@@ -25,10 +25,31 @@ RUN pip install --no-cache-dir -r requirements.txt
 #   --build-arg TORCH_INDEX=https://download.pytorch.org/whl/cpu      (slim, CPU-only)
 # See docker-compose.rocm.yml for the AMD setup.
 ARG TORCH_INDEX=""
+# Swaps the torch *backend* without disturbing anything else:
+#
+#   * versions are pinned to what requirements.txt just resolved. Unpinned,
+#     pip takes the newest wheel the index offers and breaks whisperx's
+#     `torch~=2.8.0`. A version the index lacks fails the build loudly, which
+#     is the right outcome.
+#   * everything already installed is frozen into a constraints file, so the
+#     reinstall cannot drag shared dependencies along. Without it, --force-
+#     reinstall pulls fsspec and setuptools from the torch index and breaks
+#     the pins of lightning, datasets and nv-one-logger.
+#   * PyPI stays available as an extra index so the constrained dependencies
+#     remain resolvable. This cannot pull the CUDA wheel back in: PEP 440
+#     ranks the local version `2.8.0+rocm6.3` above a plain `2.8.0`, so the
+#     backend-specific wheel always wins for the pinned version.
 RUN if [ -n "$TORCH_INDEX" ]; then \
-      echo "Installing torch from $TORCH_INDEX" && \
-      pip install --no-cache-dir --force-reinstall \
-          torch torchaudio --index-url "$TORCH_INDEX"; \
+      TORCH_VER="$(python -c 'import torch; print(torch.__version__.split("+")[0])')" && \
+      TA_VER="$(python -c 'import torchaudio; print(torchaudio.__version__.split("+")[0])')" && \
+      echo "Reinstalling torch==$TORCH_VER torchaudio==$TA_VER from $TORCH_INDEX" && \
+      pip freeze | grep -viE '^(torch|torchaudio|pytorch-triton)' > /tmp/torch-constraints.txt && \
+      pip install --no-cache-dir --force-reinstall -c /tmp/torch-constraints.txt \
+          "torch==$TORCH_VER" "torchaudio==$TA_VER" \
+          --index-url "$TORCH_INDEX" --extra-index-url https://pypi.org/simple && \
+      rm -f /tmp/torch-constraints.txt && \
+      python -c "import torch, torchaudio; print('torch', torch.__version__, '| torchaudio', torchaudio.__version__)" && \
+      pip check; \
     else \
       echo "TORCH_INDEX unset — keeping the torch build resolved from PyPI"; \
     fi
