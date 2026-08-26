@@ -1,6 +1,8 @@
 """Admin UI HTML routes."""
 from flask import Blueprint, render_template
 
+import hardware
+
 from .auth import login_required
 from .catalog import CATALOG, KIND_LABELS, KIND_COLORS
 from .downloads import catalog_status, bundled_models_status
@@ -43,7 +45,15 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             "main_compute_type": main_cfg.get("compute_type", config["default_compute_type"]),
             "main_reload_status": main_state.get("reload", {}).get("status", "idle"),
             "main_reload_error": main_state.get("reload", {}).get("error"),
+            # Resolved device + fallback note: config says what was asked for,
+            # these say what the engine is really running on.
+            "main_resolved_device": main_state.get("resolved_device"),
+            "main_device_note": main_state.get("device_note"),
         }
+        hw = hardware.probe()
+        system_info["hardware"] = hw
+        system_info["hardware_summary"] = hardware.describe(hw)
+        system_info["ct2_cuda"] = hardware.ctranslate2_has_cuda()
 
         return render_template(
             "dashboard.html",
@@ -105,7 +115,12 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             "enabled": not main_state.get("disabled"),
             "status": main_status,
             "reload_error": main_state.get("reload", {}).get("error"),
-            "health": None,
+            # Mirrors the shape instance_status() builds from /health so the
+            # template can render the main row through the same branch.
+            "health": {
+                "device": main_state.get("resolved_device"),
+                "device_note": main_state.get("device_note"),
+            } if main_state.get("loaded") else None,
             "cpu_pct": None,
             "rss_mb": None,
         }
@@ -118,6 +133,8 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
             default_device=config["default_device"],
             default_compute_type=config["default_compute_type"],
             main_disabled=bool(main_state.get("disabled")),
+            hardware_summary=hardware.describe(),
+            hardware_device=hardware.detect_device(),
         )
 
     @bp.route("/keys")

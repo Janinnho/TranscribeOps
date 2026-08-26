@@ -30,7 +30,7 @@
 |----------|-------------|---------|
 | `WHISPER_API_KEY` | API key for authentication (empty = no auth) | `my-secret-key` |
 | `WHISPER_MODEL` | Default model size | `medium` |
-| `WHISPER_DEVICE` | Compute device (`cpu` or `cuda`) | `cpu` |
+| `WHISPER_DEVICE` | Compute device: `cpu`, `auto`, `cuda` (NVIDIA/ROCm) or `mps` | `cpu` |
 | `WHISPER_COMPUTE_TYPE` | Compute precision (`int8`, `float16`, `float32`) | `int8` |
 
 ---

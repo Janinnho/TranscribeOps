@@ -19,6 +19,7 @@ from admin.db import init_db, touch_api_key_last_used, key_is_active
 from admin import db as admin_db
 from admin import supervisor
 from i18n import compile_translations, client_strings_for
+import hardware
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("whisper-api")
@@ -37,6 +38,16 @@ INSTANCE_PORT_RANGE = os.environ.get("INSTANCE_PORT_RANGE", "8100-8120")
 DISABLE_MAIN_ENGINE = os.environ.get("DISABLE_MAIN_ENGINE", "0") == "1"
 
 MAIN_CFG_KEY = "main_engine_config"
+
+# Probe once at startup so the container log answers "is my GPU being used at
+# all?" without a round trip through the UI. Skipped in admin-only mode: that
+# process loads no engine, and probing would import torch (a few hundred MB of
+# RSS) purely to print a line. The dashboard probes on demand there instead.
+if not DISABLE_MAIN_ENGINE:
+    _HW = hardware.probe()
+    logger.info(f"Detected compute hardware: {hardware.describe(_HW)} (WHISPER_DEVICE={DEVICE})")
+    if _HW.get("error"):
+        logger.warning(f"Hardware probe reported: {_HW['error']}")
 
 # --- App ---------------------------------------------------------------------
 app = Flask(__name__)
@@ -213,6 +224,10 @@ class _EngineProxy:
                 "loaded": self._real is not None,
                 "config": dict(self._config),
                 "reload": dict(self._reload),
+                # What the engine actually ended up on — differs from
+                # config["device"] for "auto" and for a GPU->CPU fallback.
+                "resolved_device": self._real.device if self._real else None,
+                "device_note": self._real.device_note if self._real else None,
             }
 
     # ----- duck-typed Engine surface used by transcription_core -----
@@ -227,6 +242,14 @@ class _EngineProxy:
     @property
     def device(self) -> str:
         return self._real.device if self._real else self._config.get("device", "")
+
+    @property
+    def requested_device(self) -> str:
+        return self._real.requested_device if self._real else self._config.get("device", "")
+
+    @property
+    def device_note(self):
+        return self._real.device_note if self._real else None
 
     @property
     def compute_type(self) -> str:

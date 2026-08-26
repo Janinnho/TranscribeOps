@@ -156,7 +156,7 @@ Alignment-Modelle (wav2vec2 für en/fr/de/es/it) sind ins Image eingebacken; pya
 |----------|-------------|----------|
 | `WHISPER_API_KEY` | Statischer API-Key (zusätzlich zu Admin-UI-Keys) | `""` |
 | `WHISPER_MODEL` | Initiales Main-Engine-Modell | `medium` |
-| `WHISPER_DEVICE` | `cpu`, `cuda` oder `mps` | `cpu` |
+| `WHISPER_DEVICE` | `cpu`, `auto`, `cuda` (NVIDIA/ROCm) oder `mps` | `cpu` |
 | `WHISPER_COMPUTE_TYPE` | `int8`, `int16`, `float16`, `float32` | `int8` |
 | `WHISPER_BATCH_SIZE` | Batch-Größe der Transkription | `16` |
 | `HF_TOKEN` | HuggingFace-Token (nötig für Diarization/pyannote) | `""` |

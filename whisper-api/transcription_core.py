@@ -394,6 +394,8 @@ def register_routes(app: Flask, engine, auth_fn: Callable[[], bool], model_alias
             "engine": engine.name,
             "model": engine.model,
             "device": engine.device,
+            "requested_device": getattr(engine, "requested_device", engine.device),
+            "device_note": getattr(engine, "device_note", None),
             "compute_type": engine.compute_type,
             "supports_alignment": engine.supports_alignment,
             "supports_diarization": engine.supports_diarization and bool(engine.hf_token),

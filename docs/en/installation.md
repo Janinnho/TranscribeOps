@@ -22,7 +22,7 @@
 | RAM | 4 GB | 8 GB+ (for local Whisper) |
 | Storage | 5 GB | 20 GB+ (models + audio archive) |
 | CPU | 2 cores | 4+ cores |
-| GPU (optional) | — | NVIDIA CUDA-capable |
+| GPU (optional) | — | NVIDIA (CUDA) or AMD (ROCm, Parakeet only) |
 
 ### Software Dependencies
 
@@ -69,7 +69,7 @@ Configuration is done via environment variables in `docker-compose.yml`:
 environment:
   - WHISPER_API_KEY=${WHISPER_API_KEY:-my-secret-key}  # API key (optional)
   - WHISPER_MODEL=${WHISPER_MODEL:-medium}              # Model size
-  - WHISPER_DEVICE=cpu                                  # cpu or cuda
+  - WHISPER_DEVICE=cpu                                  # cpu, auto, cuda or mps
   - WHISPER_COMPUTE_TYPE=int8                           # Compute precision
 ```
 
@@ -106,6 +106,35 @@ services:
               count: 1
               capabilities: [gpu]
 ```
+
+### GPU Support (AMD / ROCm)
+
+AMD cards need a different PyTorch build and their own compose override:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.rocm.yml up -d --build
+```
+
+Only **NeMo/Parakeet models** run on AMD GPUs. Whisper models use CTranslate2,
+which has no ROCm backend, and stay on the CPU.
+
+> Full step-by-step guide covering drivers, `HSA_OVERRIDE_GFX_VERSION`,
+> verification and troubleshooting: **[TranscribeOps on an AMD GPU](amd-gpu.md)**
+
+### Choosing a device
+
+`WHISPER_DEVICE` accepts:
+
+| Value | Meaning |
+|---|---|
+| `cpu` | CPU (default, unchanged) |
+| `auto` | best available device — CUDA, ROCm or MPS, else CPU |
+| `cuda` | NVIDIA GPU **or** AMD GPU under ROCm (PyTorch maps HIP onto `cuda`) |
+| `mps` | Apple Silicon |
+
+The value can be overridden per instance in the admin UI. The dashboard shows
+the detected hardware and the device the engine is **actually** running on,
+including a note when it had to fall back to CPU.
 
 ### Verification
 

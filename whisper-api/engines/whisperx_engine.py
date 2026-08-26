@@ -1,6 +1,8 @@
 import logging
 from typing import Optional, Callable
 
+from hardware import ctranslate2_has_cuda, probe
+
 from .base import Engine, TranscriptionResult
 from .dictionary import REPLACED_KEY, apply_dictionary, parse_prompt
 
@@ -17,11 +19,34 @@ class WhisperXEngine(Engine):
         self._model = None
         self._align_models: dict = {}
         self._diarize_pipeline = None
+        # Device for the ASR pass only. faster-whisper runs on CTranslate2,
+        # which has no HIP/ROCm backend — on an AMD box torch offers a "cuda"
+        # device that CTranslate2 cannot use. Alignment and diarization are
+        # plain torch and keep self.device, so they still get the GPU.
+        self._asr_device = self.device
+
+    def _resolve_asr_device(self) -> None:
+        if not self.device.startswith("cuda"):
+            return
+        if ctranslate2_has_cuda():
+            return
+        info = probe()
+        if info["backend"] == "rocm":
+            reason = ("CTranslate2 (faster-whisper) hat kein ROCm-Backend — "
+                      "Whisper-Modelle laufen auf AMD-GPUs nicht. "
+                      "Für GPU-Transkription eine NeMo/Parakeet-Instanz anlegen.")
+        else:
+            reason = ("CTranslate2 wurde ohne CUDA-Unterstützung installiert "
+                      "(CPU-only-Build).")
+        self._asr_device = "cpu"
+        self.device_note = f"Transkription läuft auf CPU statt {self.device}: {reason}"
+        logger.warning(self.device_note)
 
     def load(self) -> None:
         import whisperx
-        logger.info(f"Loading WhisperX model '{self.model}' on {self.device} ({self.compute_type})...")
-        self._model = whisperx.load_model(self.model, self.device, compute_type=self.compute_type)
+        self._resolve_asr_device()
+        logger.info(f"Loading WhisperX model '{self.model}' on {self._asr_device} ({self.compute_type})...")
+        self._model = whisperx.load_model(self.model, self._asr_device, compute_type=self.compute_type)
         logger.info(f"WhisperX model '{self.model}' loaded.")
 
     def _get_align_model(self, language_code: str):

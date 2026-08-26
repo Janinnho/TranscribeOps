@@ -16,6 +16,7 @@ TranscribeOps ist eine Self-Hosted Webanwendung zur automatischen Transkription,
 | [Admin-Handbuch](admin-guide.md) | Benutzerverwaltung, Gruppen, Modelle, globale Einstellungen |
 | [Benutzerhandbuch](user-guide.md) | Transkription, Meetings, Diktat, Text-Tools, Wörterbuch, Chat |
 | [Whisper API Service](whisper-api.md) | Lokaler Whisper-Server, Endpunkte, Modellkonfiguration |
+| [AMD-GPU (ROCm)](amd-gpu.md) | Schritt-für-Schritt-Anleitung für Transkription auf AMD-Grafikkarten |
 | [SSO-Setup](sso-setup.md) | Single Sign-On (Header-basiert & OIDC) |
 
 ---

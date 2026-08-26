@@ -72,6 +72,9 @@ services:
     environment:
       - WHISPER_API_KEY=${WHISPER_API_KEY:-}
       - WHISPER_MODEL=medium
+      # cpu | auto | cuda | mps. "auto" picks the best device torch can see
+      # (NVIDIA CUDA, AMD ROCm or Apple MPS) and falls back to cpu.
+      # For AMD GPUs see docker-compose.rocm.yml.
       - WHISPER_DEVICE=cpu
       - WHISPER_COMPUTE_TYPE=int8
       - WHISPER_BATCH_SIZE=16

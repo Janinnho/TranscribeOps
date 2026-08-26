@@ -325,7 +325,12 @@ class NeMoEngine(Engine):
         try:
             self._model = self._model.to(self.device)
         except Exception as e:
-            logger.warning(f"Could not move NeMo model to {self.device}: {e}")
+            # Was a silent warning: the instance then reported its configured
+            # device while crawling along on CPU. Record it so /health — and
+            # with it the admin UI — says what actually happened.
+            self.device_note = f"Modell konnte nicht auf {self.device} geladen werden, läuft auf CPU: {e}"
+            logger.warning(self.device_note)
+            self.device = "cpu"
         self._model.eval()
 
         # Frame→seconds: feature stride × encoder subsampling. Fallback to
