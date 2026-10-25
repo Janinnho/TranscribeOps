@@ -43,7 +43,10 @@
         {% endif %}
       </td>
       <td>
-        {% if not e.downloaded and not e.active_download %}
+        {% if e.downloaded %}
+        <button type="button" class="btn btn-danger btn-sm" data-action="delete-model"
+                data-id="{{ e.id }}" data-name="{{ e.display_name }}">{{ _('Delete') }}</button>
+        {% elif not e.active_download %}
         <button class="btn btn-primary btn-sm download-btn" data-repo="{{ e.repo_id }}" data-kind="{{ e.kind }}">{{ _('Download') }}</button>
         {% endif %}
         {% if e.requires_hf_token %}
@@ -60,5 +63,6 @@
 <script>
   AdminUI.wireDownloadButtons();
   AdminUI.wireCustomDownloadForm();
+  AdminUI.wireDeleteModelButtons();
 </script>
 {% endblock %}
