@@ -42,6 +42,67 @@ def is_downloaded(repo_id: str) -> bool:
     return _model_is_cached(repo_id)
 
 
+def remove_cached_repo(repo_id: str) -> bool:
+    """Delete the local HuggingFace cache for one catalog repo.
+
+    Only the per-repo directories this app writes are removed
+    (``$HF_HOME/hub/models--org--name`` and the legacy
+    ``$HF_HOME/models--org--name``). Symlinks are unlinked and never
+    followed. Returns True when a cache directory was removed.
+
+    Raises ValueError when ``repo_id`` is not a catalog entry, so a
+    request cannot aim this at an arbitrary path.
+    """
+    if by_repo_id(repo_id) is None:
+        raise ValueError(f"unknown catalog repo: {repo_id}")
+    removed = False
+    for base in _snapshot_dirs(repo_id):
+        if _remove_repo_cache_dir(base):
+            removed = True
+    return removed
+
+
+def _cache_roots() -> set[Path]:
+    return {Path(HF_CACHE_DIR).resolve(), Path(HF_HOME_DIR).resolve()}
+
+
+def _assert_repo_cache_path(path: Path) -> None:
+    """Require ``path`` to be a direct ``models--*`` child of a cache root."""
+    name = path.name
+    if not name.startswith("models--") or name != Path(name).name or ".." in name:
+        raise ValueError("refusing to delete unexpected cache path")
+    parent = path.parent.resolve()
+    if parent not in _cache_roots():
+        raise ValueError("refusing to delete outside the model cache")
+    if path.is_symlink():
+        return
+    if path.exists():
+        resolved = path.resolve()
+        if resolved.parent != parent or resolved.name != name:
+            raise ValueError("refusing to delete outside the model cache")
+
+
+def _remove_repo_cache_dir(path: Path) -> bool:
+    if not path.exists() and not path.is_symlink():
+        return False
+    _assert_repo_cache_path(path)
+    if path.is_symlink() or not path.is_dir():
+        path.unlink()
+        return True
+    _rmtree_nofollow(path)
+    return True
+
+
+def _rmtree_nofollow(root: Path) -> None:
+    """Delete a directory tree. Unlink symlinks; do not follow them."""
+    for child in list(root.iterdir()):
+        if child.is_symlink() or not child.is_dir():
+            child.unlink()
+        else:
+            _rmtree_nofollow(child)
+    root.rmdir()
+
+
 def disk_size_mb(repo_id: str) -> float:
     total = 0
     for base in _snapshot_dirs(repo_id):

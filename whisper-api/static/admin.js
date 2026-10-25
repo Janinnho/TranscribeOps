@@ -66,6 +66,26 @@ const AdminUI = (() => {
     });
   }
 
+  function wireDeleteModelButtons() {
+    document.querySelectorAll('[data-action="delete-model"]').forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.name || btn.dataset.id;
+        if (!confirm(window.tr("Really delete the downloaded model {name}? The files are removed from this server. The model can be downloaded again later.", {name}))) return;
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = "…";
+        try {
+          await api(`/admin/api/models/${encodeURIComponent(btn.dataset.id)}`, { method: "DELETE" });
+          location.reload();
+        } catch (e) {
+          alert(window.tr("Error: {msg}", {msg: e.message}));
+          btn.disabled = false;
+          btn.textContent = original;
+        }
+      });
+    });
+  }
+
   function wireCustomDownloadForm() {
     const form = document.getElementById("custom-dl-form");
     if (!form) return;
@@ -329,7 +349,7 @@ const AdminUI = (() => {
 
   return {
     wireKeyActions, wireNewKeyForm,
-    wireDownloadButtons, wireCustomDownloadForm,
+    wireDownloadButtons, wireCustomDownloadForm, wireDeleteModelButtons,
     wireInstanceActions, wireNewInstanceForm,
     wireMainEngineActions, wireInstanceSettings,
   };
