@@ -9,7 +9,7 @@ import os
 
 from flask import Flask, request
 
-from engines import get_engine
+from engines import available_engines, get_engine
 from transcription_core import register_routes
 
 
@@ -72,7 +72,7 @@ def _build_app(args) -> Flask:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, required=True)
-    parser.add_argument("--engine", required=True, choices=["whisperx", "nemo"])
+    parser.add_argument("--engine", required=True, choices=available_engines())
     parser.add_argument("--model", required=True)
     parser.add_argument("--alias", default=None,
                         help="Instance name; exposed in /v1/models and used as routing alias.")

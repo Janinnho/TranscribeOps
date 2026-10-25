@@ -6,6 +6,19 @@ Database migrations run automatically on app start — both for the web app (`_a
 
 ---
 
+## Release notes 1.4.0
+
+New speech engine **Parakeet ONNX** (`parakeet_onnx`, sherpa-onnx) in the existing Model API image. No database migration. From the admin UI on port 8000 you can download:
+
+1. **Parakeet Ultra** (`parakeet-ultra`) — sherpa-onnx int8 export of Moondream Parakeet Ultra (CC-BY-4.0), about 653 MB. Stronger German and English than NVIDIA `parakeet-tdt-0.6b-v3`, same 25 European languages.
+2. **Parakeet Redux** (`parakeet-redux`) — sherpa-onnx export of Moondream Parakeet Redux (CC-BY-4.0). The download is about 397 MB; the Photon ternary weights are about 178 MB. Aimed at CPU. Same 25 languages.
+
+Create an instance (or switch the main engine) with engine **Parakeet ONNX**, then call `/v1/audio/transcriptions` with `model=<instance name>`. The default image runs both models on CPU. `device=cuda` falls back to CPU unless this sherpa-onnx build includes the CUDA provider (the PyPI wheel does not). Compute type is ignored. Optional environment variables, none of them secrets: `PARAKEET_ONNX_CHUNK_SECS` (default 30), `PARAKEET_ONNX_CHUNK_OVERLAP_SECS` (default 2), `PARAKEET_ONNX_NUM_THREADS`, `PARAKEET_ONNX_PROVIDER`.
+
+WhisperX and NeMo dependency pins are unchanged.
+
+---
+
 ## Release notes 1.2.2
 
 The Model API (whisper-api) has been restructured: **port 8000 is now the single entry point**, and the model is selected via the `model` parameter (instance name = alias). Details in the [Model API docs](whisper-api.md). For existing deployments this means:

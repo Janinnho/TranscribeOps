@@ -39,7 +39,7 @@ TranscribeOps consists of two **independent** components that can be run separat
 ```
 ┌──────────────────────────┐         ┌────────────────────────────┐
 │      TranscribeOps       │ ──HTTP──▶  TranscribeOps Model API   │
-│  (Web app, Flask+Celery) │         │ (faster-whisper / WhisperX)│
+│  (Web app, Flask+Celery) │         │ (WhisperX / NeMo / ONNX)  │
 │                          │         │  OpenAI-compatible         │
 └────────────┬─────────────┘         └────────────────────────────┘
              │

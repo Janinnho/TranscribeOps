@@ -1,6 +1,6 @@
 # TranscribeOps Modell API (Whisper API Service)
 
-Der Modell-API-Service ist ein eigenständiger Flask-Server, der eine **OpenAI-kompatible** Transkriptions-API bereitstellt. Er unterstützt zwei Engines — **WhisperX** (faster-whisper mit Word-Alignment) und **NeMo** (NVIDIA Parakeet) — und kann mehrere Modelle gleichzeitig betreiben. Verwaltet wird alles über ein integriertes **Admin-UI**.
+Der Modell-API-Service ist ein eigenständiger Flask-Server, der eine **OpenAI-kompatible** Transkriptions-API bereitstellt. Er unterstützt drei Engines — **WhisperX** (faster-whisper mit Word-Alignment), **NeMo** (NVIDIA Parakeet) und **Parakeet ONNX** (sherpa-onnx für Moondream Parakeet Ultra und Redux) — und kann mehrere Modelle gleichzeitig betreiben. Verwaltet wird alles über ein integriertes **Admin-UI** auf Port 8000.
 
 ## Inhaltsverzeichnis
 
@@ -23,7 +23,7 @@ Der Modell-API-Service ist ein eigenständiger Flask-Server, der eine **OpenAI-k
 | Eigenschaft | Wert |
 |------------|------|
 | **Framework** | Flask + Gunicorn (Hauptprozess), Werkzeug (Instanz-Worker) |
-| **Engines** | WhisperX (faster-whisper + Alignment + Diarization), NeMo (Parakeet TDT) |
+| **Engines** | WhisperX (faster-whisper + Alignment + Diarization), NeMo (Parakeet TDT), Parakeet ONNX (sherpa-onnx, Ultra/Redux, CPU im Standard-Image) |
 | **API-Kompatibilität** | OpenAI Whisper API (`/v1/audio/transcriptions`) |
 | **Externer Port** | 8000 — einziger Einstiegspunkt für API **und** Admin-UI |
 | **Admin-UI** | `http://<host>:8000/admin` |
@@ -63,7 +63,7 @@ Schlafende Instanzen (siehe [RAM-Freigabe](#timeout-und-ram-freigabe)) werden be
 
 Erreichbar unter `http://<host>:8000/admin` (Passwort: `ADMIN_PASSWORD`). Drei Bereiche:
 
-1. **Modelle** — Kuratierter Katalog zum Herunterladen (Whisper-Größen, Parakeet-Varianten, deutsch-optimiertes Parakeet Primeline). Zusätzlich lassen sich **eigene HuggingFace-Repos** per `repo_id` laden; NeMo-Modelle funktionieren auch als einzelne `.nemo`-Checkpoint-Datei (Community-Finetunes).
+1. **Modelle** — Kuratierter Katalog zum Herunterladen (Whisper-Größen, NeMo-Parakeet-Varianten, Parakeet Primeline sowie Moondream Parakeet Ultra / Redux über die Engine Parakeet ONNX). Zusätzlich lassen sich **eigene HuggingFace-Repos** per `repo_id` laden; NeMo-Modelle funktionieren auch als einzelne `.nemo`-Checkpoint-Datei (Community-Finetunes). Ultra und Redux müssen die sherpa-onnx-Pakete aus dem Katalog sein (encoder/decoder/joiner + `tokens.txt`), nicht die Photon-/safetensors-Repos.
 2. **Instanzen** — Instanzen anlegen (Name = API-Alias, Engine, Modell, Device, Compute-Type, Timeout, RAM-Freigabe), starten/stoppen, Einstellungen ändern. Die Main-Engine erscheint als erste Zeile und kann hier umkonfiguriert werden (löst einen Reload aus; reine Timeout-/RAM-Änderungen nicht).
 3. **API-Keys** — Bearer-Keys erzeugen und widerrufen (gehasht gespeichert).
 
@@ -116,7 +116,7 @@ Ohne Authentifizierung. Liefert Engine, Modell, Device, Compute-Type, `main_engi
 
 ## Wörterbuch und Ersetzungsregeln (`prompt`)
 
-Der `prompt`-Parameter transportiert ein kommagetrenntes Wörterbuch. Beide lokalen Engines wenden es als Nachkorrektur auf Wortebene an (Timestamps bleiben erhalten):
+Der `prompt`-Parameter transportiert ein kommagetrenntes Wörterbuch. Die lokalen Engines wenden es als Nachkorrektur auf Wortebene an (Timestamps bleiben erhalten):
 
 - **`Eigenname`** — ähnlich klingende Wörter im Transkript werden auf die exakte Schreibweise gezogen (fuzzy): `Janik Bader` → `Jannik Baader`. Auch Mehrwort-Einträge und Bindestrich-Komposita (`IOK-Abteilung` → `IuK-Abteilung`) werden korrigiert. Kurze Einträge (2–3 Zeichen, z.B. Akronyme wie `IuK`) matchen streng: exakt oder mit maximal einem Buchstaben Unterschied bei gleichem Anfangs-/Endbuchstaben.
 - **`Quelle=Ziel`** — Ersetzungsregel: Wird die Quelle erkannt (auch fuzzy), wird sie komplett durch das Ziel ersetzt, z.B. `Doppelpunkt=:` oder `mfg=mit freundlichen Grüßen`. Besteht das Ziel nur aus Satzzeichen, wird es diktat-typisch an das vorherige Wort angehängt („ist denn Doppelpunkt“ → „ist denn:“). Ein Komma kann bauartbedingt nicht als Ziel dienen (Kommas trennen die Einträge).
@@ -145,6 +145,10 @@ Beides pro Modell im Admin-UI einstellbar (Instanz-Einstellungen bzw. Main-Engin
 | `large-v3` / `large-v3-turbo` | WhisperX | ~3 GB / ~1,5 GB | Beste Whisper-Qualität |
 | `parakeet-tdt-0.6b-v2/v3`, `parakeet-tdt-1.1b` | NeMo | 1,2 – 2,2 GB | NVIDIA Parakeet, sehr schnelles ASR |
 | `parakeet-primeline` | NeMo | ~2,5 GB | **Deutsch-optimiertes** Parakeet-Finetune (CC-BY-4.0) |
+| `parakeet-ultra` | Parakeet ONNX | ~653 MB | Moondream **Parakeet Ultra** (CC-BY-4.0), sherpa-onnx int8. Stärker in DE/EN als NVIDIA TDT 0.6B v3. 25 europäische Sprachen. CPU im Standard-Image. |
+| `parakeet-redux` | Parakeet ONNX | ~397 MB | Moondream **Parakeet Redux** (CC-BY-4.0). Photon-Gewichte ~178 MB; der Katalog lädt den sherpa-onnx-CPU-Export. Dieselben 25 Sprachen. |
+
+Parakeet ONNX ignoriert den Compute-Typ: die ONNX-Graphen sind bereits quantisiert (Ultra int8, Redux ternärer Encoder). Das Standard-Image nutzt den CPU-Build von sherpa-onnx. `device=cuda` oder `mps` fällt auf CPU zurück und meldet das über `/health`, außer das Wheel wurde mit `-DSHERPA_ONNX_ENABLE_GPU=ON` gebaut (in diesem Image nicht). Diarization läuft weiter über pyannote, wenn die Anfrage sie verlangt und `HF_TOKEN` gesetzt ist; Wort-Timestamps kommen von sherpa. Lange Dateien werden in 30-s-Fenster mit 2 s Überlappung geschnitten (`PARAKEET_ONNX_CHUNK_SECS`, `PARAKEET_ONNX_CHUNK_OVERLAP_SECS`), nicht in NeMos 300-s-Scheiben.
 
 Alignment-Modelle (wav2vec2 für en/fr/de/es/it) sind ins Image eingebacken; pyannote-Diarization wird beim ersten Start mit `HF_TOKEN` automatisch geladen. Alle Modelle und die Admin-Datenbank liegen im Volume unter `/root/.cache` und überleben Container-Neustarts.
 
@@ -165,6 +169,10 @@ Alignment-Modelle (wav2vec2 für en/fr/de/es/it) sind ins Image eingebacken; pya
 | `ADMIN_DB_PATH` | Pfad der Admin-SQLite-DB | `/root/.cache/transcribeops/admin.db` |
 | `INSTANCE_PORT_RANGE` | Interne Portrange der Instanz-Worker | `8100-8120` |
 | `DISABLE_MAIN_ENGINE` | `1` = Hauptprozess lädt kein Modell (nur Router + Admin) | `0` |
+| `PARAKEET_ONNX_CHUNK_SECS` | Fensterlänge von Parakeet ONNX bei langen Audios | `30` |
+| `PARAKEET_ONNX_CHUNK_OVERLAP_SECS` | Überlappung dieser Fenster | `2` |
+| `PARAKEET_ONNX_NUM_THREADS` | sherpa-onnx-Threads (Standard: bis zu 4) | auto |
+| `PARAKEET_ONNX_PROVIDER` | `cpu` oder `cuda`. `cuda` nutzt die GPU nur, wenn dieser sherpa-Build den CUDA-Provider hat | nicht gesetzt (CPU) |
 | `ROUTER_READ_TIMEOUT` | Proxy-Timeout ohne Modell-Timeout (Sekunden) | `3600` |
 | `ROUTER_STARTUP_TIMEOUT` | Max. Wartezeit beim Auto-Start schlafender Instanzen | `300` |
 

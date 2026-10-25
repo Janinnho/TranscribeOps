@@ -5,6 +5,7 @@ import hardware
 
 from .auth import login_required
 from .catalog import CATALOG, KIND_LABELS, KIND_COLORS
+from .engines_list import engines_choices
 from .downloads import catalog_status, bundled_models_status
 from . import db as admin_db
 from . import supervisor
@@ -129,6 +130,7 @@ def register_page_routes(bp: Blueprint, config: dict) -> None:
         return render_template(
             "instances.html",
             instances=statuses,
+            engines=engines_choices(),
             downloaded_models=downloaded,
             default_device=config["default_device"],
             default_compute_type=config["default_compute_type"],

@@ -14,3 +14,10 @@ psutil==7.2.2
 # NeMo 2.0.0 still calls the removed np.sctypes API; patched post-install
 # in the Dockerfile (see sed step) because whisperx requires numpy>=2.1.
 nemo_toolkit[asr]==2.7.3
+
+# Parakeet Ultra / Redux. sherpa-onnx bundles its own ONNX Runtime and does
+# not touch the torch / whisperx / nemo pins above. 1.13.8 is the release
+# the published nemo_transducer exports were validated against (TDT metadata
+# in the ONNX graphs). The PyPI wheel is CPU-only; CUDA needs a sherpa-onnx
+# build with -DSHERPA_ONNX_ENABLE_GPU=ON, which this image does not use.
+sherpa-onnx==1.13.8
