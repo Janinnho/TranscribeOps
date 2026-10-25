@@ -114,9 +114,11 @@ const AdminUI = (() => {
   function wireInstanceActions() {
     document.querySelectorAll("#instances-table [data-action]").forEach(btn => {
       const action = btn.dataset.action;
-      // Skip main-engine-specific actions — they are wired in
-      // wireMainEngineActions() and would otherwise be handled here too.
-      if (action === "edit-main" || action === "reload-main" || action === "cancel-edit-main") return;
+      // Only lifecycle actions belong here. This listener reloads the page
+      // after the request, so it must not run for Settings or the main-engine
+      // buttons — those open their own dialogs, and the reload closes them
+      // on the same click.
+      if (action !== "start" && action !== "stop" && action !== "delete") return;
       btn.addEventListener("click", async () => {
         const id = btn.dataset.id;
         if (action === "delete" && !confirm(window.tr("Really delete this instance?"))) return;
