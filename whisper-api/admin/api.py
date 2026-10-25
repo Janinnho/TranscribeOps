@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request
 from flask_babel import gettext as _
 
 import hardware
-from engines import EngineBusy
+from engines import EngineBusy, available_engines
 
 from .auth import login_required
 from . import db as admin_db
@@ -130,7 +130,7 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
             return jsonify({"error": f"name '{name}' is reserved"}), 400
         if any(r["name"].lower() == name.lower() for r in admin_db.list_instances(db_path)):
             return jsonify({"error": f"name '{name}' is already in use"}), 400
-        if engine not in {"whisperx", "nemo"}:
+        if engine not in set(available_engines()):
             return jsonify({"error": f"unknown engine '{engine}'"}), 400
         # Permissive on purpose: "cuda:1" and friends must still reach torch
         # untouched. This only catches typos before they become a worker that

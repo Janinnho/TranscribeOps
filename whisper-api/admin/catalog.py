@@ -13,7 +13,7 @@ class CatalogEntry:
     id: str              # short ID used in forms (matches engine .model)
     repo_id: str         # HuggingFace repo
     kind: str            # 'whisper' | 'parakeet' | 'diarize' | 'align'
-    engine: str          # 'whisperx' | 'nemo'
+    engine: str          # 'whisperx' | 'nemo' | 'parakeet_onnx'
     display_name: str
     description: str
     size_hint: str       # human-readable rough size
@@ -48,6 +48,35 @@ CATALOG: list[CatalogEntry] = [
                  "Deutsch-optimiertes Parakeet-TDT-Finetune (600M, CC-BY-4.0) — "
                  "sehr präzise deutsche Transkription (2,95% WER auf Tuda-De).",
                  "~2.5 GB"),
+
+    # ----- Parakeet Ultra / Redux (sherpa-onnx, not Photon) -----
+    # Download sizes are the ONNX bundles the engine actually loads.
+    # Ultra's Moondream weights are often quoted near 632 MB; Redux's
+    # ternary Photon file is 178 MB. The admin UI shows the download.
+    CatalogEntry(
+        "parakeet-ultra",
+        "erponce/sherpa-onnx-parakeet-ultra-tdt-0.6b-v3-int8",
+        "parakeet",
+        "parakeet_onnx",
+        "Parakeet Ultra (DE+EN, 25 EU-Sprachen)",
+        "Moondream Parakeet Ultra (CC-BY-4.0), Nachtraining von NVIDIA Parakeet TDT 0.6B v3 — "
+        "höhere DE/EN-Genauigkeit als das NVIDIA-Original, dieselben 25 europäischen Sprachen. "
+        "sherpa-onnx-int8-Export (~653 MB, CPU im Standard-Image). "
+        "Quelle: moondream/parakeet-ultra.",
+        "~653 MB",
+    ),
+    CatalogEntry(
+        "parakeet-redux",
+        "cohearo/sherpa-onnx-nemo-parakeet-redux",
+        "parakeet",
+        "parakeet_onnx",
+        "Parakeet Redux (CPU, 25 EU-Sprachen)",
+        "Moondream Parakeet Redux (CC-BY-4.0), ternäre Gewichte von NVIDIA Parakeet TDT 0.6B v3. "
+        "Photon-Datei ~178 MB; dieser sherpa-onnx-Export (MatMulNBits-Encoder) ist ~397 MB "
+        "und läuft auf der CPU. Dieselben 25 europäischen Sprachen inklusive Deutsch. "
+        "Quelle: moondream/parakeet-redux.",
+        "~397 MB",
+    ),
 
     # NOTE: Alignment (wav2vec2) and Diarization (pyannote) are intentionally
     # NOT listed here. Alignment bundles (en/fr/de/es/it) are baked into the

@@ -11,7 +11,7 @@ import time
 from flask import Flask, request, jsonify, session, redirect, url_for
 from flask_babel import Babel
 
-from engines import get_engine, EngineUnavailable, EngineBusy
+from engines import get_engine, available_engines, EngineUnavailable, EngineBusy
 from router import InstanceRouter
 from transcription_core import register_routes
 from admin import create_admin_blueprint
@@ -415,7 +415,7 @@ def update_main_engine_config(new_cfg: dict) -> dict:
     or container restart silently switches to a configuration that was
     never validated.
     """
-    allowed_engines = {"whisperx", "nemo"}
+    allowed_engines = set(available_engines())
     engine = (new_cfg.get("engine") or "").strip()
     if engine not in allowed_engines:
         raise ValueError(f"Unbekannte Engine '{engine}'. Erlaubt: {sorted(allowed_engines)}")
