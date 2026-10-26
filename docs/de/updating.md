@@ -6,6 +6,17 @@ Datenbank-Migrationen laufen automatisch beim App-Start — sowohl für die Web-
 
 ---
 
+## Versionshinweise 1.4.1
+
+Patch-Release. Keine Datenbank-Migration.
+
+- **Admin-UI der Modell-API** hat ein Favicon (das violette TranscribeOps-Zeichen) auf Dashboard, Modelle, Instanzen, API-Keys, Anmeldung und der deaktivierten Seite.
+- **Die Admin-Seiten funktionieren auf schmalen Bildschirmen.** Die Leiste klappt hinter einen Menü-Button, System- und Modellkarten nutzen die volle Breite, und breite Tabellen scrollen in der Seite, statt sie auseinanderzuziehen.
+- **Abhängigkeiten** der Web-App: SQLAlchemy 2.1.6, OpenAI-SDK 3.37.0 (die App spricht OpenAI per HTTP über `requests` an und importiert dieses Paket nicht), Authlib 1.9.1, Werkzeug 3.1.9, python-dotenv 1.2.4, gunicorn 26.2.0, WTForms 3.3.1. Das Modell-API-Image wechselt auf gunicorn 26.2.0 und verlangt huggingface_hub 0.36.2 oder neuer, weiter unter 1.0, weil WhisperX das so verlangt. Mitgelieferte Frontend-Dateien: Bootstrap 5.3.8, Bootstrap Icons 1.13.2, marked 15.0.12.
+- **Nicht aktualisiert:** NeMo bleibt auf 2.7.3 (3.0.0 ist ein großer Schnitt, der mit dem Torch-Pin von WhisperX kollidieren kann). sherpa-onnx bleibt auf 1.13.8 (2.0.0 ist ein Major; 1.13.8 ist der Build, gegen den die Parakeet-ONNX-Graphen geprüft wurden). marked bleibt auf der 15.x-Linie.
+
+---
+
 ## Versionshinweise 1.4.0
 
 Neue Sprach-Engine **Parakeet ONNX** (`parakeet_onnx`, sherpa-onnx) im bestehenden Modell-API-Image. Keine Datenbank-Migration. Im Admin-UI auf Port 8000 lassen sich herunterladen:
