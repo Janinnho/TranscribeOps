@@ -21,6 +21,7 @@ TRANSLATIONS: dict[str, dict[str, str]] = {
         "Sign out": "Abmelden",
         "Logout": "Abmelden",
         "Language": "Sprache",
+        "Menu": "Menü",
         "English": "Englisch",
         "German": "Deutsch",
 

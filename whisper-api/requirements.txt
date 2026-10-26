@@ -1,11 +1,13 @@
 flask==3.1.3
 Flask-Babel==4.0.0
-gunicorn==26.0.0
+gunicorn==26.2.0
 requests==2.34.2
 whisperx @ git+https://github.com/m-bain/whisperX.git@646f511e6bb47f8d2f0687e9976f8e7035b1e18d
 
 # Admin UI / infrastructure
-huggingface_hub>=0.28.1,<1.0.0
+# whisperx requires huggingface-hub<1.0. 0.36.2 is the newest 0.x.
+# 1.x and 2.x are skipped until that pin moves.
+huggingface_hub>=0.36.2,<1.0.0
 psutil==7.2.2
 
 # NeMo (Parakeet ASR engine)
@@ -13,11 +15,15 @@ psutil==7.2.2
 # plus NeMo core and ASR dependencies. Adds ~2 GB to the image.
 # NeMo 2.0.0 still calls the removed np.sctypes API; patched post-install
 # in the Dockerfile (see sed step) because whisperx requires numpy>=2.1.
+# 3.0.0 is not taken in this patch: it splits the repo, drops models, and
+# changes the install stack in a way that can fight whisperx's torch~=2.8 pin.
+# 2.7.3 is the latest 2.7 release.
 nemo_toolkit[asr]==2.7.3
 
 # Parakeet Ultra / Redux. sherpa-onnx bundles its own ONNX Runtime and does
 # not touch the torch / whisperx / nemo pins above. 1.13.8 is the release
 # the published nemo_transducer exports were validated against (TDT metadata
-# in the ONNX graphs). The PyPI wheel is CPU-only; CUDA needs a sherpa-onnx
-# build with -DSHERPA_ONNX_ENABLE_GPU=ON, which this image does not use.
+# in the ONNX graphs) and the latest 1.x. 2.0.0 is a major bump and is not
+# taken here. The PyPI wheel is CPU-only; CUDA needs a sherpa-onnx build with
+# -DSHERPA_ONNX_ENABLE_GPU=ON, which this image does not use.
 sherpa-onnx==1.13.8

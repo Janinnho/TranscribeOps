@@ -108,8 +108,8 @@ TranscribeOps consists of multiple Docker services that communicate over a share
 
 | Technology | Version | Function |
 |------------|---------|----------|
-| Bootstrap | 5.3.3 | UI framework & responsive design |
-| Bootstrap Icons | 1.11.3 | Icon set |
+| Bootstrap | 5.3.8 | UI framework & responsive design |
+| Bootstrap Icons | 1.13.2 | Icon set |
 | JavaScript | ES6+ | Frontend logic (vanilla, no framework) |
 
 ### Infrastructure

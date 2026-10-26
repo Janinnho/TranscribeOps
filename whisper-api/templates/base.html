@@ -4,6 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}{{ _('TranscribeOps Model API') }}{% endblock %}</title>
+  <link rel="icon" href="{{ url_for('admin.static', filename='favicon.ico') }}" sizes="any">
+  <link rel="icon" href="{{ url_for('admin.static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{{ url_for('admin.static', filename='apple-touch-icon.png') }}">
   <link rel="stylesheet" href="{{ url_for('admin.static', filename='admin.css') }}">
   <script>window.I18N = {{ client_i18n | tojson }}; window.tr = function(k, vars){ var s = (window.I18N && window.I18N[k]) || k; if(vars){ Object.keys(vars).forEach(function(v){ s = s.replace('{'+v+'}', vars[v]); }); } return s; };</script>
 </head>
@@ -11,25 +14,32 @@
   <nav class="topnav">
     <div class="brand">
       <span class="logo">◐</span>
-      <span>{{ _('TranscribeOps Model API') }}</span>
+      <span class="brand-name">{{ _('TranscribeOps Model API') }}</span>
     </div>
-    <ul class="nav-links">
-      <li><a href="{{ url_for('admin.dashboard') }}" {% if request.endpoint == 'admin.dashboard' %}class="active"{% endif %}>{{ _('Dashboard') }}</a></li>
-      <li><a href="{{ url_for('admin.models') }}" {% if request.endpoint == 'admin.models' %}class="active"{% endif %}>{{ _('Models') }}</a></li>
-      <li><a href="{{ url_for('admin.instances') }}" {% if request.endpoint == 'admin.instances' %}class="active"{% endif %}>{{ _('Instances') }}</a></li>
-      <li><a href="{{ url_for('admin.keys') }}" {% if request.endpoint == 'admin.keys' %}class="active"{% endif %}>{{ _('API Keys') }}</a></li>
-    </ul>
-    <div class="nav-right">
-      <div class="lang-switcher">
-        <label for="lang-select" class="sr-only">{{ _('Language') }}</label>
-        <select id="lang-select" onchange="window.location.href='/lang/'+this.value+'?next='+encodeURIComponent(window.location.pathname);">
-          <option value="en" {% if current_lang == 'en' %}selected{% endif %}>EN</option>
-          <option value="de" {% if current_lang == 'de' %}selected{% endif %}>DE</option>
-        </select>
+    <input type="checkbox" id="nav-toggle" class="nav-toggle-input">
+    <label for="nav-toggle" class="nav-toggle">
+      <span class="sr-only">{{ _('Menu') }}</span>
+      <span class="nav-toggle-bars" aria-hidden="true"></span>
+    </label>
+    <div class="nav-panel" id="nav-panel">
+      <ul class="nav-links">
+        <li><a href="{{ url_for('admin.dashboard') }}" {% if request.endpoint == 'admin.dashboard' %}class="active"{% endif %}>{{ _('Dashboard') }}</a></li>
+        <li><a href="{{ url_for('admin.models') }}" {% if request.endpoint == 'admin.models' %}class="active"{% endif %}>{{ _('Models') }}</a></li>
+        <li><a href="{{ url_for('admin.instances') }}" {% if request.endpoint == 'admin.instances' %}class="active"{% endif %}>{{ _('Instances') }}</a></li>
+        <li><a href="{{ url_for('admin.keys') }}" {% if request.endpoint == 'admin.keys' %}class="active"{% endif %}>{{ _('API Keys') }}</a></li>
+      </ul>
+      <div class="nav-right">
+        <div class="lang-switcher">
+          <label for="lang-select" class="sr-only">{{ _('Language') }}</label>
+          <select id="lang-select" onchange="window.location.href='/lang/'+this.value+'?next='+encodeURIComponent(window.location.pathname);">
+            <option value="en" {% if current_lang == 'en' %}selected{% endif %}>EN</option>
+            <option value="de" {% if current_lang == 'de' %}selected{% endif %}>DE</option>
+          </select>
+        </div>
+        <form method="post" action="{{ url_for('admin.logout') }}" class="logout-form">
+          <button type="submit" class="btn btn-ghost">{{ _('Sign out') }}</button>
+        </form>
       </div>
-      <form method="post" action="{{ url_for('admin.logout') }}" class="logout-form">
-        <button type="submit" class="btn btn-ghost">{{ _('Sign out') }}</button>
-      </form>
     </div>
   </nav>
 
