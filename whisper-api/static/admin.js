@@ -66,6 +66,26 @@ const AdminUI = (() => {
     });
   }
 
+  function wireDeleteModelButtons() {
+    document.querySelectorAll('[data-action="delete-model"]').forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const name = btn.dataset.name || btn.dataset.id;
+        if (!confirm(window.tr("Really delete the downloaded model {name}? The files are removed from this server. The model can be downloaded again later.", {name}))) return;
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = "…";
+        try {
+          await api(`/admin/api/models/${encodeURIComponent(btn.dataset.id)}`, { method: "DELETE" });
+          location.reload();
+        } catch (e) {
+          alert(window.tr("Error: {msg}", {msg: e.message}));
+          btn.disabled = false;
+          btn.textContent = original;
+        }
+      });
+    });
+  }
+
   function wireCustomDownloadForm() {
     const form = document.getElementById("custom-dl-form");
     if (!form) return;
@@ -114,9 +134,11 @@ const AdminUI = (() => {
   function wireInstanceActions() {
     document.querySelectorAll("#instances-table [data-action]").forEach(btn => {
       const action = btn.dataset.action;
-      // Skip main-engine-specific actions — they are wired in
-      // wireMainEngineActions() and would otherwise be handled here too.
-      if (action === "edit-main" || action === "reload-main" || action === "cancel-edit-main") return;
+      // Only lifecycle actions belong here. This listener reloads the page
+      // after the request, so it must not run for Settings or the main-engine
+      // buttons — those open their own dialogs, and the reload closes them
+      // on the same click.
+      if (action !== "start" && action !== "stop" && action !== "delete") return;
       btn.addEventListener("click", async () => {
         const id = btn.dataset.id;
         if (action === "delete" && !confirm(window.tr("Really delete this instance?"))) return;
@@ -327,7 +349,7 @@ const AdminUI = (() => {
 
   return {
     wireKeyActions, wireNewKeyForm,
-    wireDownloadButtons, wireCustomDownloadForm,
+    wireDownloadButtons, wireCustomDownloadForm, wireDeleteModelButtons,
     wireInstanceActions, wireNewInstanceForm,
     wireMainEngineActions, wireInstanceSettings,
   };

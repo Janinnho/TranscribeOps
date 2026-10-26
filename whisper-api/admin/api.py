@@ -8,7 +8,7 @@ from flask import Blueprint, jsonify, request
 from flask_babel import gettext as _
 
 import hardware
-from engines import EngineBusy
+from engines import EngineBusy, available_engines
 
 from .auth import login_required
 from . import db as admin_db
@@ -93,6 +93,53 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
     def api_catalog():
         return jsonify({"entries": downloads.catalog_status(db_path)})
 
+    @bp.route("/api/models/<model_id>", methods=["DELETE"])
+    @login_required
+    def api_model_delete(model_id: str):
+        """Remove the local HuggingFace cache for one catalog model.
+
+        The catalog entry stays. Status flips back to not-downloaded because
+        that flag is the presence of the cache directory. Refuses while a
+        download is running or an instance / the main engine still points at
+        this model, so a running transcription is not left without its files.
+        """
+        entry = by_id(model_id)
+        if entry is None:
+            return jsonify({"error": _("Unknown model.")}), 404
+        if admin_db.active_download_for_repo(db_path, entry.repo_id):
+            return jsonify({"error": _("A download of this model is still running.")}), 409
+
+        users: list[str] = []
+        for row in admin_db.list_instances(db_path):
+            if row.get("model") == entry.id:
+                users.append(row["name"])
+        main = config["main_engine_state"]() or {}
+        if not main.get("disabled"):
+            main_model = (main.get("config") or {}).get("model") or ""
+            if main_model == entry.id:
+                users.append(_("Main engine"))
+        if users:
+            return jsonify({
+                "error": _("This model is still used by: %(names)s. Change or delete those first.") % {
+                    "names": ", ".join(users),
+                },
+            }), 409
+
+        try:
+            downloads.remove_cached_repo(entry.repo_id)
+        except ValueError as e:
+            logger.warning("Refusing model delete for %s: %s", model_id, e)
+            return jsonify({"error": _("Could not delete this model.")}), 400
+        except OSError as e:
+            logger.exception("Failed to delete cached model %s", model_id)
+            return jsonify({"error": _("Could not delete the model files: %(err)s") % {"err": str(e)}}), 500
+
+        return jsonify({
+            "ok": True,
+            "id": entry.id,
+            "downloaded": downloads.is_downloaded(entry.repo_id),
+        })
+
     # ----- Instances ------------------------------------------------------
     @bp.route("/api/instances", methods=["GET"])
     @login_required
@@ -130,7 +177,7 @@ def register_api_routes(bp: Blueprint, config: dict) -> None:
             return jsonify({"error": f"name '{name}' is reserved"}), 400
         if any(r["name"].lower() == name.lower() for r in admin_db.list_instances(db_path)):
             return jsonify({"error": f"name '{name}' is already in use"}), 400
-        if engine not in {"whisperx", "nemo"}:
+        if engine not in set(available_engines()):
             return jsonify({"error": f"unknown engine '{engine}'"}), 400
         # Permissive on purpose: "cuda:1" and friends must still reach torch
         # untouched. This only catches typos before they become a worker that

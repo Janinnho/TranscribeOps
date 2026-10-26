@@ -13,8 +13,9 @@
     <label>{{ _('Name (used as model parameter)') }} <input type="text" name="name" required placeholder="{{ _('e.g. express') }}" pattern="[A-Za-z0-9][A-Za-z0-9._-]*" maxlength="64" title="{{ _('Letters, digits, dots, hyphens and underscores') }}"></label>
     <label>{{ _('Engine') }}
       <select name="engine" id="engine-select">
-        <option value="whisperx">WhisperX</option>
-        <option value="nemo">NeMo (Parakeet)</option>
+        {% for eng in engines %}
+        <option value="{{ eng.id }}">{{ eng.short_label }}</option>
+        {% endfor %}
       </select>
     </label>
     <label>{{ _('Model') }}
@@ -53,6 +54,9 @@
   </form>
   <p class="hint" style="margin-top: 12px;">
     {{ _('Note: instances are always transcription services. Diarization (pyannote) and alignment (wav2vec2) run as components %(em_start)sinside%(em_end)s the WhisperX engine when a transcription request asks for %(diarize_code)s or word timestamps — not as separate instances.', em_start='<em>'|safe, em_end='</em>'|safe, diarize_code='<code>diarize=true</code>'|safe) | safe }}
+  </p>
+  <p class="hint">
+    {{ _('Parakeet ONNX (Ultra/Redux) ignores compute type — the ONNX weights are already quantized — and runs on CPU in the default image.') }}
   </p>
   {% if not downloaded_models %}
   <p class="hint">{{ _('No transcription models downloaded yet. Please download one under "Models" first.') }}</p>
@@ -153,8 +157,9 @@
     </p>
     <label>{{ _('Engine') }}
       <select name="engine" id="edit-main-engine">
-        <option value="whisperx">WhisperX</option>
-        <option value="nemo">NeMo (Parakeet)</option>
+        {% for eng in engines %}
+        <option value="{{ eng.id }}">{{ eng.short_label }}</option>
+        {% endfor %}
       </select>
     </label>
     <label>{{ _('Model') }}

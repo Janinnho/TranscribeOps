@@ -1,11 +1,13 @@
 from .base import Engine, TranscriptionResult, EngineUnavailable, EngineBusy
 from .whisperx_engine import WhisperXEngine
 from .nemo_engine import NeMoEngine
+from .parakeet_onnx_engine import ParakeetOnnxEngine
 
 
 _REGISTRY = {
     "whisperx": WhisperXEngine,
     "nemo": NeMoEngine,
+    "parakeet_onnx": ParakeetOnnxEngine,
 }
 
 

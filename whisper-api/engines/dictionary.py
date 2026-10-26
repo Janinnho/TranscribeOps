@@ -2,7 +2,7 @@
 
 The API `prompt` parameter carries a comma-separated list of dictionary
 terms (names, acronyms, domain vocabulary). Engines that cannot bias
-decoding with a prompt (NeMo/Parakeet, local WhisperX) instead post-process
+decoding with a prompt (NeMo, Parakeet ONNX, local WhisperX) instead post-process
 the word-level output: transcript words that are phonetically/orthographically
 close to a dictionary entry are replaced by the entry's exact spelling,
 token-for-token, so timestamps stay aligned.

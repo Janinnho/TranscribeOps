@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
+# sherpa-onnx (Parakeet Ultra/Redux) is in requirements.txt. Its wheel
+# bundles ONNX Runtime and does not replace the torch build below.
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Torch flavour. Empty (the default) means "leave whatever pip resolved from

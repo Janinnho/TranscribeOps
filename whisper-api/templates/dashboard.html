@@ -56,7 +56,7 @@
   {% if system_info.hardware.backend == 'rocm' and not system_info.ct2_cuda %}
   <p class="group-note">
     <strong>{{ _('AMD GPU detected (ROCm).') }}</strong>
-    {{ _('NeMo/Parakeet instances can use it. Whisper models run on CTranslate2, which has no ROCm backend — they stay on the CPU regardless of the configured device.') }}
+    {{ _('NeMo instances can use it. Whisper (CTranslate2 has no ROCm backend) and Parakeet ONNX (sherpa-onnx has no ROCm provider in this image) stay on the CPU.') }}
   </p>
   {% endif %}
 </section>
