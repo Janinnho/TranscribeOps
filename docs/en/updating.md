@@ -6,6 +6,19 @@ Database migrations run automatically on app start — both for the web app (`_a
 
 ---
 
+## Release notes 1.5.0
+
+Performance release. No database migration.
+
+- **Parakeet ONNX threads.** The default is about half the CPUs the process can use (`sched_getaffinity`, otherwise `cpu_count`), at least 1 and at most 8. `PARAKEET_ONNX_NUM_THREADS` still overrides that, including values above 8. The effective count is logged, and the log says when the cap of 8 applies.
+- **Parakeet ONNX windows.** Long audio is read once as 16 kHz mono PCM and sliced in memory. The per-window ffmpeg process and the Python float list are gone. The samples match the previous windows.
+- **Timings.** Every Parakeet ONNX transcription logs audio duration, convert / decode / diarize time, and RTF, including short clips.
+- **Web app splitting.** Chunk and speaker-reference ffmpeg commands put `-ss` before `-i`, so a later chunk does not decode the file from the start. Chunk boundaries are unchanged. Split chunks are uploaded as MP3 (`audio/mpeg`) with a matching filename. A file too small to reach a duration limit (under 1 kbit/s) skips ffprobe.
+- **Status polling** starts at 0.25 s and backs off to 2 s.
+- **Celery** builds the Flask app once per worker process and reuses it.
+
+---
+
 ## Release notes 1.4.1
 
 Patch release. No database migration.

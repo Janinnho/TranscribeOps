@@ -2,6 +2,7 @@ import os
 import shutil
 import subprocess
 import json
+import threading
 import time
 import requests
 import redis
@@ -19,9 +20,70 @@ def _get_redis():
     return _redis
 
 
+# One Flask app per worker process. create_app() compiles translations,
+# opens the database, and runs migrations — doing that on every call
+# dominated short jobs. Celery prefork builds this after the fork, because
+# nothing calls get_app() at import time.
+_worker_app = None
+_worker_app_lock = threading.Lock()
+
+
 def get_app():
-    from app import create_app
-    return create_app()
+    global _worker_app
+    if _worker_app is not None:
+        return _worker_app
+    with _worker_app_lock:
+        if _worker_app is None:
+            from app import create_app
+            _worker_app = create_app()
+    return _worker_app
+
+
+# Status polls. A short dictation often finishes in well under a second;
+# the first look is quick, then the gap grows back to the old 2 s.
+_POLL_INITIAL_SECS = 0.25
+_POLL_MAX_SECS = 2.0
+
+
+def _poll_backoff_interval(attempt, initial=_POLL_INITIAL_SECS, maximum=_POLL_MAX_SECS):
+    """Seconds to sleep before poll number ``attempt`` (0-based).
+
+    ``0.25, 0.5, 1, 2, 2, ...``
+    """
+    interval = initial
+    for _ in range(max(0, attempt)):
+        if interval >= maximum:
+            return maximum
+        interval = min(maximum, interval * 2)
+    return interval
+
+
+def _ffmpeg_cut_args(src, start, duration, dest):
+    """Cut ``src`` to an MP3 at ``dest``.
+
+    ``-ss`` is an input option so ffmpeg seeks to the nearest earlier
+    keyframe instead of decoding from the start of the file. ``-t`` stays
+    an output option, and accurate seek (ffmpeg's default) still drops the
+    samples before ``start``, so the chunk start and length are unchanged.
+    """
+    return [
+        'ffmpeg', '-ss', str(start), '-i', src, '-t', str(duration),
+        '-codec:a', 'libmp3lame', '-q:a', '4', '-y', dest,
+    ]
+
+
+# Below this rate a file cannot reach ``max_duration_secs``. 1 kbit/s is
+# under any speech encoding this app is asked to transcribe, so skipping
+# ffprobe for smaller files does not hide a recording that still needs
+# splitting. Anything encoded even lower is still probed once it is larger.
+_DURATION_PROBE_MIN_BYTES_PER_SEC = 125
+
+
+def _may_exceed_duration(file_size, max_duration_secs):
+    """True when ``file_size`` could be longer than ``max_duration_secs``."""
+    if not max_duration_secs or max_duration_secs <= 0:
+        return False
+    return file_size > max_duration_secs * _DURATION_PROBE_MIN_BYTES_PER_SEC
 
 
 def _get_concurrency_limit(model_type, model_id):
@@ -785,8 +847,7 @@ def _split_audio_file(file_path, max_size_mb, max_duration_secs=0):
         chunk_path = f"{base_path}_chunk{i:03d}.mp3"
         try:
             subprocess.run(
-                ['ffmpeg', '-i', file_path, '-ss', str(start), '-t', str(chunk_duration),
-                 '-codec:a', 'libmp3lame', '-q:a', '4', '-y', chunk_path],
+                _ffmpeg_cut_args(file_path, start, chunk_duration, chunk_path),
                 check=True, capture_output=True, timeout=600
             )
             if os.path.exists(chunk_path) and os.path.getsize(chunk_path) > 0:
@@ -855,8 +916,7 @@ def _extract_speaker_references(file_path, result, max_refs=5, clip_duration=5):
         clip_path = f"{os.path.splitext(file_path)[0]}_ref_{speaker}.mp3"
         try:
             subprocess.run(
-                ['ffmpeg', '-i', file_path, '-ss', str(start), '-t', str(duration),
-                 '-codec:a', 'libmp3lame', '-q:a', '4', '-y', clip_path],
+                _ffmpeg_cut_args(file_path, start, duration, clip_path),
                 capture_output=True, timeout=30
             )
             if os.path.exists(clip_path) and os.path.getsize(clip_path) > 0:
@@ -905,8 +965,10 @@ def _whisper_local_async(model, file_path, language=None, original_filename=None
     timeout = getattr(model, 'request_timeout_secs', 0) or 600
     deadline = time.time() + timeout
 
+    attempt = 0
     while time.time() < deadline:
-        time.sleep(2)
+        time.sleep(_poll_backoff_interval(attempt))
+        attempt += 1
         status_resp = requests.get(poll_url, headers=headers, timeout=10)
         if not status_resp.ok:
             continue
@@ -935,7 +997,10 @@ def _call_speech_api(model, file_path, language=None, multi_speaker=False, origi
     max_size_mb = model.max_file_size_mb or 0
     max_duration = model.max_duration_secs or 0
     file_size = os.path.getsize(file_path)
-    needs_split = (max_size_mb > 0 and file_size > max_size_mb * 1024 * 1024) or max_duration > 0
+    needs_size_split = max_size_mb > 0 and file_size > max_size_mb * 1024 * 1024
+    # A duration limit used to ffprobe every file. Skip that when the file
+    # is too small to reach the limit even at 1 kbit/s.
+    needs_split = needs_size_split or _may_exceed_duration(file_size, max_duration)
 
     if needs_split:
         chunks = _split_audio_file(file_path, max_size_mb, max_duration_secs=max_duration)
@@ -951,6 +1016,9 @@ def _call_speech_api(model, file_path, language=None, multi_speaker=False, origi
                     chunk_size = int(100 / len(chunks))
 
                     logger.info(f'Processing chunk {i+1}/{len(chunks)}: {os.path.basename(chunk_path)}')
+                    # Chunks are MP3. Sending the original name (often .webm)
+                    # made the extension and MIME type disagree with the bytes.
+                    chunk_filename = os.path.basename(chunk_path)
 
                     if model.provider == 'whisper_local':
                         # Async mode with sub-progress
@@ -958,11 +1026,11 @@ def _call_speech_api(model, file_path, language=None, multi_speaker=False, origi
                             if progress_callback:
                                 progress_callback(_base + int(sub_pct * _size / 100))
 
-                        r = _whisper_local_async(model, chunk_path, language, original_filename, dictionary_prompt,
+                        r = _whisper_local_async(model, chunk_path, language, chunk_filename, dictionary_prompt,
                                                  progress_callback=chunk_progress)
                     else:
                         if i == 0 or not use_refs:
-                            r = _call_speech_api_single(model, chunk_path, language, original_filename, dictionary_prompt)
+                            r = _call_speech_api_single(model, chunk_path, language, chunk_filename, dictionary_prompt)
                             if i == 0 and use_refs:
                                 speaker_refs = _extract_speaker_references(file_path, r)
                                 ref_files = [path for _, path in speaker_refs]
@@ -970,7 +1038,7 @@ def _call_speech_api(model, file_path, language=None, multi_speaker=False, origi
                                     logger.info(f'Extracted {len(speaker_refs)} speaker references: {[s for s, _ in speaker_refs]}')
                         else:
                             r = _call_speech_api_single(
-                                model, chunk_path, language, original_filename, dictionary_prompt,
+                                model, chunk_path, language, chunk_filename, dictionary_prompt,
                                 speaker_references=speaker_refs
                             )
                         if progress_callback:

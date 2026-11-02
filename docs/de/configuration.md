@@ -32,6 +32,7 @@
 | `WHISPER_MODEL` | Standard-Modellgröße | `medium` |
 | `WHISPER_DEVICE` | Berechnungsgerät: `cpu`, `auto`, `cuda` (NVIDIA/ROCm) oder `mps` | `cpu` |
 | `WHISPER_COMPUTE_TYPE` | Berechnungsgenauigkeit (`int8`, `float16`, `float32`) | `int8` |
+| `PARAKEET_ONNX_NUM_THREADS` | Parakeet-ONNX- / sherpa-onnx-Threads. Nicht gesetzt: die Hälfte der für den Prozess sichtbaren CPUs, mindestens 1 und höchstens 8. Ein gesetzter Wert überschreibt das, auch über 8. | Hälfte der sichtbaren CPUs, max. 8 |
 
 ---
 

@@ -32,6 +32,7 @@
 | `WHISPER_MODEL` | Default model size | `medium` |
 | `WHISPER_DEVICE` | Compute device: `cpu`, `auto`, `cuda` (NVIDIA/ROCm) or `mps` | `cpu` |
 | `WHISPER_COMPUTE_TYPE` | Compute precision (`int8`, `float16`, `float32`) | `int8` |
+| `PARAKEET_ONNX_NUM_THREADS` | Parakeet ONNX / sherpa-onnx threads. Unset: half the CPUs visible to the process, at least 1 and at most 8. A set value overrides that, including above 8. | half of visible CPUs, max 8 |
 
 ---
 

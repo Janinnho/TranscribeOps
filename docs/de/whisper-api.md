@@ -171,7 +171,7 @@ Alignment-Modelle (wav2vec2 für en/fr/de/es/it) sind ins Image eingebacken; pya
 | `DISABLE_MAIN_ENGINE` | `1` = Hauptprozess lädt kein Modell (nur Router + Admin) | `0` |
 | `PARAKEET_ONNX_CHUNK_SECS` | Fensterlänge von Parakeet ONNX bei langen Audios | `30` |
 | `PARAKEET_ONNX_CHUNK_OVERLAP_SECS` | Überlappung dieser Fenster | `2` |
-| `PARAKEET_ONNX_NUM_THREADS` | sherpa-onnx-Threads (Standard: bis zu 4) | auto |
+| `PARAKEET_ONNX_NUM_THREADS` | sherpa-onnx-Threads. Nicht gesetzt: die Hälfte der für den Prozess sichtbaren CPUs (Affinity, sonst `cpu_count`), mindestens 1 und höchstens 8. Ein gesetzter Wert überschreibt das, auch über 8. | Hälfte der sichtbaren CPUs, max. 8 |
 | `PARAKEET_ONNX_PROVIDER` | `cpu` oder `cuda`. `cuda` nutzt die GPU nur, wenn dieser sherpa-Build den CUDA-Provider hat | nicht gesetzt (CPU) |
 | `ROUTER_READ_TIMEOUT` | Proxy-Timeout ohne Modell-Timeout (Sekunden) | `3600` |
 | `ROUTER_STARTUP_TIMEOUT` | Max. Wartezeit beim Auto-Start schlafender Instanzen | `300` |

@@ -85,6 +85,15 @@ services:
       - ADMIN_SESSION_SECRET=${WHISPER_ADMIN_SESSION_SECRET:-}
       # Port range for instance workers managed via the admin UI.
       - INSTANCE_PORT_RANGE=8100-8120
+      # Parakeet ONNX (sherpa-onnx) only. Leave unset to use about half the
+      # CPUs this container can run on, at least 1 and at most 8. Set the
+      # variable to override that, including values above 8.
+      # - PARAKEET_ONNX_NUM_THREADS=8
+      # Window length and overlap for long Parakeet ONNX audio, in seconds.
+      # - PARAKEET_ONNX_CHUNK_SECS=30
+      # - PARAKEET_ONNX_CHUNK_OVERLAP_SECS=2
+      # cpu, or cuda when this sherpa-onnx build has the CUDA provider.
+      # - PARAKEET_ONNX_PROVIDER=cpu
     volumes:
       - transcribeops-whisper-cache:/root/.cache
     restart: always

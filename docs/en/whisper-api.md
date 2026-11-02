@@ -171,7 +171,7 @@ Alignment models (wav2vec2 for en/fr/de/es/it) are baked into the image; pyannot
 | `DISABLE_MAIN_ENGINE` | `1` = main process loads no model (router + admin only) | `0` |
 | `PARAKEET_ONNX_CHUNK_SECS` | Parakeet ONNX window length for long audio | `30` |
 | `PARAKEET_ONNX_CHUNK_OVERLAP_SECS` | Overlap between those windows | `2` |
-| `PARAKEET_ONNX_NUM_THREADS` | sherpa-onnx threads (default: up to 4) | auto |
+| `PARAKEET_ONNX_NUM_THREADS` | sherpa-onnx threads. Unset: half the CPUs visible to the process (affinity, otherwise `cpu_count`), at least 1 and at most 8. A set value overrides that, including above 8. | half of visible CPUs, max 8 |
 | `PARAKEET_ONNX_PROVIDER` | `cpu` or `cuda`. `cuda` only runs on GPU if this sherpa build has the CUDA provider | unset (CPU) |
 | `ROUTER_READ_TIMEOUT` | Proxy timeout when no model timeout is set (seconds) | `3600` |
 | `ROUTER_STARTUP_TIMEOUT` | Max wait when auto-starting sleeping instances | `300` |

@@ -35,8 +35,11 @@ import logging
 import os
 import subprocess
 import tempfile
+import time
 import wave
 from typing import Callable, Optional
+
+import numpy as np
 
 from .base import Engine, TranscriptionResult
 from .dictionary import apply_dictionary, parse_prompt
@@ -66,15 +69,84 @@ _BUNDLE_STEMS = ("encoder", "decoder", "joiner")
 
 _gpu_probe: Optional[bool] = None
 
+# Half the visible CPUs was faster than 4 and faster than "all of them" on a
+# 16-thread host. The cap stops a 32-thread box from oversubscribing the
+# ONNX session; PARAKEET_ONNX_NUM_THREADS still overrides it.
+_THREAD_CAP = 8
+_logged_thread_choice: Optional[tuple] = None
+
+
+def _available_cpus() -> int:
+    """CPUs this process may run on. Affinity first, then ``cpu_count``."""
+    try:
+        cpus = os.sched_getaffinity(0)
+    except (AttributeError, OSError):
+        cpus = None
+    else:
+        if cpus:
+            return len(cpus)
+    count = os.cpu_count() or 1
+    return count if count > 0 else 1
+
+
+def _default_num_threads(available: int) -> tuple[int, bool]:
+    """Return ``(threads, cap_applied)`` for an automatic thread count.
+
+    Roughly half the available CPUs, at least 1, at most ``_THREAD_CAP``.
+    ``cap_applied`` is true when the half was larger than the cap.
+    """
+    available = max(1, int(available))
+    half = max(1, available // 2)
+    if half > _THREAD_CAP:
+        return _THREAD_CAP, True
+    return half, False
+
 
 def _num_threads() -> int:
+    """sherpa-onnx intra-op threads.
+
+    An explicit ``PARAKEET_ONNX_NUM_THREADS`` wins, including values above
+    the cap. Otherwise use :func:`_default_num_threads`. The effective
+    value is logged once per distinct choice, and again when the cap
+    reduces the half-CPU default.
+    """
+    global _logged_thread_choice
     raw = os.environ.get("PARAKEET_ONNX_NUM_THREADS", "").strip()
     if raw:
         try:
-            return max(1, int(raw))
+            threads = max(1, int(raw))
         except ValueError:
-            logger.warning("PARAKEET_ONNX_NUM_THREADS=%r is not an integer; using 4.", raw)
-    return max(1, min(4, os.cpu_count() or 1))
+            logger.warning(
+                "PARAKEET_ONNX_NUM_THREADS=%r is not an integer; using the default.",
+                raw,
+            )
+        else:
+            choice = ("env", threads)
+            if choice != _logged_thread_choice:
+                logger.info(
+                    "parakeet_onnx threads=%s (PARAKEET_ONNX_NUM_THREADS).",
+                    threads,
+                )
+                _logged_thread_choice = choice
+            return threads
+
+    available = _available_cpus()
+    threads, capped = _default_num_threads(available)
+    choice = ("default", threads, available, capped)
+    if choice != _logged_thread_choice:
+        if capped:
+            logger.info(
+                "parakeet_onnx threads=%s (available CPUs=%s, half=%s, cap %s applies). "
+                "Set PARAKEET_ONNX_NUM_THREADS to override.",
+                threads, available, available // 2, _THREAD_CAP,
+            )
+        else:
+            logger.info(
+                "parakeet_onnx threads=%s (available CPUs=%s).",
+                threads, available,
+            )
+        _logged_thread_choice = choice
+    return threads
 
 
 def _chunk_params() -> tuple[float, float]:
@@ -421,60 +493,57 @@ def _to_mono_wav(src_path: str) -> tuple[str, bool]:
     return dst, True
 
 
-def _slice_wav(src: str, start: float, length: float) -> str:
-    fd, dst = tempfile.mkstemp(suffix=".wav", prefix="parakeet_onnx_chunk_")
-    os.close(fd)
-    try:
-        subprocess.run(
-            [
-                "ffmpeg", "-nostdin", "-y", "-loglevel", "error",
-                "-ss", f"{start:.3f}", "-t", f"{length:.3f}",
-                "-i", src,
-                "-ac", "1", "-ar", str(_SAMPLE_RATE), "-c:a", "pcm_s16le",
-                dst,
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
-        )
-    except subprocess.CalledProcessError as e:
-        try:
-            os.unlink(dst)
-        except OSError:
-            pass
-        stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
-        raise RuntimeError(f"ffmpeg failed to slice {src}: {stderr.strip()}") from e
-    return dst
+def _read_f32(path: str) -> tuple[int, np.ndarray]:
+    """Read a mono 16-bit PCM WAV into a float32 array in ``[-1, 1]``.
 
-
-def _wav_duration_secs(path: str) -> Optional[float]:
-    try:
-        with wave.open(path, "rb") as handle:
-            rate = handle.getframerate()
-            if rate:
-                return handle.getnframes() / rate
-    except Exception:
-        pass
-    try:
-        return os.path.getsize(path) / (_SAMPLE_RATE * 2)
-    except OSError:
-        return None
-
-
-def _read_f32(path: str) -> tuple[int, list[float]]:
+    ``int16 / 32768`` is exact in float32 (a power-of-two scale), so these
+    values match the Python floats the old per-window reader produced.
+    """
     with wave.open(path, "rb") as handle:
         if handle.getnchannels() != 1 or handle.getsampwidth() != 2:
             raise RuntimeError(f"expected mono 16-bit WAV, got {path}")
-        rate = handle.getframerate()
+        rate = handle.getframerate() or _SAMPLE_RATE
         raw = handle.readframes(handle.getnframes())
-    # wave frames are little-endian int16. array 'h' is native endian.
-    import array
-    import sys
-    samples = array.array("h")
-    samples.frombytes(raw)
-    if sys.byteorder != "little":
-        samples.byteswap()
-    return rate, [sample / 32768.0 for sample in samples]
+    if not raw:
+        return rate, np.empty(0, dtype=np.float32)
+    # WAV PCM is little-endian. frombuffer shares ``raw``; astype copies.
+    samples = np.frombuffer(raw, dtype="<i2").astype(np.float32)
+    samples /= np.float32(32768.0)
+    return rate, samples
+
+
+def _window_f32(samples: np.ndarray, rate: int, start: float, length: float) -> np.ndarray:
+    """Slice ``[start, start+length)`` the way the old ffmpeg window did.
+
+    That command passed ``-ss`` and ``-t`` formatted to milliseconds
+    (``:.3f``). At 16 kHz a millisecond is 16 samples, so the quantized
+    timestamp lands on a sample; ``round`` absorbs the binary error in
+    ``0.001 * 16000``. The slice is a view — sherpa copies it in.
+    """
+    if rate <= 0 or samples.size == 0 or length <= 0:
+        return samples[:0]
+    start_q = float(f"{start:.3f}")
+    length_q = float(f"{length:.3f}")
+    if length_q <= 0:
+        return samples[:0]
+    start_i = int(round(start_q * rate))
+    count = int(round(length_q * rate))
+    if count <= 0 or start_i >= samples.size:
+        return samples[:0]
+    if start_i < 0:
+        start_i = 0
+    end = min(samples.size, start_i + count)
+    return samples[start_i:end]
+
+
+def _log_phases(duration: float, convert_s: float, decode_s: float, diarize_s: float) -> None:
+    """One line for short and long audio: duration, phase times, RTF."""
+    elapsed = convert_s + decode_s + diarize_s
+    rtf = (elapsed / duration) if duration and duration > 0 else 0.0
+    logger.info(
+        "Audio is %.2fs — convert=%.3fs decode=%.3fs diarize=%.3fs rtf=%.3f",
+        duration or 0.0, convert_s, decode_s, diarize_s, rtf,
+    )
 
 
 class ParakeetOnnxEngine(Engine):
@@ -563,9 +632,11 @@ class ParakeetOnnxEngine(Engine):
             self._recognizer = self._build_recognizer("cpu")
         logger.info("parakeet_onnx model '%s' loaded.", self.model)
 
-    def _decode_wav(self, path: str) -> tuple[str, list[dict]]:
-        rate, samples = _read_f32(path)
-        if not samples:
+    def _decode_samples(self, rate: int, samples) -> tuple[str, list[dict]]:
+        # ``samples`` is a float32 numpy array. sherpa-onnx 1.13.8 takes
+        # std::vector<float>; pybind copies the array. A Python list of
+        # one float per sample is the path this replaced.
+        if samples is None or len(samples) == 0:
             return "", []
         stream = self._recognizer.create_stream()
         stream.accept_waveform(rate, samples)
@@ -579,7 +650,7 @@ class ParakeetOnnxEngine(Engine):
             text = " ".join(word["word"] for word in words)
         return text, words
 
-    def _transcribe_chunked(self, path: str, duration: float, prog) -> tuple[str, list[dict]]:
+    def _transcribe_chunked(self, samples: np.ndarray, rate: int, duration: float, prog) -> tuple[str, list[dict]]:
         chunk, overlap = _chunk_params()
         starts: list[float] = []
         cursor = 0.0
@@ -597,14 +668,8 @@ class ParakeetOnnxEngine(Engine):
         texts: list[str] = []
         for index, start in enumerate(starts):
             length = min(chunk + overlap, max(0.0, duration - start))
-            piece = _slice_wav(path, start, length)
-            try:
-                text, words = self._decode_wav(piece)
-            finally:
-                try:
-                    os.unlink(piece)
-                except OSError:
-                    pass
+            window = _window_f32(samples, rate, start, length)
+            text, words = self._decode_samples(rate, window)
             for word in words:
                 word["start"] += start
                 word["end"] += start
@@ -653,23 +718,36 @@ class ParakeetOnnxEngine(Engine):
         reported = (language or "").strip() or "auto"
 
         _prog(5, "transcribe")
-        mono_path, is_tmp = _to_mono_wav(audio_path)
+        convert_s = decode_s = diarize_s = 0.0
+        duration = 0.0
+        mono_path = None
+        is_tmp = False
         try:
-            duration = _wav_duration_secs(mono_path)
+            t_convert = time.perf_counter()
+            try:
+                mono_path, is_tmp = _to_mono_wav(audio_path)
+                rate, samples = _read_f32(mono_path)
+                duration = (len(samples) / float(rate)) if rate else 0.0
+            finally:
+                convert_s = time.perf_counter() - t_convert
             chunk, _overlap = _chunk_params()
-            if duration is not None and duration > chunk:
-                text, words = self._transcribe_chunked(mono_path, duration, _prog)
-            else:
-                text, words = self._decode_wav(mono_path)
-            _prog(70, "postprocess")
+            t_decode = time.perf_counter()
+            try:
+                if duration > chunk:
+                    text, words = self._transcribe_chunked(samples, rate, duration, _prog)
+                else:
+                    text, words = self._decode_samples(rate, samples)
+                _prog(70, "postprocess")
 
-            dict_words = parse_prompt(prompt) if prompt else []
-            if dict_words and words:
-                replacements = apply_dictionary(words, dict_words)
-                if replacements:
-                    logger.info("Applied %s dictionary replacement(s).", replacements)
-                    words = [word for word in words if word["word"]]
-                    text = " ".join(word["word"] for word in words)
+                dict_words = parse_prompt(prompt) if prompt else []
+                if dict_words and words:
+                    replacements = apply_dictionary(words, dict_words)
+                    if replacements:
+                        logger.info("Applied %s dictionary replacement(s).", replacements)
+                        words = [word for word in words if word["word"]]
+                        text = " ".join(word["word"] for word in words)
+            finally:
+                decode_s = time.perf_counter() - t_decode
 
             with_speaker = False
             if enable_diarize and words:
@@ -683,6 +761,7 @@ class ParakeetOnnxEngine(Engine):
                         logger.warning("Diarization requested but no HF_TOKEN — skipping.")
                 else:
                     _prog(80, "diarize")
+                    t_diarize = time.perf_counter()
                     try:
                         import whisperx
                         audio = whisperx.load_audio(mono_path)
@@ -691,8 +770,14 @@ class ParakeetOnnxEngine(Engine):
                         with_speaker = True
                     except Exception as e:
                         logger.warning("Diarization failed (continuing without): %s", e)
+                    finally:
+                        diarize_s = time.perf_counter() - t_diarize
         finally:
-            if is_tmp:
+            # Short clips used to log nothing. Always record duration and
+            # the three phases once conversion has produced a file.
+            if mono_path is not None:
+                _log_phases(duration, convert_s, decode_s, diarize_s)
+            if is_tmp and mono_path:
                 try:
                     os.unlink(mono_path)
                 except OSError:
