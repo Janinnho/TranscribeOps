@@ -11,6 +11,7 @@ Database migrations run automatically on app start — both for the web app (`_a
 Patch release. No database migration.
 
 - **Authlib 1.9.5.** The web app moves from 1.9.1 to 1.9.5. This closes CVE-2026-114615: `authlib.jose` no longer accepts an OpenSSH public key or certificate as an HMAC secret, so a public key that verifies RS256 or EdDSA cannot be reused to forge HS256. The same range also limits ID-JAG access tokens to the assertion's `scope` claim, refuses OpenID `response_mode=form_post` when the redirect URI is not `http` or `https`, and resolves ID-JAG users with `iss` and `sub` together. TranscribeOps is an OIDC client (Flask integration on requests), not an authorization server. Sign-in, the nonce on the authorization redirect, and ID-token checks are unchanged. No new secrets.
+- **Celery worker.** A fresh image resolved kombu 5.7.0. That release still imports `packaging` from the Redis transport, but only installs it with the redis extra, which Celery does not install. The worker crash-looped with `ModuleNotFoundError: No module named 'packaging'`. kombu is pinned to 5.7.0 and packaging to 26.3, the version kombu's redis extra requires and the one the 1.5.0 image already had.
 
 ---
 
