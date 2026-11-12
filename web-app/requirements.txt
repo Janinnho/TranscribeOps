@@ -13,7 +13,7 @@ gunicorn==26.2.0
 # imported. 3.x switches the SDK's own HTTP stack to HTTPX2 and changes
 # Decisions types; neither is on a code path here.
 openai==3.37.0
-celery==5.6.3
+celery==5.7.0
 # Celery depends on kombu>=5.6.0 and does not install kombu's redis extra.
 # kombu 5.7.0 still imports packaging from kombu.transport.redis, but only
 # declares it on that extra, so a fresh image crash-loops the worker with
