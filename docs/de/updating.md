@@ -6,6 +6,14 @@ Datenbank-Migrationen laufen automatisch beim App-Start — sowohl für die Web-
 
 ---
 
+## Versionshinweise 1.5.1
+
+Patch-Release. Keine Datenbank-Migration.
+
+- **Authlib 1.9.5.** Die Web-App wechselt von 1.9.1 auf 1.9.5. Das schließt CVE-2026-114615: `authlib.jose` nimmt einen OpenSSH-Public-Key oder ein Zertifikat nicht mehr als HMAC-Geheimnis an, sodass ein Schlüssel, der RS256 oder EdDSA prüft, nicht zum Fälschen von HS256 wiederverwendet werden kann. Derselbe Bereich begrenzt ID-JAG-Access-Tokens auf den `scope`-Claim der Assertion, lehnt OpenID `response_mode=form_post` ab, wenn die Redirect-URI nicht `http` oder `https` ist, und löst ID-JAG-Nutzer über `iss` und `sub` gemeinsam auf. TranscribeOps ist ein OIDC-Client (Flask-Integration auf requests), kein Authorization-Server. Anmeldung, die Nonce beim Authorization-Redirect und die ID-Token-Prüfung bleiben unverändert. Keine neuen Secrets.
+
+---
+
 ## Versionshinweise 1.5.0
 
 Performance-Release. Keine Datenbank-Migration.
