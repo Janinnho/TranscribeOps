@@ -8,7 +8,7 @@ SQLAlchemy==2.1.6
 WTForms==3.3.1
 python-dotenv==1.2.4
 requests==2.34.2
-gunicorn==26.2.0
+gunicorn==27.0.1
 # The app calls OpenAI and Azure over HTTP with requests. This SDK is not
 # imported. 3.x switches the SDK's own HTTP stack to HTTPX2 and changes
 # Decisions types; neither is on a code path here.
